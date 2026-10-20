@@ -48,6 +48,18 @@ public class RiskAndSignalTest {
         assertFalse(guardian.evaluate(true, true, true, true, 0.5, 0, 0, 0.0).approved);
     }
 
+    @Test public void paperCoordinatorOnlyReturnsSimulatedResearchResults() {
+        PaperSimulationCoordinator coordinator = new PaperSimulationCoordinator();
+        java.util.List<PaperSimulationCoordinator.Result> results = coordinator.scan(200000L);
+        assertEquals(5, results.size());
+        for (PaperSimulationCoordinator.Result result : results) {
+            assertNotNull(result.symbol);
+            assertTrue(result.simulatedMid > 0);
+            assertNotNull(result.proposal);
+            assertTrue(result.explanation.contains("SIMULATED DATA ONLY") || result.explanation.contains("simulated history"));
+        }
+    }
+
     @Test public void analysisAgentWaitsOnMixedSignals() {
         AnalysisAgent agent = new AnalysisAgent();
         assertEquals(AgentSignal.Direction.BUY, agent.evaluate("XAUUSDm", 101, 100, 60).direction);
