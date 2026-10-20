@@ -1,24 +1,30 @@
-# EliteTrade AI — Android source starter
+# EliteTrade AI — Android foundation (paper mode)
 
-This is source code for an early native Android demo prototype, not a compiled APK.
+EliteTrade AI is being developed in stages as a native Android trading research terminal. This repository currently contains an early UI prototype plus the first build and safety-model foundation. It is not a finished trading system.
 
-## Build in GitHub Actions from an Android phone
-1. Create a new **public** repository on GitHub (public standard GitHub-hosted Actions runners are free).
-2. Upload all files from this folder to the repository root, including hidden `.github/workflows/build-apk.yml`.
-3. Open the repository's **Actions** tab and select **Build EliteTrade AI APK**.
-4. Tap **Run workflow** (or push to `main` to trigger a build).
-5. Open the completed run, find **Artifacts**, and download `EliteTradeAI-debug-apk`. Extract the downloaded artifact ZIP to get `app-debug.apk`.
+## Build a debug APK using only your phone
+1. Open the **Actions** tab in this repository.
+2. Select **Build EliteTrade AI APK**.
+3. If the workflow has not run automatically, open the workflow and tap **Run workflow** on this branch.
+4. Open the run and wait for it to finish.
+5. If successful, download the **EliteTradeAI-debug-apk** artifact and extract `app-debug.apk` from the ZIP.
 
-Do not add billing or payment details. Do not publish API keys, passwords, or broker credentials in a public repository. The project contains no broker credentials.
+GitHub Actions usage and artifact availability depend on GitHub's current account limits. No payment details should be needed for ordinary public-repository builds. Do not publish API keys, passwords, or broker credentials.
 
-## Prototype scope and safety
-- Mobile terminal tabs: Market, Chart, Analysis, Trade, Account.
-- Simulated example prices only. No live data connection.
-- Paper orders only. No real order execution.
+## Safety and current limitations
+- Paper/demo mode only. No live order execution.
+- Market prices in the existing screen are illustrative and simulated, not live quotes.
 - Exness and MT5 are not connected.
-- No deposits or withdrawals.
-- Live automated trading is disabled.
-- The prototype is not yet comprehensively tested; test only in demo mode.
+- The virtual balance is not money and cannot be withdrawn.
+- The new AgentSignal, MarketSnapshot, PaperTrade, and RiskGuardian classes are an initial foundation, not a completed multi-agent engine.
+- The app has not yet been verified by a successful CI build. Check the Actions log before treating an APK as build-verified.
 
-## If the build fails
-Open the failed workflow and inspect the build log. The source uses Android Gradle Plugin 8.6.1 and Java 17; GitHub Actions downloads required build tools. A successful build has not been verified yet.
+## Planned stages
+1. Build verification and unit tests.
+2. Deterministic simulated data and paper portfolio/journal.
+3. Independent analysis agents and strategy comparison.
+4. Risk Guardian integration and kill switch.
+5. Multi-timeframe charts, event intelligence, and data-quality monitoring.
+6. Investigate free public data sources before connecting any feed.
+
+No paid service or live broker integration is required for the current stage.
