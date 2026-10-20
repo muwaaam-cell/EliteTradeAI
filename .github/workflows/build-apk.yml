@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -23,10 +24,29 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Run unit tests
-        run: gradle --no-daemon testDebugUnitTest
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+      - name: Check Maven dependency access
+        shell: bash
+        run: |
+          set -euo pipefail
+          urls=(
+            "https://repo.maven.apache.org/maven2/org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.pom"
+            "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.pom"
+            "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.9.20/kotlin-stdlib-jdk8-1.9.20.pom"
+          )
+          for url in "${urls[@]}"; do
+            echo "Checking dependency: $url"
+            if ! status=$(curl --silent --show-error --location --retry 3 --retry-all-errors --retry-delay 2 --output /dev/null --write-out '%{http_code}' "$url"); then
+              echo "::error::Cannot reach Maven Central for $url"
+              exit 1
+            fi
+            echo "HTTP status: $status"
+            if [ "$status" != "200" ]; then
+              echo "::error::Expected HTTP 200 but received $status for $url"
+              exit 1
+            fi
+          done
+      - name: Run unit tests and build debug APK
+        run: gradle --no-daemon --refresh-dependencies testDebugUnitTest assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
