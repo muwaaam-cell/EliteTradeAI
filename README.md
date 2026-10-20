@@ -1,24 +1,42 @@
-# EliteTrade AI — Android source starter
+# EliteTrade AI — Android foundation (paper mode)
 
-This is source code for an early native Android demo prototype, not a compiled APK.
+EliteTrade AI is being developed in stages as a native Android trading research terminal. The current branch contains an early UI prototype, a Gradle build setup, initial market/risk models, a baseline analysis agent, and the first Elite IQ consensus coordinator. It is not a finished trading system.
 
-## Build in GitHub Actions from an Android phone
-1. Create a new **public** repository on GitHub (public standard GitHub-hosted Actions runners are free).
-2. Upload all files from this folder to the repository root, including hidden `.github/workflows/build-apk.yml`.
-3. Open the repository's **Actions** tab and select **Build EliteTrade AI APK**.
-4. Tap **Run workflow** (or push to `main` to trigger a build).
-5. Open the completed run, find **Artifacts**, and download `EliteTradeAI-debug-apk`. Extract the downloaded artifact ZIP to get `app-debug.apk`.
+## Latest build check
 
-Do not add billing or payment details. Do not publish API keys, passwords, or broker credentials in a public repository. The project contains no broker credentials.
+GitHub Actions run [#22 — Fix missing class closing brace in MainActivity](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/39429046754) completed successfully on 2026-10-20. The run passed the Maven dependency checks, completed `testDebugUnitTest`, built the debug APK, and uploaded the `EliteTradeAI-debug-apk` artifact. This confirms compilation and the included unit-test task for that commit; it does not prove the app is feature-complete or profitable.
 
-## Prototype scope and safety
-- Mobile terminal tabs: Market, Chart, Analysis, Trade, Account.
-- Simulated example prices only. No live data connection.
-- Paper orders only. No real order execution.
+## Build/download using only your phone
+
+1. Open the [Actions tab](https://github.com/muwaaam-cell/EliteTradeAI/actions).
+2. Open a successful **Build EliteTrade AI APK** run.
+3. In **Artifacts**, download **EliteTradeAI-debug-apk**.
+4. Extract `app-debug.apk` from the ZIP and install it on Android. Android may ask permission to install apps from your browser or file manager.
+
+GitHub Actions usage and artifact availability depend on current account limits. Do not publish API keys, passwords, or broker credentials.
+
+## Safety and current limitations
+
+- Paper/demo mode only. No live order execution.
+- Market prices in the existing screen are illustrative and simulated, not live quotes.
 - Exness and MT5 are not connected.
-- No deposits or withdrawals.
-- Live automated trading is disabled.
-- The prototype is not yet comprehensively tested; test only in demo mode.
+- The virtual balance is not money and cannot be withdrawn.
+- The new AgentSignal, MarketSnapshot, PaperTrade, RiskGuardian, and EliteIQ classes are foundational components, not a completed autonomous engine.
+- Passing a CI build and unit tests does not establish trading profitability, broker compatibility, or uninterrupted Android background execution.
 
-## If the build fails
-Open the failed workflow and inspect the build log. The source uses Android Gradle Plugin 8.6.1 and Java 17; GitHub Actions downloads required build tools. A successful build has not been verified yet.
+## Development status
+
+- Build foundation: Gradle project and automated debug APK workflow.
+- Analysis foundation: baseline trend/momentum analysis and Elite IQ agent-consensus decision logic.
+- Safety foundation: risk gate and unit tests for paper-mode enforcement, risk/exposure limits, market snapshot validation, and signal consensus.
+- Still pending: integration of the simulation and agent pipeline into app screens, persisted journal, backtesting/strategy competition, event intelligence, multi-timeframe analysis, visible kill switch, and secure broker-demo integration.
+
+## Next milestones
+
+1. Integrate analysis and Risk Guardian into a single paper-trading decision flow.
+2. Add persistence, deterministic paper execution and realistic trade accounting.
+3. Add backtesting, strategy competition, multi-timeframe analysis, and event/data-quality monitors.
+4. Verify all user-facing safety controls and restart recovery.
+5. Investigate a secure and compatible demo-only broker bridge; keep live execution disabled.
+
+No paid service or live broker integration is required for the current stage.
