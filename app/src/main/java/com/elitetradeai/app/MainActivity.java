@@ -49,3 +49,4 @@ public class MainActivity extends Activity {
   LinearLayout checklist=col();checklist.addView(tx("LIVE-TRADING GATES — ALL REQUIRED",12,muted,true));checklist.addView(tx("□ Secure bridge and authentication\n□ Confirmed demo-account connection\n□ Verified live quote source and symbol specifications\n□ Paper tests and restart/recovery tests\n□ Risk Guardian, hard limits and kill switch\n□ Explicit user approval after review",13,white,false));card(body,checklist);
   TextView reset=btn("Reset local demo account to $10,000",white);reset.setOnClickListener(v->{balance=10000;positions.clear();render();});body.addView(reset);
  }
+}
