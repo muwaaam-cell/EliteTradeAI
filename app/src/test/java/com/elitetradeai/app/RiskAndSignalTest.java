@@ -34,6 +34,20 @@ public class RiskAndSignalTest {
         } catch (IllegalArgumentException expected) { }
     }
 
+    @Test public void eliteIqRequiresConsensusAndNeverOverridesRiskGuardian() {
+        EliteIQ iq = new EliteIQ();
+        java.util.List<AgentSignal> aligned = java.util.Arrays.asList(
+            new AgentSignal("trend", "XAUUSDm", AgentSignal.Direction.BUY, 0.8, "uptrend"),
+            new AgentSignal("momentum", "XAUUSDm", AgentSignal.Direction.BUY, 0.7, "momentum"));
+        assertEquals(AgentSignal.Direction.BUY, iq.combine(aligned, "XAUUSDm", 0.5).direction);
+        java.util.List<AgentSignal> split = java.util.Arrays.asList(
+            new AgentSignal("trend", "XAUUSDm", AgentSignal.Direction.BUY, 0.8, "uptrend"),
+            new AgentSignal("momentum", "XAUUSDm", AgentSignal.Direction.SELL, 0.8, "downtrend"));
+        assertEquals(AgentSignal.Direction.NEUTRAL, iq.combine(split, "XAUUSDm", 0.5).direction);
+        RiskGuardian guardian = new RiskGuardian();
+        assertFalse(guardian.evaluate(true, true, true, true, 0.5, 0, 0, 0.0).approved);
+    }
+
     @Test public void analysisAgentWaitsOnMixedSignals() {
         AnalysisAgent agent = new AnalysisAgent();
         assertEquals(AgentSignal.Direction.BUY, agent.evaluate("XAUUSDm", 101, 100, 60).direction);
