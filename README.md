@@ -19,12 +19,17 @@ GitHub Actions usage and artifact availability depend on GitHub's current accoun
 - The new AgentSignal, MarketSnapshot, PaperTrade, and RiskGuardian classes are an initial foundation, not a completed multi-agent engine.
 - The app has not yet been verified by a successful CI build. Check the Actions log before treating an APK as build-verified.
 
+## Development status
+- Stage 1: Android build structure and initial safety/data models.
+- Stage 2 foundation: deterministic simulated market generator, in-memory paper portfolio, and baseline trend/momentum analysis agent. See [`docs/STAGE_2.md`](docs/STAGE_2.md).
+- Still pending: automated unit tests, integration into the visible Android screens, persistent journal, strategy competition, event intelligence, and multi-timeframe analysis.
+
 ## Planned stages
-1. Build verification and unit tests.
-2. Deterministic simulated data and paper portfolio/journal.
-3. Independent analysis agents and strategy comparison.
-4. Risk Guardian integration and kill switch.
-5. Multi-timeframe charts, event intelligence, and data-quality monitoring.
+1. Verify the new build and add unit tests.
+2. Integrate simulated data and paper portfolio into the Android screens.
+3. Add independent analysis agents and strategy comparison.
+4. Integrate Risk Guardian and a visible kill switch.
+5. Add multi-timeframe charts, event intelligence, and data-quality monitoring.
 6. Investigate free public data sources before connecting any feed.
 
 No paid service or live broker integration is required for the current stage.
