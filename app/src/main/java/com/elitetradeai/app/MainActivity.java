@@ -2,7 +2,7 @@ package com.elitetradeai.app;
 import android.app.*;import android.os.*;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.view.*;import android.widget.*;import java.util.*;import java.text.*;
 public class MainActivity extends Activity {
  int bg=Color.rgb(10,16,26),panel=Color.rgb(19,28,42),panel2=Color.rgb(27,39,56),white=Color.rgb(238,244,250),muted=Color.rgb(145,162,181),green=Color.rgb(69,222,177),red=Color.rgb(255,105,120);
- String tab="Market",symbol="XAUUSDm"; double balance=10000; ArrayList<String> positions=new ArrayList<>(); LinearLayout root,body; DecimalFormat df=new DecimalFormat("#,##0.00");
+ String tab="Market",symbol="XAUUSDm"; double balance=10000; ArrayList<String> positions=new ArrayList<>(); LinearLayout root,body; DecimalFormat df=new DecimalFormat("#,##0.00"); PaperSimulationCoordinator paperCoordinator=new PaperSimulationCoordinator(); ArrayList<String> latestScan=new ArrayList<>(); int scanCount=0;
  public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);render();}
  GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(r);return d;}
  TextView tx(String s,int z,int c,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(c);if(bold)t.setTypeface(null,Typeface.BOLD);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
@@ -24,19 +24,37 @@ public class MainActivity extends Activity {
  void lab(){
   body.addView(tx("ELITETRADE INTELLIGENCE LAB",20,white,true));
   body.addView(tx("Multi-agent research workspace · PAPER MODE",12,green,true));gap(body,12);
-  LinearLayout status=col();status.addView(tx("SYSTEM SAFETY STATUS",12,muted,true));status.addView(tx("Broker execution: OFF\nData source: SIMULATED\nAutonomous mode: DISABLED\nRisk Guardian: foundation added; integration in progress",14,white,false));card(body,status);
+  LinearLayout status=col();status.addView(tx("SYSTEM SAFETY STATUS",12,muted,true));status.addView(tx("Broker execution: OFF\nData source: SIMULATED\nAutonomous live mode: DISABLED\nPaper analysis: READY FOR MANUAL SCANS",14,white,false));card(body,status);
+  TextView scan=btn("RUN SIMULATED MARKET SCAN",green);body.addView(scan);
+  scan.setOnClickListener(v->{
+   try {
+    List<PaperSimulationCoordinator.Result> results=paperCoordinator.scan(System.currentTimeMillis());
+    latestScan.clear();scanCount++;
+    for(PaperSimulationCoordinator.Result result:results){
+     latestScan.add(result.symbol+"  |  "+df.format(result.simulatedMid)+"  |  "+result.proposal+"\n"+result.explanation);
+    }
+    render();
+   } catch(Exception ex) {
+    Toast.makeText(this,"Scan stopped safely: "+ex.getMessage(),Toast.LENGTH_LONG).show();
+   }
+  });
+  gap(body,10);
+  LinearLayout scanCard=col();scanCard.addView(tx("LATEST SCAN · "+scanCount,12,muted,true));
+  if(latestScan.isEmpty()) scanCard.addView(tx("No scan has run yet. Tap the scan button to evaluate the simulated watchlist.",13,white,false));
+  else for(String line:latestScan){TextView item=tx(line,12,white,false);pad(item,0,8,0,8);scanCard.addView(item);}
+  card(body,scanCard);
   String[][] modules={
-   {"01 · MARKET RADAR","Scans the demo watchlist","Foundation: simulated symbols; live scanning not connected"},
-   {"02 · ELITE IQ","Combines market context and agent opinions","Foundation: baseline trend/momentum agent; orchestration pending"},
-   {"03 · STRATEGY COMPETITION LAB","Compare rule sets against simulated history","Not implemented yet"},
-   {"04 · RISK GUARDIAN","Can veto unsafe paper-trade proposals","Foundation added; UI/order integration pending"},
-   {"05 · EVENT INTELLIGENCE","Economic calendar and event-risk awareness","Not connected; free source review pending"},
-   {"06 · COMMAND CENTRE","Control, journal, analytics and kill switch","Partially implemented; persistent journal pending"},
-   {"07 · DATA INTEGRITY MONITOR","Reject stale, invalid or unverified inputs","Validation model added; monitoring UI pending"},
+   {"01 · MARKET RADAR","Scans five illustrative symbols","Simulated watchlist scan implemented; live feed not connected"},
+   {"02 · ELITE IQ","Combines trend and momentum opinions","Basic consensus analysis integrated into the scan"},
+   {"03 · STRATEGY COMPETITION LAB","Compare rule sets against history","Not implemented yet"},
+   {"04 · RISK GUARDIAN","Independent safety veto before a paper order","Safety model exists; not yet connected to a complete order flow"},
+   {"05 · EVENT INTELLIGENCE","Economic calendar and event-risk awareness","Not implemented; no calendar feed connected"},
+   {"06 · COMMAND CENTRE","Control, journal, analytics and kill switch","Partial UI; persistent journal and kill switch pending"},
+   {"07 · DATA INTEGRITY MONITOR","Reject stale or unverified inputs","Scan rejects stale/non-simulated data; full monitoring pending"},
    {"08 · BACKTEST & MEMORY","Review simulated results and decisions","Not implemented yet"}
   };
-  for(String[] m:modules){LinearLayout box=col();box.addView(tx(m[0],14,white,true));gap(box,4);box.addView(tx(m[1],12,muted,false));gap(box,4);box.addView(tx(m[2],11,m[2].startsWith("Foundation")?green:muted,false));card(body,box);}
-  body.addView(tx("This Lab is being built in stages. It is not yet a finished autonomous trading bot.",12,muted,false));
+  for(String[] m:modules){LinearLayout box=col();box.addView(tx(m[0],14,white,true));gap(box,4);box.addView(tx(m[1],12,muted,false));gap(box,4);box.addView(tx(m[2],11,m[2].startsWith("Simulated")||m[2].startsWith("Basic")||m[2].startsWith("Scan")?green:muted,false));card(body,box);}
+  body.addView(tx("Every result uses artificial prices. The scan proposes WAIT/BUY/SELL for research only; it does not open positions or send broker orders.",12,muted,false));
  }
  void account(){
   body.addView(tx("BROKER CONNECTION SETUP",20,white,true));
