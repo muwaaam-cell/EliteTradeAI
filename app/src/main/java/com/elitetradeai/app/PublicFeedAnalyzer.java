@@ -122,6 +122,10 @@ public final class PublicFeedAnalyzer {
                 out.add(new Candle(time, x.getDouble("high"), x.getDouble("low"), x.getDouble("close")));
             }
             Collections.sort(out, (a,b) -> Long.compare(a.time,b.time));
+            // Indicators and signals must use completed candles, not the live forming bar.
+            long intervalMillis = "1m".equals(interval) ? 60_000L : 15L * 60_000L;
+            long now = System.currentTimeMillis();
+            out.removeIf(candle -> candle.time + intervalMillis > now);
             return out;
         } finally {
             c.disconnect();
