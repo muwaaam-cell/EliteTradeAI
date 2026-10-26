@@ -39,9 +39,12 @@ public class MainActivity extends Activity {
   liveCard.addView(liveButton);
   liveButton.setOnClickListener(v->{if(!liveScanning)runLiveScan();});
   gap(liveCard,8);
-  if(latestLiveScan.isEmpty()) liveCard.addView(tx("No saved scan yet. Internet is required to fetch fresh candles. Offline mode cannot create fresh market signals.",12,white,false));
-  else liveCard.addView(tx("Saved result is shown even when offline. It is historical, not a current quote or fresh signal.",11,muted,false));
-  else for(String line:latestLiveScan){TextView item=tx(line,12,white,false);pad(item,0,9,0,9);liveCard.addView(item);View divider=new View(this);divider.setBackgroundColor(panel2);liveCard.addView(divider,new LinearLayout.LayoutParams(-1,1));}
+  if(latestLiveScan.isEmpty()) {
+   liveCard.addView(tx("No saved scan yet. Internet is required to fetch fresh candles. Offline mode cannot create fresh market signals.",12,white,false));
+  } else {
+   liveCard.addView(tx("Saved result is shown even when offline. It is historical, not a current quote or fresh signal.",11,muted,false));
+   for(String line:latestLiveScan){TextView item=tx(line,12,white,false);pad(item,0,9,0,9);liveCard.addView(item);View divider=new View(this);divider.setBackgroundColor(panel2);liveCard.addView(divider,new LinearLayout.LayoutParams(-1,1));}
+  }
   card(body,liveCard);
   TextView scan=btn("RUN SIMULATED MARKET SCAN",green);body.addView(scan);
   scan.setOnClickListener(v->{
