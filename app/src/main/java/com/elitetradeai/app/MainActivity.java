@@ -2,7 +2,7 @@ package com.elitetradeai.app;
 import android.app.*;import android.os.*;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.view.*;import android.widget.*;import java.util.*;import java.text.*;
 public class MainActivity extends Activity {
  int bg=Color.rgb(10,16,26),panel=Color.rgb(19,28,42),panel2=Color.rgb(27,39,56),white=Color.rgb(238,244,250),muted=Color.rgb(145,162,181),green=Color.rgb(69,222,177),red=Color.rgb(255,105,120);
- String tab="Market",symbol="XAUUSDm"; double balance=10000; ArrayList<String> positions=new ArrayList<>(); LinearLayout root,body; DecimalFormat df=new DecimalFormat("#,##0.00"); PaperSimulationCoordinator paperCoordinator=new PaperSimulationCoordinator(); ArrayList<String> latestScan=new ArrayList<>(); int scanCount=0;
+ String tab="Market",symbol="XAUUSDm"; double balance=10000; ArrayList<String> positions=new ArrayList<>(); LinearLayout root,body; DecimalFormat df=new DecimalFormat("#,##0.00"); PaperSimulationCoordinator paperCoordinator=new PaperSimulationCoordinator(); ArrayList<String> latestScan=new ArrayList<>(); int scanCount=0; ArrayList<String> latestLiveScan=new ArrayList<>(); String liveScanStatus="Not scanned yet"; boolean liveScanning=false;
  public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);render();}
  GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(r);return d;}
  TextView tx(String s,int z,int c,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(c);if(bold)t.setTypeface(null,Typeface.BOLD);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
@@ -25,6 +25,21 @@ public class MainActivity extends Activity {
   body.addView(tx("ELITETRADE INTELLIGENCE LAB",20,white,true));
   body.addView(tx("Multi-agent research workspace · PAPER MODE",12,green,true));gap(body,12);
   LinearLayout status=col();status.addView(tx("SYSTEM SAFETY STATUS",12,muted,true));status.addView(tx("Broker execution: OFF\nData source: SIMULATED\nAutonomous live mode: DISABLED\nPaper analysis: READY FOR MANUAL SCANS",14,white,false));card(body,status);
+  LinearLayout liveCard=col();
+  liveCard.addView(tx("PUBLIC-FEED SIGNAL SCANNER",12,muted,true));
+  gap(liveCard,5);
+  liveCard.addView(tx("Gold (XAUUSD) + Bitcoin (BTCUSD)",16,white,true));
+  liveCard.addView(tx("Source: Biquote third-party candles · NOT verified against Exness · no orders",11,muted,false));
+  gap(liveCard,8);
+  TextView liveStatus=tx("Status: "+liveScanStatus,12,liveScanning?green:muted,false);
+  liveCard.addView(liveStatus);
+  TextView liveButton=btn(liveScanning?"SCANNING...":"RUN LIVE SIGNAL SCAN",green);
+  liveCard.addView(liveButton);
+  liveButton.setOnClickListener(v->{if(!liveScanning)runLiveScan();});
+  gap(liveCard,8);
+  if(latestLiveScan.isEmpty()) liveCard.addView(tx("No live scan yet. Tap the button to fetch candles and calculate EMA(9/26), RSI(14), ATR(14).",12,white,false));
+  else for(String line:latestLiveScan){TextView item=tx(line,12,white,false);pad(item,0,9,0,9);liveCard.addView(item);View divider=new View(this);divider.setBackgroundColor(panel2);liveCard.addView(divider,new LinearLayout.LayoutParams(-1,1));}
+  card(body,liveCard);
   TextView scan=btn("RUN SIMULATED MARKET SCAN",green);body.addView(scan);
   scan.setOnClickListener(v->{
    try {
@@ -55,6 +70,23 @@ public class MainActivity extends Activity {
   };
   for(String[] m:modules){LinearLayout box=col();box.addView(tx(m[0],14,white,true));gap(box,4);box.addView(tx(m[1],12,muted,false));gap(box,4);box.addView(tx(m[2],11,m[2].startsWith("Simulated")||m[2].startsWith("Basic")||m[2].startsWith("Scan")?green:muted,false));card(body,box);}
   body.addView(tx("Every result uses artificial prices. The scan proposes WAIT/BUY/SELL for research only; it does not open positions or send broker orders.",12,muted,false));
+ }
+ void runLiveScan(){
+  if(liveScanning)return;
+  liveScanning=true;liveScanStatus="Fetching public candles...";
+  render();
+  new Thread(()->{
+   ArrayList<String> result=new ArrayList<>();
+   String status="Scan complete";
+   try{
+    for(String s:new String[]{"XAUUSD","BTCUSD"}){
+     try{result.add(PublicFeedAnalyzer.scan(s).toDisplayText());}
+     catch(Exception ex){result.add(s+"  |  WAIT\\nData error: "+ex.getMessage()+"\\nNo signal generated for this market.");}
+    }
+   }catch(Exception ex){status="Scan failed safely";}
+   final String finalStatus=status;
+   runOnUiThread(()->{latestLiveScan.clear();latestLiveScan.addAll(result);liveScanning=false;liveScanStatus=finalStatus+" · "+new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.US).format(new java.util.Date());render();});
+  }).start();
  }
  void account(){
   body.addView(tx("BROKER CONNECTION SETUP",20,white,true));
