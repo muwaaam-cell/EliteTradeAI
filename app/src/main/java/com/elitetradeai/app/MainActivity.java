@@ -12,7 +12,7 @@ public class MainActivity extends Activity {
  void pad(View v,int a,int b,int c,int d){v.setPadding(a,b,c,d);} void gap(LinearLayout l,int h){View v=new View(this);l.addView(v,new LinearLayout.LayoutParams(1,h));}
  void card(LinearLayout p,View v){v.setBackground(shape(panel,22));pad(v,15,14,15,14);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=11;p.addView(v,lp);}
  TextView btn(String s,int c){TextView t=tx(s,13,c,true);t.setGravity(17);pad(t,10,12,10,12);t.setBackground(shape(panel2,15));return t;}
- void render(){root=col();root.setBackgroundColor(bg);setContentView(root);LinearLayout head=col();pad(head,17,14,17,8);LinearLayout rr=row();LinearLayout title=col();title.addView(tx("ELITETRADE AI",20,white,true));title.addView(tx("ELITE INTELLIGENCE LAB  •  PAPER MODE",10,green,true));rr.addView(title,new LinearLayout.LayoutParams(0,-2,1));TextView bd=tx("● DEMO",11,green,true);bd.setBackground(shape(Color.rgb(20,56,52),18));pad(bd,10,7,10,7);rr.addView(bd);head.addView(rr);TextView notice=tx("SIMULATED DATA  ·  EXNESS / MT5 NOT CONNECTED",10,muted,true);pad(notice,10,10,10,10);notice.setBackground(shape(panel,12));LinearLayout.LayoutParams n=new LinearLayout.LayoutParams(-1,-2);n.topMargin=10;head.addView(notice,n);root.addView(head);
+ void render(){root=col();root.setBackgroundColor(bg);setContentView(root);LinearLayout head=col();pad(head,17,14,17,8);LinearLayout rr=row();LinearLayout title=col();title.addView(tx("ELITETRADE AI",20,white,true));title.addView(tx("MULTI-AGENT MARKET INTELLIGENCE",10,green,true));rr.addView(title,new LinearLayout.LayoutParams(0,-2,1));TextView bd=tx("● DEMO",11,green,true);bd.setBackground(shape(Color.rgb(20,56,52),18));pad(bd,10,7,10,7);rr.addView(bd);head.addView(rr);TextView notice=tx("SIGNAL-ONLY  ·  PUBLIC FEED LIMITED  ·  NO BROKER EXECUTION",10,muted,true);pad(notice,10,10,10,10);notice.setBackground(shape(panel,12));LinearLayout.LayoutParams n=new LinearLayout.LayoutParams(-1,-2);n.topMargin=10;head.addView(notice,n);root.addView(head);
  ScrollView sc=new ScrollView(this);body=col();pad(body,15,7,15,18);sc.addView(body);root.addView(sc,new LinearLayout.LayoutParams(-1,0,1));LinearLayout nav=row();nav.setBackgroundColor(panel);for(String s:new String[]{"Market","Chart","LAB","Trade","Account"}){TextView b=tx(s,11,tab.equals(s)?green:muted,true);b.setGravity(17);pad(b,1,17,1,17);nav.addView(b,new LinearLayout.LayoutParams(0,-2,1));b.setOnClickListener(v->{tab=s;render();});}root.addView(nav);
  if(tab.equals("Market"))market();else if(tab.equals("Chart"))chart();else if(tab.equals("LAB"))lab();else if(tab.equals("Trade"))trade();else account();}
  void market(){LinearLayout h=col();h.addView(tx("Demo account equity",12,muted,false));h.addView(tx("$"+df.format(balance),30,white,true));h.addView(tx("Virtual balance · not withdrawable",12,muted,false));card(body,h);body.addView(tx("MARKET WATCH",12,muted,true));gap(body,8);
@@ -24,58 +24,66 @@ public class MainActivity extends Activity {
  void trade(){body.addView(tx("PAPER TRADE TICKET",20,white,true));body.addView(tx("Local demo only. No broker orders are sent.",12,muted,false));gap(body,12);EditText entry=field("2350.40"),sl=field("2345.00"),tp=field("2360.00"),lot=field("0.01");input("ENTRY PRICE",entry);input("STOP LOSS",sl);input("TAKE PROFIT",tp);input("LOT SIZE (MAX 0.10)",lot);LinearLayout sides=row();TextView buy=btn("PAPER BUY",green),sell=btn("PAPER SELL",red);sides.addView(buy,new LinearLayout.LayoutParams(0,-2,1));sides.addView(sell,new LinearLayout.LayoutParams(0,-2,1));body.addView(sides);buy.setOnClickListener(v->order("BUY",entry,sl,tp,lot));sell.setOnClickListener(v->order("SELL",entry,sl,tp,lot));gap(body,15);body.addView(tx("OPEN PAPER POSITIONS",12,muted,true));if(positions.isEmpty())body.addView(tx("No open demo positions.",13,muted,false));for(String p:new ArrayList<>(positions)){LinearLayout c=col();c.addView(tx(p,14,white,true));TextView close=btn("Close paper position",white);close.setOnClickListener(v->{positions.remove(p);render();});c.addView(close);card(body,c);}}
  void order(String side,EditText e,EditText s,EditText t,EditText l){try{double en=Double.parseDouble(e.getText().toString()),st=Double.parseDouble(s.getText().toString()),ta=Double.parseDouble(t.getText().toString()),lo=Double.parseDouble(l.getText().toString());if(en<=0||st<=0||ta<=0||lo<=0||lo>.1||(side.equals("BUY")&&(st>=en||ta<=en))||(side.equals("SELL")&&(st<=en||ta>=en))||Math.abs(en-st)*lo*100>balance*.02){Toast.makeText(this,"Invalid values or blocked by 2% demo risk limit.",Toast.LENGTH_LONG).show();return;}String p=side+" "+symbol+" · "+lo+" lots · entry "+en+" · SL "+st+" · TP "+ta;positions.add(p);Toast.makeText(this,"Paper order saved. No real order sent.",Toast.LENGTH_LONG).show();render();}catch(Exception ex){Toast.makeText(this,"Enter valid numeric values.",Toast.LENGTH_LONG).show();}}
  void lab(){
-  body.addView(tx("ELITETRADE INTELLIGENCE LAB",20,white,true));
-  body.addView(tx("Multi-agent research workspace · PAPER MODE",12,green,true));gap(body,12);
-  LinearLayout status=col();status.addView(tx("SYSTEM SAFETY STATUS",12,muted,true));status.addView(tx("Broker execution: OFF\nData source: SIMULATED\nAutonomous live mode: DISABLED\nPaper analysis: READY FOR MANUAL SCANS",14,white,false));card(body,status);
-  LinearLayout liveCard=col();
-  liveCard.addView(tx("PUBLIC-FEED SIGNAL SCANNER",12,muted,true));
-  gap(liveCard,5);
-  liveCard.addView(tx("Gold (XAUUSD) + Bitcoin (BTCUSD)",16,white,true));
-  liveCard.addView(tx("Source: Biquote third-party candles · NOT verified against Exness · no orders",11,muted,false));
-  gap(liveCard,8);
-  TextView liveStatus=tx("Status: "+liveScanStatus+(lastLiveScanAt>0?"\nLast saved: "+new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",java.util.Locale.US).format(new java.util.Date(lastLiveScanAt)):""),12,liveScanning?green:muted,false);
+  body.addView(tx("ELITE INTELLIGENCE COMMAND",20,white,true));
+  body.addView(tx("MULTI-AGENT MARKET RESEARCH  /  SIGNAL-ONLY",11,green,true));
+  gap(body,12);
+  LinearLayout hero=col();hero.setBackground(shape(Color.rgb(16,34,46),22));pad(hero,16,16,16,16);
+  LinearLayout hr=row();LinearLayout ht=col();ht.addView(tx("SYSTEM STATUS",10,muted,true));ht.addView(tx("RESEARCH MODE",18,white,true));hr.addView(ht,new LinearLayout.LayoutParams(0,-2,1));
+  TextView live=tx("● NO BROKER EXECUTION",10,green,true);live.setBackground(shape(Color.rgb(22,55,51),16));pad(live,10,8,10,8);hr.addView(live);hero.addView(hr);
+  gap(hero,8);hero.addView(tx("One decision pipeline. Multiple specialist checks. Any broker can be added through a verified data adapter; a broker is not connected just because its name appears here.",12,white,false));card(body,hero);
+  body.addView(tx("AGENT NETWORK",12,muted,true));gap(body,7);
+  String[][] agents={
+   {"CHIEF","Decision coordinator","Combines evidence; final output can be BUY, SELL or WAIT","ACTIVE"},
+   {"SCAN","Market discovery","Current public feed scanner covers XAUUSD and BTCUSD only","LIMITED"},
+   {"VET","Signal verification","Checks trend/momentum agreement and feed freshness","BASIC"},
+   {"QUANT","Strategy statistics","Historical test is early; no proven edge yet","TESTING"},
+   {"RISK GUARDIAN","Risk veto","No signal is guaranteed; illustrative levels exclude verified broker costs","GUARD"},
+   {"CRAWLER","Source discovery","Biquote public candles only; no universal broker feed connected","LIMITED"},
+   {"SOCIAL / EVENTS","News and event context","No verified news/calendar source connected","OFFLINE"},
+   {"FILLS / SIZE","Execution and position sizing","Disabled: no broker connection and no orders are sent","LOCKED"}
+  };
+  for(int k=0;k<agents.length;k+=2){
+   LinearLayout pair=row();
+   for(int j=k;j<Math.min(k+2,agents.length);j++){
+    String[] a=agents[j];LinearLayout box=col();box.setBackground(shape(panel,18));pad(box,12,12,12,12);
+    TextView state=tx(a[3],9,a[3].equals("ACTIVE")||a[3].equals("GUARD")?green:muted,true);box.addView(state);
+    gap(box,4);box.addView(tx(a[0],13,white,true));gap(box,3);box.addView(tx(a[1],10,green,true));gap(box,5);box.addView(tx(a[2],10,muted,false));
+    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.rightMargin=j%2==0?7:0;lp.leftMargin=j%2==1?7:0;pair.addView(box,lp);
+   }
+   LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,-2);pp.bottomMargin=10;body.addView(pair,pp);
+  }
+  body.addView(tx("MARKET RADAR",12,muted,true));gap(body,7);
+  LinearLayout liveCard=col();liveCard.setBackground(shape(panel,20));pad(liveCard,14,14,14,14);
+  liveCard.addView(tx("PUBLIC FEED · XAUUSD / BTCUSD",13,white,true));
+  liveCard.addView(tx("Source: Biquote · not verified against any broker · no trade execution",10,muted,false));gap(liveCard,8);
+  TextView liveStatus=tx("STATUS: "+liveScanStatus+(lastLiveScanAt>0?"\nLast saved: "+new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",java.util.Locale.US).format(new java.util.Date(lastLiveScanAt)):""),11,liveScanning?green:muted,false);
   liveCard.addView(liveStatus);
-  TextView liveButton=btn(liveScanning?"SCANNING...":"RUN LIVE SIGNAL SCAN",green);
-  liveCard.addView(liveButton);
+  TextView liveButton=btn(liveScanning?"SCANNING...":"SCAN AVAILABLE LIVE FEED",green);liveCard.addView(liveButton);
   liveButton.setOnClickListener(v->{if(!liveScanning)runLiveScan();});
-  gap(liveCard,8);
-  if(latestLiveScan.isEmpty()) {
-   liveCard.addView(tx("No saved scan yet. Internet is required to fetch fresh candles. Offline mode cannot create fresh market signals.",12,white,false));
-  } else {
-   liveCard.addView(tx("Saved result is shown even when offline. It is historical, not a current quote or fresh signal.",11,muted,false));
-   for(String line:latestLiveScan){TextView item=tx(line,12,white,false);pad(item,0,9,0,9);liveCard.addView(item);View divider=new View(this);divider.setBackgroundColor(panel2);liveCard.addView(divider,new LinearLayout.LayoutParams(-1,1));}
+  gap(liveCard,7);
+  if(latestLiveScan.isEmpty()) liveCard.addView(tx("No scan saved. Internet is required for fresh data. No current signal is inferred while offline.",11,white,false));
+  else {
+   for(String line:latestLiveScan){TextView item=tx(line,12,white,false);pad(item,0,9,0,9);liveCard.addView(item);View dv=new View(this);dv.setBackgroundColor(panel2);liveCard.addView(dv,new LinearLayout.LayoutParams(-1,1));}
+   liveCard.addView(tx("Saved scan only; it may be stale and is not a current entry.",10,muted,false));
   }
   card(body,liveCard);
-  TextView scan=btn("RUN SIMULATED MARKET SCAN",green);body.addView(scan);
-  scan.setOnClickListener(v->{
-   try {
-    List<PaperSimulationCoordinator.Result> results=paperCoordinator.scan(System.currentTimeMillis());
-    latestScan.clear();scanCount++;
-    for(PaperSimulationCoordinator.Result result:results){
-     latestScan.add(result.symbol+"  |  "+df.format(result.simulatedMid)+"  |  "+result.proposal+"\n"+result.explanation);
-    }
-    render();
-   } catch(Exception ex) {
-    Toast.makeText(this,"Scan stopped safely: "+ex.getMessage(),Toast.LENGTH_LONG).show();
-   }
-  });
-  gap(body,10);
-  LinearLayout scanCard=col();scanCard.addView(tx("LATEST SCAN · "+scanCount,12,muted,true));
-  if(latestScan.isEmpty()) scanCard.addView(tx("No scan has run yet. Tap the scan button to evaluate the simulated watchlist.",13,white,false));
-  else for(String line:latestScan){TextView item=tx(line,12,white,false);pad(item,0,8,0,8);scanCard.addView(item);}
-  card(body,scanCard);
-  String[][] modules={
-   {"01 · MARKET RADAR","Scans five illustrative symbols","Simulated watchlist scan implemented; live feed not connected"},
-   {"02 · ELITE IQ","Combines trend and momentum opinions","Basic consensus analysis integrated into the scan"},
-   {"03 · STRATEGY COMPETITION LAB","Compare rule sets against history","Not implemented yet"},
-   {"04 · RISK GUARDIAN","Independent safety veto before a paper order","Safety model exists; not yet connected to a complete order flow"},
-   {"05 · EVENT INTELLIGENCE","Economic calendar and event-risk awareness","Not implemented; no calendar feed connected"},
-   {"06 · COMMAND CENTRE","Control, journal, analytics and kill switch","Partial UI; persistent journal and kill switch pending"},
-   {"07 · DATA INTEGRITY MONITOR","Reject stale or unverified inputs","Scan rejects stale/non-simulated data; full monitoring pending"},
-   {"08 · BACKTEST & MEMORY","Review simulated results and decisions","Not implemented yet"}
+  body.addView(tx("COVERAGE & CONNECTORS",12,muted,true));gap(body,7);
+  LinearLayout coverage=col();coverage.setBackground(shape(panel,18));pad(coverage,14,14,14,14);
+  String[][] feeds={
+   {"PUBLIC CANDLES","PARTIAL","Gold + Bitcoin only"},
+   {"EXNESS / MT5","NOT CONNECTED","No account quotes or execution"},
+   {"OTHER FOREX / CFD BROKERS","NOT CONNECTED","Needs each broker's feed/API or exported data"},
+   {"CRYPTO EXCHANGES","NOT CONNECTED","Exchange-specific symbols and APIs required"},
+   {"STOCKS / FUTURES / INDICES","NOT CONNECTED","Requires licensed/accessible data sources"}
   };
-  for(String[] m:modules){LinearLayout box=col();box.addView(tx(m[0],14,white,true));gap(box,4);box.addView(tx(m[1],12,muted,false));gap(box,4);box.addView(tx(m[2],11,m[2].startsWith("Simulated")||m[2].startsWith("Basic")||m[2].startsWith("Scan")?green:muted,false));card(body,box);}
-  body.addView(tx("Every result uses artificial prices. The scan proposes WAIT/BUY/SELL for research only; it does not open positions or send broker orders.",12,muted,false));
+  for(String[] f:feeds){LinearLayout line=row();LinearLayout names=col();names.addView(tx(f[0],11,white,true));names.addView(tx(f[2],10,muted,false));line.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView badge=tx(f[1],9,f[1].equals("PARTIAL")?green:muted,true);badge.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);line.addView(badge);pad(line,0,8,0,8);coverage.addView(line);}
+  card(body,coverage);
+  body.addView(tx("DECISION STANDARD",12,muted,true));gap(body,7);
+  LinearLayout standard=col();standard.setBackground(shape(panel,18));pad(standard,14,14,14,14);
+  standard.addView(tx("A sharp entry must pass all gates",14,white,true));gap(standard,6);
+  standard.addView(tx("1  Fresh, timestamped candles\n2  Higher-timeframe trend agrees\n3  Entry-timeframe momentum confirms\n4  Spread and slippage are known\n5  Stop distance and position risk are valid\n6  Signal is logged for later review",12,white,false));gap(standard,7);
+  standard.addView(tx("If a required gate is missing or conflicts, the correct output is WAIT. The app will not invent a high-confidence setup to look impressive.",11,green,true));card(body,standard);
+  body.addView(tx("Current reality: this is a broker-agnostic design foundation, not a universal live-market connection. Signals are research only; no positions are opened.",11,muted,false));
  }
  void runLiveScan(){
   if(liveScanning)return;
