@@ -111,7 +111,7 @@ def summarize(symbol, bars1, bars15):
         lo, hi = 0, len(t15) - 1
         while lo <= hi:
             mid = (lo + hi) // 2
-            if t15[mid] <= bars1[i]["t"]:
+            if t15[mid] + 15 * 60 * 1000 <= bars1[i]["t"]:
                 j = mid
                 lo = mid + 1
             else:
