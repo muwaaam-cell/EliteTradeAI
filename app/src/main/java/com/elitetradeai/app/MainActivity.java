@@ -2,8 +2,10 @@ package com.elitetradeai.app;
 import android.app.*;import android.os.*;import android.graphics.Color;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.view.*;import android.widget.*;import java.util.*;import java.text.*;
 public class MainActivity extends Activity {
  int bg=Color.rgb(10,16,26),panel=Color.rgb(19,28,42),panel2=Color.rgb(27,39,56),white=Color.rgb(238,244,250),muted=Color.rgb(145,162,181),green=Color.rgb(69,222,177),red=Color.rgb(255,105,120);
- String tab="Market",symbol="XAUUSDm"; double balance=10000; ArrayList<String> positions=new ArrayList<>(); LinearLayout root,body; DecimalFormat df=new DecimalFormat("#,##0.00"); PaperSimulationCoordinator paperCoordinator=new PaperSimulationCoordinator(); ArrayList<String> latestScan=new ArrayList<>(); int scanCount=0; ArrayList<String> latestLiveScan=new ArrayList<>(); String liveScanStatus="Not scanned yet"; boolean liveScanning=false;
- public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);render();}
+ String tab="Market",symbol="XAUUSDm"; double balance=10000; ArrayList<String> positions=new ArrayList<>(); LinearLayout root,body; DecimalFormat df=new DecimalFormat("#,##0.00"); PaperSimulationCoordinator paperCoordinator=new PaperSimulationCoordinator(); ArrayList<String> latestScan=new ArrayList<>(); int scanCount=0; ArrayList<String> latestLiveScan=new ArrayList<>(); String liveScanStatus="Not scanned yet"; boolean liveScanning=false; long lastLiveScanAt=0;
+ public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);loadCachedLiveScan();render();}
+ void loadCachedLiveScan(){android.content.SharedPreferences p=getSharedPreferences("elite_signal_cache",MODE_PRIVATE);int count=p.getInt("count",0);lastLiveScanAt=p.getLong("saved_at",0);for(int i=0;i<count&&i<2;i++){String value=p.getString("result_"+i,null);if(value!=null&&!value.isEmpty())latestLiveScan.add(value);}if(!latestLiveScan.isEmpty()){liveScanStatus="Offline-capable · showing last saved scan";}}
+ void saveCachedLiveScan(){android.content.SharedPreferences p=getSharedPreferences("elite_signal_cache",MODE_PRIVATE);android.content.SharedPreferences.Editor e=p.edit();e.putInt("count",Math.min(2,latestLiveScan.size()));e.putLong("saved_at",lastLiveScanAt);for(int i=0;i<latestLiveScan.size()&&i<2;i++)e.putString("result_"+i,latestLiveScan.get(i));e.apply();}
  GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(r);return d;}
  TextView tx(String s,int z,int c,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(c);if(bold)t.setTypeface(null,Typeface.BOLD);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
  LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);return l;} LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(0);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
@@ -31,13 +33,14 @@ public class MainActivity extends Activity {
   liveCard.addView(tx("Gold (XAUUSD) + Bitcoin (BTCUSD)",16,white,true));
   liveCard.addView(tx("Source: Biquote third-party candles · NOT verified against Exness · no orders",11,muted,false));
   gap(liveCard,8);
-  TextView liveStatus=tx("Status: "+liveScanStatus,12,liveScanning?green:muted,false);
+  TextView liveStatus=tx("Status: "+liveScanStatus+(lastLiveScanAt>0?"\nLast saved: "+new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",java.util.Locale.US).format(new java.util.Date(lastLiveScanAt)):""),12,liveScanning?green:muted,false);
   liveCard.addView(liveStatus);
   TextView liveButton=btn(liveScanning?"SCANNING...":"RUN LIVE SIGNAL SCAN",green);
   liveCard.addView(liveButton);
   liveButton.setOnClickListener(v->{if(!liveScanning)runLiveScan();});
   gap(liveCard,8);
-  if(latestLiveScan.isEmpty()) liveCard.addView(tx("No live scan yet. Tap the button to fetch candles and calculate EMA(9/26), RSI(14), ATR(14).",12,white,false));
+  if(latestLiveScan.isEmpty()) liveCard.addView(tx("No saved scan yet. Internet is required to fetch fresh candles. Offline mode cannot create fresh market signals.",12,white,false));
+  else liveCard.addView(tx("Saved result is shown even when offline. It is historical, not a current quote or fresh signal.",11,muted,false));
   else for(String line:latestLiveScan){TextView item=tx(line,12,white,false);pad(item,0,9,0,9);liveCard.addView(item);View divider=new View(this);divider.setBackgroundColor(panel2);liveCard.addView(divider,new LinearLayout.LayoutParams(-1,1));}
   card(body,liveCard);
   TextView scan=btn("RUN SIMULATED MARKET SCAN",green);body.addView(scan);
@@ -85,7 +88,10 @@ public class MainActivity extends Activity {
     }
    }catch(Exception ex){status="Scan failed safely";}
    final String finalStatus=status;
-   runOnUiThread(()->{latestLiveScan.clear();latestLiveScan.addAll(result);liveScanning=false;liveScanStatus=finalStatus+" · "+new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.US).format(new java.util.Date());render();});
+   runOnUiThread(()->{boolean allFailed=!result.isEmpty();for(String line:result){if(!line.contains("Data error:"))allFailed=false;}
+    if(allFailed&&!latestLiveScan.isEmpty()){liveScanStatus="Offline/feed error · showing last saved results";}
+    else {latestLiveScan.clear();latestLiveScan.addAll(result);lastLiveScanAt=System.currentTimeMillis();saveCachedLiveScan();liveScanStatus=finalStatus+" · "+new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.US).format(new java.util.Date());}
+    liveScanning=false;render();});
   }).start();
  }
  void account(){
