@@ -39,7 +39,11 @@ def fetch(symbol, interval, limit=1000):
     out.sort(key=lambda x: x["t"])
     # Remove duplicate timestamps.
     unique = {b["t"]: b for b in out}
-    return [unique[t] for t in sorted(unique)]
+    ordered = [unique[t] for t in sorted(unique)]
+    # Exclude the currently forming candle: a backtest must only use closed bars.
+    interval_ms = 60_000 if interval == "1m" else 15 * 60_000
+    now_ms = int(time.time() * 1000)
+    return [b for b in ordered if b["t"] + interval_ms <= now_ms]
 
 
 def ema(values, period):
