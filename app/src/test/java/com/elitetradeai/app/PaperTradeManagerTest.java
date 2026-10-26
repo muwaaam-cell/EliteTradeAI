@@ -29,8 +29,10 @@ public class PaperTradeManagerTest {
         PaperTradeManager.Exit exit = manager.onPrice("BTCUSDm", 106.0).get(0);
 
         assertEquals(PaperTradeManager.ExitReason.STOP_LOSS, exit.reason);
-        assertEquals(-20.0, exit.pnl, 0.000001);
-        assertEquals(980.0, portfolio.getBalance(), 0.000001);
+        // Risk is 1% of $1,000 = $10 at the $5 stop distance.
+        // The observed exit is $6 beyond entry, so the conservative gap fill is -$12.
+        assertEquals(-12.0, exit.pnl, 0.000001);
+        assertEquals(988.0, portfolio.getBalance(), 0.000001);
         assertEquals(PaperTrade.Status.CLOSED, trade.status);
     }
 
