@@ -1,0 +1,46 @@
+name: EliteTrade AI historical backtest
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'feat/**' ]
+    paths:
+      - 'tools/historical_backtest.py'
+      - '.github/workflows/historical-backtest.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Run historical backtest
+        id: backtest
+        shell: bash
+        run: |
+          set +e
+          python3 tools/historical_backtest.py 2>&1 | tee historical-backtest-report.json
+          status=${PIPESTATUS[0]}
+          echo "backtest_exit_code=$status" >> "$GITHUB_OUTPUT"
+          # Do not hide the report if the provider does not supply enough history.
+          exit 0
+      - name: Upload historical report
+        uses: actions/upload-artifact@v4
+        with:
+          name: EliteTradeAI-historical-backtest-report
+          path: historical-backtest-report.json
+          if-no-files-found: error
+      - name: Summarize result
+        if: always()
+        shell: bash
+        run: |
+          echo "### Historical backtest result" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.backtest.outputs.backtest_exit_code }}" = "0" ]; then
+            echo "The script produced reports for both markets. Read the JSON artifact for trade counts, expectancy, drawdown, and hypothetical cost sensitivity." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The report records why a defensible backtest could not be completed (for example, insufficient historical candles or feed failure). No performance claim should be made from an incomplete test." >> "$GITHUB_STEP_SUMMARY"
+          fi
