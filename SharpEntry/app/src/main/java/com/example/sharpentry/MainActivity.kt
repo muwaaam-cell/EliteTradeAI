@@ -1,177 +1,139 @@
 package com.example.sharpentry
 
+import android.app.Activity
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import android.view.Gravity
+import android.widget.*
+import kotlin.math.abs
+import kotlin.math.round
 
-private val Navy = Color(0xFF0A1020)
-private val Panel = Color(0xFF141E31)
-private val Mint = Color(0xFF43E0B5)
-private val Muted = Color(0xFF9BA9BF)
-private val Amber = Color(0xFFFFC66D)
+class MainActivity : Activity() {
+    private val symbols = listOf("XAUUSD", "BTCUSD")
+    private val history = mutableListOf<String>()
+    private lateinit var status: TextView
+    private lateinit var symbolSpinner: Spinner
+    private lateinit var priceInput: EditText
+    private lateinit var stopInput: EditText
+    private lateinit var balanceInput: EditText
+    private lateinit var riskInput: EditText
+    private var paused = false
 
-class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Navy
-                ) {
-                    SharpEntryScreen()
-                }
-            }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
         }
+        fun label(text: String) {
+            root.addView(TextView(this).apply {
+                this.text = text
+                textSize = 16f
+                setPadding(0, 12, 0, 4)
+            })
+        }
+        fun input(hintText: String): EditText = EditText(this).also {
+            it.hint = hintText
+            it.inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+            root.addView(it)
+        }
+        root.addView(TextView(this).apply {
+            text = "Sharp Entry — Paper Trading"
+            textSize = 22f
+            gravity = Gravity.CENTER
+        })
+        root.addView(TextView(this).apply {
+            text = "Signals are educational, not financial advice. No live orders."
+            textSize = 13f
+            setPadding(0, 8, 0, 8)
+        })
+        label("Instrument")
+        symbolSpinner = Spinner(this)
+        symbolSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, symbols)
+        root.addView(symbolSpinner)
+        label("Current price")
+        priceInput = input("Enter current price")
+        label("Stop-loss price")
+        stopInput = input("Enter stop-loss price")
+        label("Account balance (USD)")
+        balanceInput = input("Example: 1000")
+        label("Risk per trade (%)")
+        riskInput = input("Example: 1")
+        riskInput.setText("1")
+        status = TextView(this).apply {
+            text = "No signal. Enter prices to check the rules."
+            textSize = 16f
+            setPadding(0, 16, 0, 16)
+        }
+        root.addView(status)
+        root.addView(Button(this).apply {
+            text = "Check selective entry rules"
+            setOnClickListener { checkSignal() }
+        })
+        root.addView(Button(this).apply {
+            text = "Pause signals"
+            setOnClickListener {
+                paused = !paused
+                text = if (paused) "Resume signals" else "Pause signals"
+                status.text = if (paused) "Paused. No signals will be checked."
+                    else "Resumed. Enter prices to check the rules."
+            }
+        })
+        root.addView(Button(this).apply {
+            text = "Clear fields"
+            setOnClickListener {
+                priceInput.text.clear()
+                stopInput.text.clear()
+                balanceInput.text.clear()
+                riskInput.setText("1")
+                status.text = "No signal. Enter prices to check the rules."
+            }
+        })
+        label("Paper trade history")
+        root.addView(Button(this).apply {
+            text = "Show history"
+            setOnClickListener {
+                status.text = if (history.isEmpty()) "No paper entries recorded."
+                    else history.takeLast(10).reversed().joinToString("\n")
+            }
+        })
+        setContentView(ScrollView(this).apply { addView(root) })
     }
-}
 
-@Composable
-private fun SharpEntryScreen() {
-    var selectedTab by remember { mutableStateOf("Lab") }
-    var botEnabled by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Navy)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    private fun checkSignal() {
+        if (paused) {
+            status.text = "Paused. Resume before checking."
+            return
+        }
+        val symbol = symbolSpinner.selectedItem?.toString() ?: return
+        val price = priceInput.text.toString().toDoubleOrNull()
+        val stop = stopInput.text.toString().toDoubleOrNull()
+        val balance = balanceInput.text.toString().toDoubleOrNull()
+        val riskPercent = riskInput.text.toString().toDoubleOrNull()
+        if (price == null || stop == null || balance == null || riskPercent == null ||
+            price <= 0 || stop <= 0 || balance <= 0 || riskPercent <= 0 || riskPercent > 2
         ) {
-            Column {
-                Text("SHARPENTRY", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                Text("TRADING INTELLIGENCE", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
-            }
-            Text("● OFFLINE", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            status.text = "Enter valid positive values. Risk must be over 0% and at most 2%."
+            return
         }
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("ACCOUNT CONNECTION", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text("Exness · MetaTrader 5", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "Not connected. No broker credentials are stored in this app.",
-                    color = Amber,
-                    fontSize = 12.sp
-                )
-                Spacer(Modifier.height(2.dp))
-                Text("Live prices and order execution are not enabled.", color = Muted, fontSize = 12.sp)
-            }
+        val stopDistance = abs(price - stop)
+        if (stopDistance == 0.0) {
+            status.text = "Stop-loss must differ from the entry price."
+            return
         }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricCard("MARKET DATA", "Unavailable", "No live feed", Modifier.weight(1f))
-            MetricCard("RISK GUARD", "Armed", "No orders sent", Modifier.weight(1f))
-        }
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("INTELLIGENCE LAB", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Text("Autonomous execution remains locked until a real broker bridge is implemented.", color = Muted, fontSize = 12.sp)
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(if (botEnabled) "ARMED (UI ONLY)" else "BOT DISABLED", color = if (botEnabled) Amber else Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Button(
-                        onClick = { botEnabled = !botEnabled },
-                        colors = ButtonDefaults.buttonColors(containerColor = if (botEnabled) Color(0xFF5B3440) else Mint)
-                    ) {
-                        Text(if (botEnabled) "Disarm" else "Arm UI", color = if (botEnabled) Color.White else Navy)
-                    }
-                }
-                Text(
-                    "Safety notice: this switch changes the screen state only. It cannot place, modify, or close trades.",
-                    color = Amber,
-                    fontSize = 11.sp
-                )
-            }
-        }
-
-        Text("WORKSPACE", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            listOf("Market", "Chart", "Analysis", "Lab").forEach { tab ->
-                Button(
-                    onClick = { selectedTab = tab },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedTab == tab) Mint else Panel,
-                        contentColor = if (selectedTab == tab) Navy else Color.White
-                    ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
-                ) {
-                    Text(tab, fontSize = 10.sp)
-                }
-            }
-        }
-        Text(
-            "$selectedTab selected · Starter interface",
-            color = Muted,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            "SHARPENTRY 0.1.0 · STARTER BUILD · NOT CONNECTED TO A BROKER",
-            color = Muted,
-            fontSize = 9.sp,
-            letterSpacing = 0.5.sp
-        )
+        val isLong = stop < price
+        val riskAmount = balance * riskPercent / 100.0
+        val units = riskAmount / stopDistance
+        // Simplified paper-trading math only; not calibrated to broker contract sizes.
+        val direction = if (isLong) "PAPER BUY" else "PAPER SELL"
+        val message = "$direction $symbol\nEntry: $price | Stop: $stop\n" +
+            "Risk budget: \$${format(riskAmount)} | Approx. units: ${format(units)}\n" +
+            "Check trend, spread, and news manually. Signal is not a guarantee."
+        status.text = message
+        history.add(message)
     }
-}
 
-@Composable
-private fun MetricCard(title: String, value: String, detail: String, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Panel),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(title, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(detail, color = Mint, fontSize = 10.sp)
-        }
-    }
+    private fun format(value: Double): String =
+        round(value * 100.0).toLong().div(100.0).toString()
 }
