@@ -1,0 +1,13 @@
+{
+  "name": "sharpentry-fastforex-feed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone FastForex WebSocket feed connector for SharpEntry development",
+  "main": "fastforex-feed.js",
+  "scripts": {
+    "start": "node fastforex-feed.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
