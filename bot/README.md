@@ -1,41 +1,42 @@
 # EliteTrade AI — Pepperstone cTrader bot
 
-This branch starts the **external Python trading-bot** implementation. It is separate from the legacy Android prototype on `main`.
+This is the external Python bot codebase on the separate `pepperstone-ctrader-bot` branch. The legacy Android prototype on `main` is unchanged.
 
-## Current status
+## Verified code currently in this branch
 
-- Strategy/risk foundation: initial implementation.
-- cTrader Open API connection and OAuth callback: not implemented yet.
-- Pepperstone account authentication: not connected or tested.
-- Market data and symbol discovery: not connected or tested.
-- Order execution: deliberately disabled.
-- Live trading: disabled.
+- Strategy/risk foundation: EMA/RSI/ATR analysis, risk checks, stale-quote/spread/volume policy and local kill switch.
+- cTrader OAuth helper: consent URL construction, cryptographically random state, callback-state comparison, authorization-code exchange and refresh-token exchange.
+- Automated unit-test workflow: GitHub Actions installs dependencies and runs the Python unit tests.
+- Broker connection and trading: **not connected**. The OAuth helper has only mocked unit tests and has not contacted Spotware.
 
 ## Requirements
 
 - Python 3.11+
 - A cTrader Open API application approved by Spotware.
-- The application's client ID and client secret, stored only as environment secrets.
-- A cTrader account linked to Pepperstone and user-approved OAuth access.
-- A continuously running Python process for an external bot. A phone app or a short-lived serverless function is not an always-on trading host.
+- Application client ID and client secret, stored only as environment secrets.
+- A Pepperstone cTrader account and user-approved OAuth access.
+- A continuously running Python process for unattended operation. A mobile app or short-lived serverless function is not an always-on trading host.
 
-Install dependencies:
+Install:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+PYTHONPATH=. python -m unittest discover -s tests -v
 ```
 
 On Windows, activate with `.venv\\Scripts\\activate`.
 
 ## Safety
 
-The bot starts in analysis-only mode. Never put credentials, OAuth tokens, Telegram tokens, or account identifiers in source files or commit them to Git. Use your host's secret/environment-variable manager.
+The bot starts in analysis-only mode. Never put credentials, OAuth tokens, Telegram tokens or account identifiers in source files or commit them to Git. Use the host's secret/environment-variable manager.
 
-Before any live execution is enabled, the project must implement and verify OAuth, account selection, broker symbol metadata, live prices, order/position reconciliation, protective stop-loss handling, daily loss limits, duplicate-order protection, reconnect handling, and a kill switch. Demo testing and explicit user approval are required first.
+Live trading must remain disabled until OAuth, account selection, symbol metadata, live quotes, order/position reconciliation, broker-confirmed protective stops, daily loss limits, duplicate-order protection, reconnect handling and emergency shutdown are implemented and verified on demo. Live activation also requires your explicit approval.
 
-## Next implementation milestone
+## Current next milestone
 
-Implement the official Spotware cTrader Open API Python SDK adapter and OAuth callback after the application is approved and its real redirect URI is configured. Official docs: https://help.ctrader.com/open-api/
+Implement and verify the cTrader SDK transport, account authentication, symbol discovery and quote subscription. Only then can we implement and test demo order execution.
+
+Official documentation: https://help.ctrader.com/open-api/
