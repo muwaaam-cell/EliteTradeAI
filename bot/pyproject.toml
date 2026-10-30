@@ -1,0 +1,12 @@
+[project]
+name = "elitetrade-ai"
+version = "0.1.0"
+description = "Pepperstone cTrader automated trading bot foundation"
+requires-python = ">=3.11"
+dependencies = [
+  "ctrader-open-api",
+  "python-dotenv",
+]
+
+[tool.ruff]
+line-length = 100
