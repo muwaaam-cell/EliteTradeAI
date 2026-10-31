@@ -32,7 +32,7 @@ GitHub Actions runs on pushes and pull requests to `pepperstone-ctrader-bot`:
 - pip-audit dependency vulnerability scan.
 - Python wheel build and installed-package import smoke test.
 
-The coverage report is retained as a workflow artifact. No minimum coverage threshold is claimed until a measured baseline has been reviewed. The first dependency audit identified vulnerable transitive versions pinned by Spotware's current Python SDK release (including Twisted, protobuf, pyOpenSSL and requests). This is a release blocker to resolve through a compatibility-tested SDK/dependency update, not a finding to suppress. A green workflow means these automated checks passed for that commit; it does not certify broker connectivity or trading safety.
+The coverage report is retained as a workflow artifact. No minimum coverage threshold is claimed until a measured baseline has been reviewed. Spotware's published Python SDK metadata pins old versions of Twisted, protobuf, pyOpenSSL and requests. To avoid installing those vulnerable pins, the SDK wheel is installed separately with --no-deps while the explicitly listed, updated runtime dependencies are installed from requirements.txt. CI checks the SDK imports and generated protobuf message classes, and audits the updated runtime dependency set. This compatibility override still requires a real broker integration test before production use. A green workflow means these automated checks passed for that commit; it does not certify broker connectivity or trading safety.
 
 ## Requirements
 
@@ -48,6 +48,7 @@ Install:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install --no-deps -r requirements-sdk.txt
 cp .env.example .env
 PYTHONPATH=. python -m unittest discover -s tests -v
 ```
