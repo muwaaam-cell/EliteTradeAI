@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "elitetrade-ai"
 version = "0.1.0"
@@ -8,6 +12,10 @@ dependencies = [
   "python-dotenv",
   "cryptography>=42.0.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["elite_trade*"]
 
 [tool.ruff]
 line-length = 100
