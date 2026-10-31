@@ -1,5 +1,6 @@
 """Broker-independent risk guardrails. No order sizing until symbol metadata is known."""
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from math import isfinite
 
 
@@ -116,3 +117,37 @@ def calculate_compounding_risk_budget(
     if max_risk_cash is not None:
         budget = min(budget, max_risk_cash)
     return budget
+
+
+
+def calculate_snapshot_risk_budget(
+    account_snapshot: object,
+    risk_per_trade_pct: Decimal | str | int,
+    *,
+    max_risk_cash: Decimal | str | int | None = None,
+) -> Decimal:
+    """Return an exact deposit-currency risk budget from a validated cTrader snapshot.
+
+    This bridges the account snapshot to the sizing layer without converting
+    monetary values through binary floats. It still does not calculate volume
+    or place orders; the caller must pass this budget to broker-aware sizing.
+    """
+    try:
+        settled = Decimal(account_snapshot.settled_balance)
+        equity = Decimal(account_snapshot.equity)
+        risk_pct = Decimal(str(risk_per_trade_pct))
+        cap = None if max_risk_cash is None else Decimal(str(max_risk_cash))
+    except (AttributeError, InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("A valid account snapshot and risk percentage are required.") from exc
+
+    if (
+        not settled.is_finite() or not equity.is_finite()
+        or settled <= 0 or equity <= 0
+        or not risk_pct.is_finite() or not Decimal("0") < risk_pct <= Decimal("1")
+    ):
+        raise ValueError("Account snapshot or risk percentage is outside safe limits.")
+    if cap is not None and (not cap.is_finite() or cap <= 0):
+        raise ValueError("Maximum cash risk must be finite and positive.")
+
+    budget = min(settled, equity) * risk_pct / Decimal("100")
+    return min(budget, cap) if cap is not None else budget
