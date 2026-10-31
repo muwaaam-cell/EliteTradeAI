@@ -6,8 +6,33 @@ This is the external Python bot codebase on the separate `pepperstone-ctrader-bo
 
 - Strategy/risk foundation: EMA/RSI/ATR analysis, risk checks, stale-quote/spread/volume policy and local kill switch.
 - cTrader OAuth helper: consent URL construction, cryptographically random state, callback-state comparison, authorization-code exchange and refresh-token exchange.
-- Automated unit-test workflow: GitHub Actions installs dependencies and runs the Python unit tests.
-- Broker connection and trading: **not connected**. The OAuth helper has only mocked unit tests and has not contacted Spotware.
+- Encrypted token vault and one-time, expiring OAuth state store.
+- Framework-neutral OAuth callback orchestration. It is not an HTTPS callback server.
+- Spotware OpenApiPy transport lifecycle adapter for TCP connection, application authentication, account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown.
+- Allow-listed Telegram controls for status, pause, resume and emergency kill. Close-all is deliberately unavailable until broker execution exists.
+- Automated Python unit tests and GitHub Actions quality checks.
+
+## Independent review: use the correct branch
+
+Repository: https://github.com/muwaaam-cell/EliteTradeAI
+
+Working branch: `pepperstone-ctrader-bot`
+
+The default `main` branch is the older Android prototype. An audit of `main` alone is not an audit of this bot. Start with `bot/PROJECT_STATUS.md`, then inspect the actual files in `bot/elite_trade/`, `bot/tests/` and `.github/workflows/bot-tests.yml`.
+
+Ask reviewers to distinguish implemented code, mocked tests, real external connectivity and live order execution. Do not treat documentation as proof that a feature works.
+
+## Automated checks
+
+GitHub Actions runs on pushes and pull requests to `pepperstone-ctrader-bot`:
+
+- Python unit tests with branch coverage reporting.
+- Ruff lint checks.
+- Bandit source-security scan.
+- pip-audit dependency vulnerability scan.
+- Python wheel build and installed-package import smoke test.
+
+The coverage report is retained as a workflow artifact. No minimum coverage threshold is claimed until a measured baseline has been reviewed. A green workflow means these automated checks passed for that commit; it does not certify broker connectivity or trading safety.
 
 ## Requirements
 
@@ -43,7 +68,7 @@ When deploying an HTTP adapter, require HTTPS, validate the expected Host, redac
 
 ## SDK transport status
 
-`elite_trade/ctrader_transport.py` now wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It intentionally contains no order-placement API. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
+`elite_trade/ctrader_transport.py` wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, access-token account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It intentionally contains no order-placement API. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
 
 ## Current next milestone
 
