@@ -39,7 +39,8 @@ Last verified: 2026-10-31 (UTC).
 - Encrypted-at-rest token vault using a separately managed Fernet key.
 - Allow-listed Telegram control module with status, pause, resume and emergency kill commands; close-all explicitly reports unavailable until broker execution is verified.
 - SQLite-backed, expiring, one-time OAuth state store (stores only SHA-256 state digests; atomic consume prevents replay).
-- Unit tests for OAuth state expiry/replay protection, token encryption/permissions, Telegram chat authorization and refresh HTTP method.
+- Framework-neutral OAuth callback orchestration: server-side state issuance/consumption, authorization-code exchange and encrypted token-vault persistence; HTTP/TLS deployment remains separate and unverified.
+- Unit tests for OAuth callback state handling, token persistence, state replay rejection, provider denial, OAuth state expiry/replay protection, token encryption/permissions, Telegram chat authorization and refresh HTTP method.
 - Tests for strategy, risk, kill switch, execution policy and OAuth helper.
 - GitHub Actions workflow to install dependencies and run unit tests.
 - Documentation of cTrader OAuth and integration requirements.
@@ -54,7 +55,7 @@ Last verified: 2026-10-31 (UTC).
 
 ## Not implemented / not verified
 
-- Real HTTPS OAuth callback service and integration of the one-time state store with the callback. Encrypted token vault module exists, but runtime key provisioning and callback integration are not deployed.
+- HTTPS OAuth callback HTTP server/deployment, TLS/host hardening, callback access-log redaction and runtime secret provisioning. Callback orchestration is implemented and unit-tested, but has not exchanged a real Spotware code or persisted real broker tokens.
 - cTrader Python SDK transport lifecycle, application authorization, account list retrieval and account authorization.
 - Pepperstone account connection.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
@@ -81,7 +82,7 @@ Last verified: 2026-10-31 (UTC).
 
 ## Next engineering sequence
 
-1. Build secure HTTPS callback endpoint; wire the one-time OAuth state store and encrypted token vault into the callback.
+1. Deploy a hardened HTTPS callback adapter, register its exact URI after Spotware approval, and provision runtime secrets.
 2. Implement Spotware official Python SDK adapter and account-auth handshake.
 3. Verify connection using a demo Pepperstone account.
 4. Discover instruments and validate symbol metadata.
