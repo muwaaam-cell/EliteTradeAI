@@ -51,7 +51,7 @@ Last verified: 2026-10-31 (UTC).
 - Previous baseline: GitHub Actions run 41150391234 completed successfully on commit 16ed7f31f8980cc2760357618d6b62f9ac727ad2. It installed dependencies and passed the unit-test job, including mocked SDK transport, OAuth, Telegram, token-vault, strategy, risk and execution-policy tests.
 - Baseline run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41150391234
 - On 2026-10-31, the workflow was expanded to run unit tests with branch coverage reporting, Ruff lint, Bandit source-security scanning, pip-audit dependency vulnerability scanning, and Python wheel build/import verification.
-- New quality-gate runs were triggered by the workflow and packaging changes. Their results must be checked before claiming the new checks pass.
+- First quality-gate runs: unit tests with coverage and wheel build/import passed. Ruff initially found lint issues, which are being remediated. pip-audit reported 39 vulnerability findings across five transitive packages pinned by Spotware's current OpenApiPy release (protobuf 3.20.1, pyOpenSSL 24.1.0, requests 2.32.3, Twisted 24.3.0, plus cryptography 42.0.8). The dependency audit remains a blocking failure until a compatibility-tested dependency strategy is in place; do not suppress or ignore these findings.
 - Coverage is reported as an artifact; no minimum threshold is claimed until a measured baseline has been reviewed.
 - Passing unit tests and static checks do not prove real Spotware connectivity, demo execution or live trading.
 
