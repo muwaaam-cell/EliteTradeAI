@@ -120,7 +120,7 @@ class CTraderTransportTests(unittest.TestCase):
         transport, _, _ = self.make_transport()
         transport.state = ConnectionState.AUTHENTICATED
         transport.authenticated_account_id = 77
-        for symbols in ([0], [7, 7], []):
+        for symbols in ([0], [7, 7], [], [True], ["7"], [7.0]):
             with self.subTest(symbols=symbols), self.assertRaises(ValueError):
                 transport.subscribe_spots(symbols)
 
