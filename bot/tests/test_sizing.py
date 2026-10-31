@@ -20,6 +20,7 @@ def make_meta(**overrides):
         "quote_asset": "USD",
         "symbol_trading_mode": "ENABLED",
         "account_access_rights": "FULL_ACCESS",
+        "catalog_enabled": True,
         "enable_short_selling": True,
     }
     values.update(overrides)
