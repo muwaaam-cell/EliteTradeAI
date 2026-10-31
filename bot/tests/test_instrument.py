@@ -19,6 +19,7 @@ def make_meta(**overrides) -> InstrumentMetadata:
         "quote_asset": "USD",
         "symbol_trading_mode": "ENABLED",
         "account_access_rights": "FULL_ACCESS",
+        "catalog_enabled": True,
         "enable_short_selling": True,
     }
     values.update(overrides)
@@ -82,6 +83,9 @@ class InstrumentMetadataTests(unittest.TestCase):
             make_meta(symbol_trading_mode="DISABLED_WITHOUT_PENDINGS_EXECUTION")
             .is_tradable
         )
+
+    def test_disabled_catalog_symbol_is_not_tradable(self):
+        self.assertFalse(make_meta(catalog_enabled=False).is_tradable)
 
     def test_short_selling_permission_is_enforced_separately(self):
         metadata = make_meta(enable_short_selling=False)
