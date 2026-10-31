@@ -32,6 +32,7 @@ def calculate_volume(
     deposit_currency: str,
     commission_per_volume_cent_deposit: Decimal | float | str = Decimal("0"),
     slippage_per_volume_cent_deposit: Decimal | float | str = Decimal("0"),
+    fixed_cost_deposit: Decimal | float | str = Decimal("0"),
     conversion_observed_at_epoch: Decimal | float | str | None = None,
     now_epoch: Decimal | float | str | None = None,
     max_conversion_age_seconds: Decimal | float | str = Decimal("5"),
@@ -67,6 +68,7 @@ def calculate_volume(
             slippage_per_volume_cent_deposit,
             "slippage_per_volume_cent_deposit",
         )
+        fixed_cost = _decimal(fixed_cost_deposit, "fixed_cost_deposit")
         max_age = _decimal(max_conversion_age_seconds, "max_conversion_age_seconds")
     except ValueError:
         return None
@@ -75,7 +77,10 @@ def calculate_volume(
         return None
     if risk_budget <= 0 or stop_distance <= 0 or value_factor <= 0:
         return None
-    if conversion <= 0 or commission < 0 or slippage < 0 or max_age < 0:
+    if (
+        conversion <= 0 or commission < 0 or slippage < 0
+        or fixed_cost < 0 or max_age < 0
+    ):
         return None
     if not isinstance(quote_currency, str) or not quote_currency.strip():
         return None
@@ -101,13 +106,16 @@ def calculate_volume(
         if age < 0 or age > max_age:
             return None
 
+    remaining_budget = risk_budget - fixed_cost
+    if remaining_budget <= 0:
+        return None
     loss_per_volume_cent = (
         stop_distance * value_factor * conversion + commission + slippage
     )
     if not loss_per_volume_cent.is_finite() or loss_per_volume_cent <= 0:
         return None
 
-    candidate = risk_budget / loss_per_volume_cent
+    candidate = remaining_budget / loss_per_volume_cent
     # A broker maximum may not align to its volume step. Cap first, then floor.
     candidate = min(candidate, Decimal(metadata.max_volume_cents))
     steps = (candidate / metadata.volume_step_cents).to_integral_value(
@@ -120,6 +128,6 @@ def calculate_volume(
         return None
 
     estimated_loss = Decimal(volume_cents) * loss_per_volume_cent
-    if estimated_loss > risk_budget:
+    if estimated_loss + fixed_cost > risk_budget:
         return None
     return volume_cents
