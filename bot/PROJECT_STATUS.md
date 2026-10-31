@@ -103,15 +103,20 @@ No broker connection, order submission, or live execution was added.
   intent can pass policy.
 - `test_execution_policy.py`: added malformed/non-finite input cases.
 - Commits: `657d288`, `031ce3d`, `683fa0c`, `70fe313`.
-- GitHub Actions runs triggered by these commits are still pending at handoff time;
-  do not describe these latest changes as passing until the runs complete.
+- Final code commit `70fe3135987505151c3c7d9cde60037de68c599e` passed all four GitHub
+  Actions jobs in run 41182510209: 86 unit tests, 75% total coverage, Ruff lint,
+  Bandit source scan, dependency audit, wheel build/import and dependency checks.
+  Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41182510209.
+  An earlier intermediate run failed while the sequential commits were still landing;
+  the final commit's complete run above is the verified result.
 
 ## Verified tests and automated quality gates
 
-- Latest full quality-gate run: GitHub Actions run 41182157899 completed successfully on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
-- Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41182157899
-- All four jobs passed: 73 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
-- Measured total test coverage: 74% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
+- Earlier full quality-gate run: GitHub Actions run 41182157899 passed on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
+- Latest full quality-gate run: GitHub Actions run 41182510209 passed on commit 70fe3135987505151c3c7d9cde60037de68c599e.
+- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41182510209
+- All four latest jobs passed: 86 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
+- Measured total test coverage: 75% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
 - pip-audit found no known vulnerabilities in the maintained runtime dependency set at the time of this run.
