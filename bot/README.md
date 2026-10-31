@@ -35,6 +35,12 @@ The bot starts in analysis-only mode. Never put credentials, OAuth tokens, Teleg
 
 Live trading must remain disabled until OAuth, account selection, symbol metadata, live quotes, order/position reconciliation, broker-confirmed protective stops, daily loss limits, duplicate-order protection, reconnect handling and emergency shutdown are implemented and verified on demo. Live activation also requires your explicit approval.
 
+## OAuth callback integration
+
+The framework-neutral callback orchestration is in `elite_trade/oauth_callback.py`. It issues state through the SQLite one-time store, consumes state before exchanging the short-lived code, and stores tokens only through the encrypted vault. It does not itself create an HTTPS listener or prove a Spotware connection.
+
+When deploying an HTTP adapter, require HTTPS, validate the expected Host, redact callback query strings (especially `code` and `state`) from proxy/server access logs, apply request-size limits, and keep the vault key in the host's secret manager. Never expose callback query strings in application logs.
+
 ## Current next milestone
 
 Implement and verify the cTrader SDK transport, account authentication, symbol discovery and quote subscription. Only then can we implement and test demo order execution.
