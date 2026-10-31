@@ -99,7 +99,7 @@ class CoreTests(unittest.TestCase):
 
     def test_invalid_risk_limits_block_trade(self):
         for limits in (
-            {"max_daily_loss_pct": float("nan), "max_open_positions": 2, "max_consecutive_losses": 3},
+            {"max_daily_loss_pct": float("nan"), "max_open_positions": 2, "max_consecutive_losses": 3},
             {"max_daily_loss_pct": 1, "max_open_positions": 0, "max_consecutive_losses": 3},
             {"max_daily_loss_pct": 1, "max_open_positions": 2, "max_consecutive_losses": 0},
         ):
