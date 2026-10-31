@@ -113,10 +113,11 @@ No broker connection, order submission, or live execution was added.
 ## Verified tests and automated quality gates
 
 - Earlier full quality-gate run: GitHub Actions run 41182157899 passed on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
-- Latest full quality-gate run: GitHub Actions run 41182510209 passed on commit 70fe3135987505151c3c7d9cde60037de68c599e.
-- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41182510209
-- All four latest jobs passed: 86 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
-- Measured total test coverage: 75% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
+- Previous security-hardening quality run: GitHub Actions run 41182510209 passed on commit 70fe3135987505151c3c7d9cde60037de68c599e.
+- Latest full quality-gate run: GitHub Actions run 41183218865 passed on commit 6100bffc8af6acbebfdd51f42bfa41c78cffe5b3.
+- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41183218865
+- All four latest jobs passed: 98 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
+- Measured total test coverage: 77% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
 - pip-audit found no known vulnerabilities in the maintained runtime dependency set at the time of this run.
@@ -133,18 +134,24 @@ No broker connection, order submission, or live execution was added.
 - The quote model preserves local receive time separately from the optional broker
   event timestamp. A partial bid-only or ask-only event is explicitly marked
   incomplete and is not suitable for trading decisions.
-- `bot/elite_trade/ctrader_transport.py` now supports quote subscriptions only after
-  account authentication, validates unique positive symbol IDs, forwards spot events
-  only for the authenticated account, and fails closed on account mismatch or
-  cTrader protocol error responses.
+- `bot/elite_trade/ctrader_transport.py` supports quote subscriptions only after
+  account authentication, validates unique positive integer symbol IDs without
+  coercing strings, floats or booleans, forwards spot events only for the authenticated
+  account, and fails closed on account mismatch or cTrader protocol error responses.
 - Tests cover price conversion, partial and crossed quotes, malformed timestamps,
-  trendbar OHLC conversion, subscription gating, wrong-account events and API errors.
+  trendbar OHLC conversion, subscription gating, invalid symbol-ID types,
+  wrong-account events and API errors.
 - Official Spotware data guide: https://help.ctrader.com/open-api/symbol-data/
 - Official Spotware model reference: https://help.ctrader.com/open-api/model-messages/
-- Relevant code commits: `51fd49d`, `431d781`, `465898f`, `1704c6d`, `ff939df`.
-- Latest quality run for the current market-data changes is pending at this handoff;
-  the prior intermediate run exposed a lint-only unused import, which was removed in
-  `ff939df`. Do not call the market-data work verified until the latest CI run passes.
+- Relevant code commits: `51fd49d`, `431d781`, `465898f`, `1704c6d`,
+  `ff939df`, `70c0238`, `3e0282a`, `6100bff`.
+- Latest quality run `41183218865` passed all four GitHub Actions jobs on
+  `6100bffc8af6acbebfdd51f42bfa41c78cffe5b3`: 98 unit tests, 77% total coverage,
+  Ruff lint, Bandit source scan, dependency audit, and wheel build/import.
+  Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41183218865.
+  The immediately preceding transport-code commit `3e0282a` also passed its
+  lint, tests and package checks; the final test commit's complete four-job run
+  above is the current verified result.
 
 ## Not implemented / not verified
 
