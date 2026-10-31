@@ -38,21 +38,23 @@ Last verified: 2026-10-31 (UTC).
 - cTrader OAuth URL builder, cryptographically random state, callback state comparison, authorization-code exchange (GET) and refresh-token helper (POST), matching Spotware's documented methods.
 - Encrypted-at-rest token vault using a separately managed Fernet key.
 - Allow-listed Telegram control module with status, pause, resume and emergency kill commands; close-all explicitly reports unavailable until broker execution is verified.
-- Unit tests for token encryption/permissions, Telegram chat authorization and refresh HTTP method.
+- SQLite-backed, expiring, one-time OAuth state store (stores only SHA-256 state digests; atomic consume prevents replay).
+- Unit tests for OAuth state expiry/replay protection, token encryption/permissions, Telegram chat authorization and refresh HTTP method.
 - Tests for strategy, risk, kill switch, execution policy and OAuth helper.
 - GitHub Actions workflow to install dependencies and run unit tests.
 - Documentation of cTrader OAuth and integration requirements.
 
 ## Verified tests
 
-- GitHub Actions run 41149288056 completed successfully on commit 470c4e28745dd9d63949072857d149929da885bd.
-- Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41149288056
+- GitHub Actions run 41149886256 completed successfully on commit 31f5dc09bcb8f2957fefd8114139e054f33757e8.
+- Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41149886256
+- This latest successful run includes the new OAuth state-store tests. Earlier successful run 41149288056 is retained as a prior baseline.
 - The workflow installed the official `ctrader-open-api` dependency and ran the complete unit-test suite successfully, including OAuth, strategy, risk, execution-policy, encrypted-vault and Telegram authorization tests.
 - This proves only that dependency installation and unit tests passed. OAuth tests mock the token endpoint; they do not prove a live Spotware connection.
 
 ## Not implemented / not verified
 
-- Real HTTPS OAuth callback service and durable one-time OAuth state handling. Encrypted token vault module exists, but runtime key provisioning and integration are not deployed.
+- Real HTTPS OAuth callback service and integration of the one-time state store with the callback. Encrypted token vault module exists, but runtime key provisioning and callback integration are not deployed.
 - cTrader Python SDK transport lifecycle, application authorization, account list retrieval and account authorization.
 - Pepperstone account connection.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
@@ -79,7 +81,7 @@ Last verified: 2026-10-31 (UTC).
 
 ## Next engineering sequence
 
-1. Build secure HTTPS callback endpoint and one-time state persistence; connect the encrypted token vault to the callback.
+1. Build secure HTTPS callback endpoint; wire the one-time OAuth state store and encrypted token vault into the callback.
 2. Implement Spotware official Python SDK adapter and account-auth handshake.
 3. Verify connection using a demo Pepperstone account.
 4. Discover instruments and validate symbol metadata.
