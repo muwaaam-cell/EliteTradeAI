@@ -1,5 +1,4 @@
 import unittest
-from types import SimpleNamespace
 from decimal import Decimal
 
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOATrendbar
