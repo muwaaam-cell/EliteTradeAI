@@ -69,7 +69,7 @@ Spotware's current Open API model definitions:
   API volume cents. It requires an explicit quote-currency loss factor per volume
   cent, quote-to-deposit conversion rate, conversion freshness, and cost reserves.
   It caps at broker maximum, rounds down, and rejects a result below broker minimum.
-- `bot/tests/test_sizing.py`: 13 unit tests for risk-budget bounds, stale/missing
+- `bot/tests/test_sizing.py`: 15 unit tests for risk-budget bounds, stale/missing
   conversion data, broker limits, costs, and fail-closed inputs.
 
 These are committed code additions, not proof of broker-derived values. The
