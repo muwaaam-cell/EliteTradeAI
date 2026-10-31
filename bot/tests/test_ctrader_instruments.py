@@ -8,7 +8,10 @@ from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
     ProtoOATrader,
     ProtoOATradingMode,
 )
-from elite_trade.ctrader_instruments import instrument_from_ctrader
+from elite_trade.ctrader_instruments import (
+    deposit_currency_from_ctrader,
+    instrument_from_ctrader,
+)
 
 
 class CTraderInstrumentMappingTests(unittest.TestCase):
@@ -41,6 +44,30 @@ class CTraderInstrumentMappingTests(unittest.TestCase):
             ProtoOAAsset(assetId=1, name="EUR"),
             ProtoOAAsset(assetId=2, name="USD"),
         ]
+
+    def test_resolves_authenticated_account_deposit_currency(self):
+        self.assertEqual(
+            deposit_currency_from_ctrader(self.trader, self.assets), "USD"
+        )
+
+    def test_missing_deposit_asset_is_rejected(self):
+        trader = ProtoOATrader(
+            ctidTraderAccountId=99,
+            balance=100000,
+            accessRights=ProtoOAAccessRights.FULL_ACCESS,
+        )
+        with self.assertRaises(ValueError):
+            deposit_currency_from_ctrader(trader, self.assets)
+
+    def test_unknown_deposit_asset_is_rejected(self):
+        trader = ProtoOATrader(
+            ctidTraderAccountId=99,
+            balance=100000,
+            depositAssetId=999,
+            accessRights=ProtoOAAccessRights.FULL_ACCESS,
+        )
+        with self.assertRaises(ValueError):
+            deposit_currency_from_ctrader(trader, self.assets)
 
     def test_maps_authenticated_protocol_fields(self):
         metadata = instrument_from_ctrader(
