@@ -1,3 +1,4 @@
 # Spotware's official SDK; used by the upcoming cTrader adapter.
 ctrader-open-api
 python-dotenv
+cryptography>=42.0.0
