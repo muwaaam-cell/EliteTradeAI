@@ -74,6 +74,8 @@ class CTraderTransportTests(unittest.TestCase):
             access_token="token", sdk=sdk, reactor=reactor,
             client_factory=lambda *args: client, **kwargs
         )
+        transport._client = client
+        client.received = transport._message_received
         return transport, client, reactor
 
     def test_app_auth_then_account_discovery_and_explicit_selection(self):
