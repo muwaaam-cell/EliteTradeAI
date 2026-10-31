@@ -147,10 +147,10 @@ No broker connection, order submission, or live execution was added.
 
 ## Current branch verification detail (2026-10-31)
 
-- Branch HEAD before this status refresh: `f4a0ac3a99bcda4d2ec98a3afa9ea6fded7b10ee`. It adds the regression test for the single-in-flight account-snapshot guard.
-- GitHub Actions run 41184422759 completed successfully on source commit `acb6e36152c4bf9ad6900d5eb5f6ba881dc256c4`, with 120 tests and 78% coverage. The test-only commit `f4a0ac3` landed after that run's immutable checkout SHA was set, so that run is not evidence for the exact branch HEAD.
-- A fresh push-triggered quality run is required for the current branch contents. Until it completes, the regression test and exact HEAD must be treated as unverified.
-- The successful workflow checks are source/package checks only. The bot entry point still reports broker authentication and market data as NOT CONNECTED and order execution as DISABLED. No external cTrader/Pepperstone integration has been demonstrated.
+- Code/test branch commit `f4a0ac3a99bcda4d2ec98a3afa9ea6fded7b10ee` passed GitHub Actions run 41184426110 (run #126): all four jobs passed, including 120 unit tests at 79% total coverage, Ruff lint, Bandit source scan, dependency audit, wheel build/import and dependency-consistency checks. The snapshot single-in-flight regression assertion is included in this test suite.
+- The latest status-document commit `42f42cc357c5ed69e835d4ce9ec38dcd97704bc0` was independently checked in GitHub Actions run 41184801163 (run #127). All four jobs passed again; 120 tests passed at 79% coverage and pip-audit reported no known vulnerabilities.
+- Latest verified run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41184801163.
+- These green checks establish tested source/package quality only. The bot entry point still reports broker authentication and market data as NOT CONNECTED and order execution as DISABLED. No external cTrader/Pepperstone integration has been demonstrated.
 
 ## cTrader market-data foundation (2026-10-31)
 
