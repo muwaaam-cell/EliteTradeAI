@@ -7,6 +7,8 @@ from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 class FakeRequest:
     def __init__(self):
         self.payloadType = type(self).payload_type
+        if type(self).__name__ == "ProtoOASubscribeSpotsReq":
+            self.symbolId = []
 
 
 class FakeDeferred:
@@ -49,7 +51,8 @@ def fake_sdk():
         ("ProtoOAGetAccountListByAccessTokenReq", 3),
         ("ProtoOAGetAccountListByAccessTokenRes", 4),
         ("ProtoOAAccountAuthReq", 5), ("ProtoOAAccountAuthRes", 6),
-        ("ProtoHeartbeatEvent", 7),
+        ("ProtoHeartbeatEvent", 7), ("ProtoOASubscribeSpotsReq", 8),
+        ("ProtoOASpotEvent", 9), ("ProtoOAErrorRes", 10),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -98,6 +101,55 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.AUTHENTICATED)
         self.assertEqual(transport.authenticated_account_id, 77)
         self.assertEqual(reactor.delay, 10)
+
+    def test_spot_subscription_requires_authenticated_account(self):
+        transport, client, _ = self.make_transport()
+        with self.assertRaises(RuntimeError):
+            transport.subscribe_spots([7])
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.subscribe_spots([7, 8])
+        request = client.sent[-1]
+        self.assertEqual(request.ctidTraderAccountId, 77)
+        self.assertEqual(request.symbolId, [7, 8])
+        self.assertTrue(request.subscribeToSpotTimestamp)
+
+    def test_spot_subscription_rejects_duplicate_or_invalid_symbols(self):
+        transport, _, _ = self.make_transport()
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        for symbols in ([0], [7, 7], []):
+            with self.subTest(symbols=symbols), self.assertRaises(ValueError):
+                transport.subscribe_spots(symbols)
+
+    def test_spot_event_is_forwarded_for_authenticated_account(self):
+        received = []
+        transport, client, _ = self.make_transport(on_spot=received.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        event = SimpleNamespace(ctidTraderAccountId=77, symbolId=7)
+        client.received(client, SimpleNamespace(payloadType=9, body=event))
+        self.assertEqual(received, [event])
+
+    def test_spot_event_for_wrong_account_fails_closed(self):
+        errors = []
+        transport, client, _ = self.make_transport(on_error=errors.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        event = SimpleNamespace(ctidTraderAccountId=88, symbolId=7)
+        client.received(client, SimpleNamespace(payloadType=9, body=event))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertTrue(errors)
+
+    def test_ctrader_error_response_fails_closed(self):
+        errors = []
+        transport, client, _ = self.make_transport(on_error=errors.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        error = SimpleNamespace(errorCode="NO_QUOTES")
+        client.received(client, SimpleNamespace(payloadType=10, body=error))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertIn("NO_QUOTES", errors[0])
 
     def test_demo_transport_rejects_live_account(self):
         transport, client, _ = self.make_transport()
