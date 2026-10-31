@@ -13,13 +13,14 @@ dependencies = [
   "protobuf>=5.29.6,<6",
   "requests>=2.33.0",
   "inputimeout>=1.0.4",
+  "service-identity>=24.2.0",
   "python-dotenv",
   "cryptography>=49.0.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["elite_trade*"]
+include = ["elite_trade*", "ctrader_open_api*"]
 
 [tool.ruff]
 line-length = 100
