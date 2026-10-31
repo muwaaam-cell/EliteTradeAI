@@ -147,9 +147,9 @@ No broker connection, order submission, or live execution was added.
 
 ## Current branch verification detail (2026-10-31)
 
-- Code/test branch commit `f4a0ac3a99bcda4d2ec98a3afa9ea6fded7b10ee` passed GitHub Actions run 41184426110 (run #126): all four jobs passed, including 120 unit tests at 79% total coverage, Ruff lint, Bandit source scan, dependency audit, wheel build/import and dependency-consistency checks. The snapshot single-in-flight regression assertion is included in this test suite.
-- The latest status-document commit `42f42cc357c5ed69e835d4ce9ec38dcd97704bc0` was independently checked in GitHub Actions run 41184801163 (run #127). All four jobs passed again; 120 tests passed at 79% coverage and pip-audit reported no known vulnerabilities.
-- Latest verified run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41184801163.
+- Code/test commit `f4a0ac3a99bcda4d2ec98a3afa9ea6fded7b10ee` passed GitHub Actions run 41184426110 (run #126): all four jobs passed, including 120 unit tests at 79% measured coverage, Ruff lint, Bandit source scan, dependency audit, wheel build/import and dependency-consistency checks. The account-snapshot single-in-flight regression assertion is included in this test suite.
+- Status commit `c0638e9ec363c5ee2742397c9b2fe2b0d3901d15` passed GitHub Actions run 41184862082 (run #128): all four jobs passed again; 120 tests passed at 79% coverage and pip-audit reported no known vulnerabilities.
+- Verified run #128: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41184862082.
 - These green checks establish tested source/package quality only. The bot entry point still reports broker authentication and market data as NOT CONNECTED and order execution as DISABLED. No external cTrader/Pepperstone integration has been demonstrated.
 
 ## cTrader market-data foundation (2026-10-31)
