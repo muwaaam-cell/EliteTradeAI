@@ -59,7 +59,6 @@ jobs:
       - name: Install project and analysis tools
         run: |
           python -m pip install --upgrade pip
-          pip install --no-deps -r requirements-sdk.txt
           pip install -r requirements.txt ruff bandit
       - name: Ruff lint
         run: ruff check elite_trade tests main.py
@@ -106,4 +105,4 @@ jobs:
       - name: Install wheel and smoke-test package import
         run: |
           python -m pip install --no-deps dist/*.whl
-          python -c "import elite_trade; print('EliteTrade AI and cTrader SDK package imports: OK')"
+          python -c "import elite_trade; from ctrader_open_api import Client; print('EliteTrade AI and cTrader SDK package imports: OK')"
