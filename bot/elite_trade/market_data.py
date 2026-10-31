@@ -51,6 +51,22 @@ class SpotQuote:
     def is_complete(self) -> bool:
         return self.bid is not None and self.ask is not None and self.ask >= self.bid
 
+    def is_fresh(self, *, now_epoch: float, max_age_seconds: float) -> bool:
+        """Return False for partial, stale, future-dated or invalid quote inputs."""
+        from math import isfinite
+
+        values = (now_epoch, max_age_seconds, self.received_at_epoch)
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            for value in values
+        ):
+            return False
+        if max_age_seconds <= 0 or now_epoch < self.received_at_epoch:
+            return False
+        return self.is_complete and now_epoch - self.received_at_epoch <= max_age_seconds
+
 
 @dataclass(frozen=True)
 class Candle:
