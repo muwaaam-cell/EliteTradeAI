@@ -33,6 +33,7 @@ Last verified: 2026-10-31 (UTC).
 - Python package foundation and configuration.
 - Transparent baseline EMA20/EMA50 + RSI/ATR signal analysis.
 - Broker-independent risk checks and cash risk-budget helper (not lot sizing).
+- Guarded adaptive compounding cash-risk budget: uses the lower of settled balance and current equity, so floating profit alone cannot increase risk and floating losses reduce it; supports an absolute cash-risk cap.
 - Fail-closed order-intent policy: stale quote, spread, volume, stop direction/distance, broker connection, symbol verification and explicit approval checks.
 - Persistent local kill-switch flag.
 - cTrader OAuth URL builder, cryptographically random state, callback state comparison, authorization-code exchange (GET) and refresh-token helper (POST), matching Spotware's documented methods.
@@ -73,6 +74,7 @@ Spotware's current Open API model definitions:
   cent, quote-to-deposit conversion rate, conversion freshness, per-volume cost
   reserves and a fixed-cost reserve for minimum fees.
   It caps at broker maximum, rounds down, and rejects a result below broker minimum.
+- `bot/elite_trade/risk.py`: includes `calculate_compounding_risk_budget`, which sizes from `min(settled_balance, equity)`, validates a 0–1% risk input and supports an absolute cash cap. It returns cash risk only, not volume. Tests cover account growth, floating profit/loss, invalid values and caps. The helper is not yet connected to live broker account data or the volume-sizing call path.
 - `bot/elite_trade/risk.py`: rejects non-finite equity/P&L, invalid position counters,
   and invalid or unset risk limits before permitting a trade intent. Cash risk budget
   calculation also rejects non-finite inputs.
@@ -110,14 +112,31 @@ No broker connection, order submission, or live execution was added.
   An earlier intermediate run failed while the sequential commits were still landing;
   the final commit's complete run above is the verified result.
 
+## Account balance/equity snapshot mapping (2026-10-31)
+
+- `bot/elite_trade/account_snapshot.py` maps authenticated cTrader `ProtoOATrader`
+  balance and `ProtoOAGetPositionUnrealizedPnLRes` net P&L into exact Decimal
+  deposit-currency values using matching `moneyDigits`.
+- It rejects account-ID or precision mismatches, duplicate/invalid position IDs,
+  non-positive equity and non-zero bonus fields until bonus accounting is fully
+  verified. Equity is computed as balance plus broker-reported net unrealized P&L
+  only when no bonus component is present.
+- Eight unit tests cover normal conversion, empty positions and fail-closed cases.
+- This is a pure mapper only: the transport does not yet request these two
+  messages or wire the snapshot into adaptive risk sizing. No real broker account
+  values have been received or verified.
+- Spotware references: https://help.ctrader.com/open-api/profit-loss-calculation/
+  and https://help.ctrader.com/open-api/model-messages/.
+
 ## Verified tests and automated quality gates
 
 - Earlier full quality-gate run: GitHub Actions run 41182157899 passed on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
 - Previous security-hardening quality run: GitHub Actions run 41182510209 passed on commit 70fe3135987505151c3c7d9cde60037de68c599e.
-- Latest full quality-gate run: GitHub Actions run 41183218865 passed on commit 6100bffc8af6acbebfdd51f42bfa41c78cffe5b3.
-- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41183218865
-- All four latest jobs passed: 98 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
-- Measured total test coverage: 77% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
+- Previous full quality-gate run: GitHub Actions run 41183218865 passed on commit 6100bffc8af6acbebfdd51f42bfa41c78cffe5b3 (98 tests, 77% coverage).
+- Latest full quality-gate run: GitHub Actions run 41183925932 passed on commit 091e94a4d2868f5f852d724fe89bb751dd139447.
+- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41183925932
+- All four jobs passed: 112 Python unit tests, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
+- Measured total test coverage: 78% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
 - pip-audit found no known vulnerabilities in the maintained runtime dependency set at the time of this run.
@@ -161,6 +180,7 @@ No broker connection, order submission, or live execution was added.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
 - Live/historical market-data subscription has an initial implementation and unit tests; real broker data has not been received. Historical candle request orchestration, multi-timeframe aggregation, subscription lifecycle and robust reconnect/recovery remain incomplete.
 - Complete strategy validation/backtesting/out-of-sample analysis.
+- Broker balance/equity request orchestration and wiring of the new snapshot mapper into adaptive risk sizing.
 - Correct broker-aware position sizing.
 - Order placement, modification, cancellation, position reconciliation and protective stop verification.
 - Telegram control module exists and is unit-tested; deployment, long-running polling, alert routing and operational recovery are not verified.
