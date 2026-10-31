@@ -28,6 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt coverage
+          python -m pip check
           python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq; ProtoOAApplicationAuthReq(); print('Vendored Spotware SDK import: OK')"
       - name: Run unit tests with coverage
         run: |
@@ -60,6 +61,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt ruff bandit
+          python -m pip check
       - name: Ruff lint
         run: ruff check elite_trade tests main.py
       - name: Bandit security scan
@@ -100,6 +102,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           pip install -r requirements.txt
+          python -m pip check
       - name: Build wheel
         run: python -m build --wheel
       - name: Install wheel and smoke-test package import
