@@ -41,8 +41,12 @@ The framework-neutral callback orchestration is in `elite_trade/oauth_callback.p
 
 When deploying an HTTP adapter, require HTTPS, validate the expected Host, redact callback query strings (especially `code` and `state`) from proxy/server access logs, apply request-size limits, and keep the vault key in the host's secret manager. Never expose callback query strings in application logs.
 
+## SDK transport status
+
+`elite_trade/ctrader_transport.py` now wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It intentionally contains no order-placement API. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
+
 ## Current next milestone
 
-Implement and verify the cTrader SDK transport, account authentication, symbol discovery and quote subscription. Only then can we implement and test demo order execution.
+Verify the SDK transport against the approved application and a Pepperstone demo account, then implement runtime instrument metadata discovery and quote subscriptions. Only then can we implement and test demo order execution.
 
 Official documentation: https://help.ctrader.com/open-api/
