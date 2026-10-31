@@ -24,11 +24,11 @@ Do not use the Playground redirect URI in production. Do not invent a redirect U
 
 ## Current code scope
 
-elite_trade/ctrader_oauth.py builds a consent URL with a cryptographically random state value, validates callback state, and implements token exchange/refresh helpers. Unit tests mock the token endpoint; they do not contact Spotware.
+elite_trade/ctrader_oauth.py builds a consent URL with a cryptographically random state value, validates callback state, and implements token exchange (GET) and refresh (POST) helpers per Spotware's current guide. `elite_trade/token_vault.py` encrypts tokens at rest using a runtime Fernet key. `elite_trade/telegram_control.py` provides allow-listed status/pause/resume/kill controls. Unit tests mock external services; they do not contact Spotware or Telegram.
 
 ## Still not implemented or verified
 
-- HTTPS callback server and durable encrypted token storage.
+- HTTPS callback server and durable one-time OAuth state store; encrypted vault primitive is implemented but not yet wired into callback.
 - cTrader SDK connection lifecycle, heartbeat, reconnection and account authentication.
 - Pepperstone account verification.
 - Broker symbol metadata and volume/price precision handling.
