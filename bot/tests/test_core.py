@@ -40,6 +40,50 @@ class CoreTests(unittest.TestCase):
     def test_cash_risk_budget(self):
         self.assertEqual(calculate_risk_budget(1000, 0.25), 2.5)
 
+    def test_non_finite_risk_snapshot_blocks_trade(self):
+        for equity in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(equity=equity):
+                decision = check_trade_allowed(
+                    RiskSnapshot(equity, 0, 0, 0),
+                    max_daily_loss_pct=1, max_open_positions=2,
+                    max_consecutive_losses=3,
+                )
+                self.assertFalse(decision.allowed)
+
+    def test_non_finite_daily_pnl_blocks_trade(self):
+        decision = check_trade_allowed(
+            RiskSnapshot(1000, float("nan"), 0, 0),
+            max_daily_loss_pct=1, max_open_positions=2,
+            max_consecutive_losses=3,
+        )
+        self.assertFalse(decision.allowed)
+
+    def test_invalid_risk_limits_block_trade(self):
+        for limits in (
+            {"max_daily_loss_pct": float("nan"), "max_open_positions": 2, "max_consecutive_losses": 3},
+            {"max_daily_loss_pct": 1, "max_open_positions": 0, "max_consecutive_losses": 3},
+            {"max_daily_loss_pct": 1, "max_open_positions": 2, "max_consecutive_losses": 0},
+        ):
+            with self.subTest(limits=limits):
+                decision = check_trade_allowed(
+                    RiskSnapshot(1000, 0, 0, 0), **limits
+                )
+                self.assertFalse(decision.allowed)
+
+    def test_invalid_position_counters_block_trade(self):
+        decision = check_trade_allowed(
+            RiskSnapshot(1000, 0, -1, 0),
+            max_daily_loss_pct=1, max_open_positions=2,
+            max_consecutive_losses=3,
+        )
+        self.assertFalse(decision.allowed)
+
+    def test_non_finite_cash_risk_inputs_raise(self):
+        for equity in (float("nan"), float("inf")):
+            with self.subTest(equity=equity):
+                with self.assertRaises(ValueError):
+                    calculate_risk_budget(equity, 0.25)
+
 
 if __name__ == "__main__":
     unittest.main()
