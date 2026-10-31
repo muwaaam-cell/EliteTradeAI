@@ -121,10 +121,10 @@ No broker connection, order submission, or live execution was added.
   non-positive equity and non-zero bonus fields until bonus accounting is fully
   verified. Equity is computed as balance plus broker-reported net unrealized P&L
   only when no bonus component is present.
-- Eight unit tests cover normal conversion, empty positions and fail-closed cases.
-- This is a pure mapper only: the transport does not yet request these two
-  messages or wire the snapshot into adaptive risk sizing. No real broker account
-  values have been received or verified.
+- Eight unit tests cover normal conversion, empty positions and fail-closed cases;
+  transport tests cover paired requests, response account matching and snapshot
+  delivery. The resulting snapshot is not yet wired into adaptive risk sizing.
+  No real broker account values have been received or verified.
 - Spotware references: https://help.ctrader.com/open-api/profit-loss-calculation/
   and https://help.ctrader.com/open-api/model-messages/.
 
@@ -132,10 +132,10 @@ No broker connection, order submission, or live execution was added.
 
 - Earlier full quality-gate run: GitHub Actions run 41182157899 passed on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
 - Previous security-hardening quality run: GitHub Actions run 41182510209 passed on commit 70fe3135987505151c3c7d9cde60037de68c599e.
-- Previous full quality-gate run: GitHub Actions run 41183218865 passed on commit 6100bffc8af6acbebfdd51f42bfa41c78cffe5b3 (98 tests, 77% coverage).
-- Latest full quality-gate run: GitHub Actions run 41183925932 passed on commit 091e94a4d2868f5f852d724fe89bb751dd139447.
-- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41183925932
-- All four jobs passed: 112 Python unit tests, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
+- Previous full quality-gate run: GitHub Actions run 41183925932 passed on commit 091e94a4d2868f5f852d724fe89bb751dd139447 (112 tests, 78% coverage).
+- Latest full quality-gate run: GitHub Actions run 41184007147 passed on commit 629be83aca5cc55a8326898ff83c9c6764658f23.
+- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41184007147
+- All four jobs passed: 115 Python unit tests, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
 - Measured total test coverage: 78% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
@@ -157,6 +157,11 @@ No broker connection, order submission, or live execution was added.
   account authentication, validates unique positive integer symbol IDs without
   coercing strings, floats or booleans, forwards spot events only for the authenticated
   account, and fails closed on account mismatch or cTrader protocol error responses.
+- The transport can now request `ProtoOATraderRes` and
+  `ProtoOAGetPositionUnrealizedPnLRes` for the authenticated account, match both
+  responses to that account, emit a validated `AccountRiskSnapshot` only after both
+  arrive, reject concurrent snapshot requests, and discard pending responses on
+  disconnect. This orchestration is unit-tested with protocol-shaped fixtures only.
 - Tests cover price conversion, partial and crossed quotes, malformed timestamps,
   trendbar OHLC conversion, subscription gating, invalid symbol-ID types,
   wrong-account events and API errors.
@@ -180,7 +185,7 @@ No broker connection, order submission, or live execution was added.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
 - Live/historical market-data subscription has an initial implementation and unit tests; real broker data has not been received. Historical candle request orchestration, multi-timeframe aggregation, subscription lifecycle and robust reconnect/recovery remain incomplete.
 - Complete strategy validation/backtesting/out-of-sample analysis.
-- Broker balance/equity request orchestration and wiring of the new snapshot mapper into adaptive risk sizing.
+- Wiring the new account snapshot into the adaptive risk budget and broker-aware volume-sizing call path.
 - Correct broker-aware position sizing.
 - Order placement, modification, cancellation, position reconciliation and protective stop verification.
 - Telegram control module exists and is unit-tested; deployment, long-running polling, alert routing and operational recovery are not verified.
