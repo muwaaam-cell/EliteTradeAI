@@ -40,6 +40,8 @@ Last verified: 2026-10-31 (UTC).
 - Allow-listed Telegram control module with status, pause, resume and emergency kill commands; close-all explicitly reports unavailable until broker execution is verified.
 - SQLite-backed, expiring, one-time OAuth state store (stores only SHA-256 state digests; atomic consume prevents replay).
 - Framework-neutral OAuth callback orchestration: server-side state issuance/consumption, authorization-code exchange and encrypted token-vault persistence; HTTP/TLS deployment remains separate and unverified.
+- Spotware OpenApiPy transport lifecycle: SDK TCP client setup, application authentication, access-token account discovery, explicit account selection, account authentication, 10-second heartbeat scheduling and shutdown. No order-placement API is exposed by this adapter.
+- Framework-neutral OAuth callback orchestration: server-side state issuance/consumption, authorization-code exchange and encrypted token-vault persistence; HTTP/TLS deployment remains separate and unverified.
 - Unit tests for OAuth callback state handling, token persistence, state replay rejection, provider denial, OAuth state expiry/replay protection, token encryption/permissions, Telegram chat authorization and refresh HTTP method.
 - Tests for strategy, risk, kill switch, execution policy and OAuth helper.
 - GitHub Actions workflow to install dependencies and run unit tests.
@@ -47,16 +49,16 @@ Last verified: 2026-10-31 (UTC).
 
 ## Verified tests
 
-- GitHub Actions run 41149886256 completed successfully on commit 31f5dc09bcb8f2957fefd8114139e054f33757e8.
-- Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41149886256
-- This latest successful run includes the new OAuth state-store tests. Earlier successful run 41149288056 is retained as a prior baseline.
+- GitHub Actions run 41150360441 completed successfully on commit 15a1fa99042cee83aa0c1a3277ad97e9f0c4e426 (SDK transport tests and all prior unit tests).
+- Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41150360441
+- This successful run includes OAuth callback orchestration tests and mocked SDK transport lifecycle tests, in addition to the OAuth state-store tests. Earlier successful runs 41149886256 and 41149288056 are retained as prior baselines.
 - The workflow installed the official `ctrader-open-api` dependency and ran the complete unit-test suite successfully, including OAuth, strategy, risk, execution-policy, encrypted-vault and Telegram authorization tests.
 - This proves only that dependency installation and unit tests passed. OAuth tests mock the token endpoint; they do not prove a live Spotware connection.
 
 ## Not implemented / not verified
 
 - HTTPS OAuth callback HTTP server/deployment, TLS/host hardening, callback access-log redaction and runtime secret provisioning. Callback orchestration is implemented and unit-tested, but has not exchanged a real Spotware code or persisted real broker tokens.
-- cTrader Python SDK transport lifecycle, application authorization, account list retrieval and account authorization.
+- Live SDK transport connectivity, application authorization, account list retrieval and account authorization. The adapter implementation exists, but only its mocked lifecycle tests have passed.
 - Pepperstone account connection.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
 - Live/historical market data, heartbeat/reconnect handling and multi-timeframe candle aggregation.
