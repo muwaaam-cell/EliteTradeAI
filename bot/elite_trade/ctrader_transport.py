@@ -296,6 +296,8 @@ class CTraderSdkTransport:
     def _disconnected(self, client, reason) -> None:
         self._cancel_heartbeat()
         self.authenticated_account_id = None
+        self._pending_trader = None
+        self._pending_pnl = None
         self._set_state(ConnectionState.DISCONNECTED)
 
     def _cancel_heartbeat(self) -> None:
