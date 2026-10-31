@@ -8,9 +8,13 @@ version = "0.1.0"
 description = "Pepperstone cTrader automated trading bot foundation"
 requires-python = ">=3.11"
 dependencies = [
-  "ctrader-open-api",
+  "Twisted>=26.10.0",
+  "pyOpenSSL>=26.0.0",
+  "protobuf>=5.29.6,<6",
+  "requests>=2.33.0",
+  "inputimeout>=1.0.4",
   "python-dotenv",
-  "cryptography>=42.0.0",
+  "cryptography>=49.0.0",
 ]
 
 [tool.setuptools.packages.find]
