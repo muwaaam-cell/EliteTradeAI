@@ -8,8 +8,9 @@
 - Access tokens normally last 30 days; refresh tokens renew them.
 - After OAuth, the application authenticates itself, retrieves accounts available to the token, and authenticates the selected trading account.
 - cTrader Open API supports demo and live accounts; Spotware recommends demo testing before live use.
-- The official Python SDK package is ctrader-open-api. The Python SDK uses TCP; WebSocket is not supported by that SDK.
-- Spotware recommends heartbeats every 10 seconds and serialized message handling.
+- The Spotware OpenApiPy source is vendored under `bot/ctrader_open_api/` from the MIT-licensed upstream repository; the exact source commit and license are included there.
+- The Python SDK uses TCP; WebSocket is not supported by that SDK.
+- The transport adapter for TCP connection, app authentication, account discovery, account selection, account authentication and 10-second heartbeat scheduling is implemented and unit-tested with mocked SDK objects.
 
 ## Application setup
 
@@ -28,8 +29,8 @@ elite_trade/ctrader_oauth.py builds a consent URL with a cryptographically rando
 
 ## Still not implemented or verified
 
-- HTTPS callback server and durable one-time OAuth state store; encrypted vault primitive is implemented but not yet wired into callback.
-- cTrader SDK connection lifecycle, heartbeat, reconnection and account authentication.
+- HTTPS callback server/deployment, TLS/host hardening and callback access-log redaction. OAuth callback orchestration, durable one-time state store and encrypted token vault are implemented, but no real OAuth exchange has been completed.
+- Live cTrader SDK connection, real application/account authentication and reconnect behavior. The transport lifecycle tests are mocked.
 - Pepperstone account verification.
 - Broker symbol metadata and volume/price precision handling.
 - Live quote subscription, historical candle retrieval and stale-data monitoring.

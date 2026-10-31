@@ -17,7 +17,7 @@ Last verified: 2026-10-31 (UTC).
 - Repository: https://github.com/muwaaam-cell/EliteTradeAI
 - Working branch: pepperstone-ctrader-bot
 - Legacy default branch: main (old Android prototype; do not overwrite or present it as the bot).
-- Branch comparison last checked: 48 commits ahead of main, 0 behind (main preserved; recheck after future changes).
+- Branch comparison before this handoff update: 69 commits ahead of main, 0 behind (main preserved).
 - Working bot source: https://github.com/muwaaam-cell/EliteTradeAI/tree/pepperstone-ctrader-bot/bot
 
 ## Spotware application
@@ -49,12 +49,14 @@ Last verified: 2026-10-31 (UTC).
 
 ## Verified tests and automated quality gates
 
-- Previous baseline: GitHub Actions run 41150391234 completed successfully on commit 16ed7f31f8980cc2760357618d6b62f9ac727ad2. It installed dependencies and passed the unit-test job, including mocked SDK transport, OAuth, Telegram, token-vault, strategy, risk and execution-policy tests.
-- Baseline run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41150391234
-- On 2026-10-31, the workflow was expanded to run unit tests with branch coverage reporting, Ruff lint, Bandit source-security scanning, pip-audit dependency vulnerability scanning, and Python wheel build/import verification.
-- First quality-gate runs: unit tests with coverage and wheel build/import passed. Ruff initially found lint issues, which are being remediated. pip-audit reported 39 vulnerability findings across five transitive packages pinned by Spotware's current OpenApiPy release (protobuf 3.20.1, pyOpenSSL 24.1.0, requests 2.32.3, Twisted 24.3.0, plus cryptography 42.0.8). The dependency audit remains a blocking failure until a compatibility-tested dependency strategy is in place; do not suppress or ignore these findings.
-- Coverage is reported as an artifact; no minimum threshold is claimed until a measured baseline has been reviewed.
-- Passing unit tests and static checks do not prove real Spotware connectivity, demo execution or live trading.
+- Latest full quality-gate run: GitHub Actions run 41177110319 completed successfully on commit 12699d10eff2d440635dc94caec75af1f8bc738f.
+- Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41177110319
+- All four jobs passed: 33 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, and Python wheel build/import verification.
+- Measured total test coverage: 69% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
+- The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
+- Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
+- pip-audit found no known vulnerabilities in the maintained runtime dependency set at the time of this run.
+- These checks establish code/package quality for the tested commit only. They do not prove real Spotware connectivity, Pepperstone account authentication, market data, demo order execution or live trading.
 
 ## Not implemented / not verified
 
@@ -86,15 +88,15 @@ Last verified: 2026-10-31 (UTC).
 ## Next engineering sequence
 
 1. Deploy a hardened HTTPS callback adapter, register its exact URI after Spotware approval, and provision runtime secrets.
-2. Implement Spotware official Python SDK adapter and account-auth handshake.
-3. Verify connection using a demo Pepperstone account.
-4. Discover instruments and validate symbol metadata.
-5. Subscribe to quotes and retrieve candles; implement heartbeat/reconnect.
-6. Build broker-aware risk sizing and demo-only execution adapter.
-7. Add Telegram alerts/commands with strict authorization and kill switch.
-8. Run repeatable end-to-end demo tests.
-9. Evaluate a genuinely free continuous runtime; if none is reliable, explain that 24/7 automation needs hosting and do not silently assume a free option.
-10. Only after all gates, request explicit live approval.
+2. Complete a hardened HTTPS callback server/deployment and register its exact URI after Spotware approval.
+3. Complete real OAuth exchange and verify encrypted token persistence using the approved application.
+4. Verify the existing SDK transport against a Pepperstone demo account, including application and account authentication.
+5. Discover instruments and validate symbol metadata, tick/volume precision and conversion data.
+6. Subscribe to live quotes and retrieve historical candles; implement real reconnect/recovery handling.
+7. Build broker-aware risk sizing and demo-only execution, protective-stop confirmation and position reconciliation.
+8. Add Telegram polling/alerts and operational recovery; test kill switch against the live bot process.
+9. Run repeatable end-to-end demo tests for open, modify, close, restart and failure cases.
+10. Evaluate a genuinely free continuous runtime; only after all gates, request explicit live approval.
 
 ## Official technical references
 
