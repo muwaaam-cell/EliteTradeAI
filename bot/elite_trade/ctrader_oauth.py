@@ -15,7 +15,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 AUTHORIZATION_ENDPOINT = "https://id.ctrader.com/my/settings/openapi/grantingaccess/"
-TOKEN_ENDPOINT = "https://openapi.ctrader.com/apps/token"
+TOKEN_ENDPOINT = "https://openapi.ctrader.com/apps/token"  # nosec B105: public API URL, not a secret
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,7 @@ def _token_request(
         method=method,
     )
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:  # nosec B310: request targets the fixed Spotware HTTPS endpoint
             payload: dict[str, Any] = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         raise RuntimeError(f"cTrader token endpoint returned HTTP {exc.code}.") from None
