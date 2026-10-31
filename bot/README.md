@@ -32,7 +32,7 @@ GitHub Actions runs on pushes and pull requests to `pepperstone-ctrader-bot`:
 - pip-audit dependency vulnerability scan.
 - Python wheel build and installed-package import smoke test.
 
-The coverage report is retained as a workflow artifact. No minimum coverage threshold is claimed until a measured baseline has been reviewed. Spotware's published Python SDK metadata pins old versions of Twisted, protobuf, pyOpenSSL and requests. To avoid installing those vulnerable pins, the SDK wheel is installed separately with --no-deps while the explicitly listed, updated runtime dependencies are installed from requirements.txt. CI checks the SDK imports and generated protobuf message classes, and audits the updated runtime dependency set. This compatibility override still requires a real broker integration test before production use. A green workflow means these automated checks passed for that commit; it does not certify broker connectivity or trading safety.
+The coverage report is retained as a workflow artifact. No minimum coverage threshold is claimed until a measured baseline has been reviewed. The Spotware OpenApiPy source is vendored under `ctrader_open_api/` from upstream commit `e944996e6fe9436b8b4a1b668da4ac41a826bb85`. The upstream MIT license is included in that directory. This avoids the upstream wheel's stale exact pins on vulnerable transitive dependencies. CI imports the vendored SDK and generated protobuf classes and audits the maintained runtime dependency set. This does not replace a real broker integration test. A green workflow means these automated checks passed for that commit; it does not certify broker connectivity or trading safety.
 
 ## Requirements
 
@@ -48,7 +48,6 @@ Install:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install --no-deps -r requirements-sdk.txt
 cp .env.example .env
 PYTHONPATH=. python -m unittest discover -s tests -v
 ```
@@ -67,7 +66,11 @@ The framework-neutral callback orchestration is in `elite_trade/oauth_callback.p
 
 When deploying an HTTP adapter, require HTTPS, validate the expected Host, redact callback query strings (especially `code` and `state`) from proxy/server access logs, apply request-size limits, and keep the vault key in the host's secret manager. Never expose callback query strings in application logs.
 
-## SDK transport status
+## Vendored SDK and transport status
+
+The Spotware Python SDK source is maintained locally in `ctrader_open_api/` under its upstream MIT license. Its exact upstream commit is recorded in `ctrader_open_api/UPSTREAM.md`. Runtime dependencies are maintained separately in `requirements.txt` and checked by pip-audit.
+
+
 
 `elite_trade/ctrader_transport.py` wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, access-token account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It intentionally contains no order-placement API. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
 
