@@ -26,22 +26,47 @@ class VaultTests(unittest.TestCase):
 
 
 class TelegramTests(unittest.TestCase):
-    def test_only_allowlisted_chat_can_pause(self):
-        with tempfile.TemporaryDirectory() as folder:
-            switch = KillSwitch(str(Path(folder) / "KILL_SWITCH"))
-            bot = TelegramControl(token="test-token", chat_id="123", kill_switch=switch)
-            denied = bot.handle_update({"message": {"chat": {"id": 999}, "text": "/pause"}})
-            self.assertIsNone(denied)
-            self.assertFalse(switch.is_active())
-            reply = bot.handle_update({"message": {"chat": {"id": 123}, "text": "/pause"}})
-            self.assertIn("Kill switch activated", reply)
-            self.assertTrue(switch.is_active())
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.switch = KillSwitch(str(Path(self.folder.name) / "KILL_SWITCH"))
+        self.bot = TelegramControl(token="test-token", chat_id="123", kill_switch=self.switch)
+
+    def private_update(self, *, chat_id=123, sender_id=123, text="/pause"):
+        return {"message": {
+            "chat": {"id": chat_id, "type": "private"},
+            "from": {"id": sender_id},
+            "text": text,
+        }}
+
+    def test_only_allowlisted_private_owner_can_pause(self):
+        denied = self.bot.handle_update(self.private_update(chat_id=999))
+        self.assertIsNone(denied)
+        self.assertFalse(self.switch.is_active())
+        reply = self.bot.handle_update(self.private_update())
+        self.assertIn("Kill switch activated", reply)
+        self.assertTrue(self.switch.is_active())
+
+    def test_group_is_rejected_even_when_chat_id_matches(self):
+        update = {"message": {
+            "chat": {"id": 123, "type": "group"},
+            "from": {"id": 123},
+            "text": "/pause",
+        }}
+        self.assertIsNone(self.bot.handle_update(update))
+        self.assertFalse(self.switch.is_active())
+
+    def test_other_group_member_is_rejected(self):
+        update = self.private_update(sender_id=456)
+        self.assertIsNone(self.bot.handle_update(update))
+        self.assertFalse(self.switch.is_active())
 
     def test_resume_does_not_enable_trading(self):
-        with tempfile.TemporaryDirectory() as folder:
-            switch = KillSwitch(str(Path(folder) / "KILL_SWITCH"))
-            switch.activate()
-            bot = TelegramControl(token="test-token", chat_id="123", kill_switch=switch)
-            reply = bot.handle_update({"message": {"chat": {"id": 123}, "text": "/resume"}})
-            self.assertIn("does NOT enable trading", reply)
-            self.assertFalse(switch.is_active())
+        self.switch.activate()
+        reply = self.bot.handle_update(self.private_update(text="/resume"))
+        self.assertIn("does NOT enable trading", reply)
+        self.assertFalse(self.switch.is_active())
+
+    def test_non_numeric_chat_id_is_rejected(self):
+        with self.assertRaises(ValueError):
+            TelegramControl(token="test-token", chat_id="@somechannel")
