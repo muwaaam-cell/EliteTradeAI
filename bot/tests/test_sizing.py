@@ -129,6 +129,17 @@ class CalculateVolumeTests(unittest.TestCase):
         )
         self.assertLess(with_cost, no_cost)
 
+    def test_fixed_cost_is_reserved_before_sizing(self):
+        volume = calculate_volume(
+            **self.base, fixed_cost_deposit=Decimal("2")
+        )
+        self.assertEqual(volume, 80000)
+
+    def test_fixed_cost_consuming_budget_returns_none(self):
+        self.assertIsNone(
+            calculate_volume(**self.base, fixed_cost_deposit=Decimal("10"))
+        )
+
     def test_quote_currency_must_match_metadata(self):
         args = dict(self.base, quote_currency="JPY")
         self.assertIsNone(calculate_volume(**args))
