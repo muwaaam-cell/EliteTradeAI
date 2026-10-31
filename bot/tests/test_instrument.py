@@ -29,7 +29,7 @@ class InstrumentMetadataTests(unittest.TestCase):
     def test_valid_metadata_and_price_quantum(self):
         metadata = make_meta()
         self.assertTrue(metadata.is_tradable)
-        self.assertEqual(metadata.price_increment, Decimal("0.00001"))
+        self.assertEqual(metadata.price_precision_quantum, Decimal("0.00001"))
 
     def test_cents_volume_conversion_is_explicit(self):
         metadata = make_meta()
@@ -51,9 +51,10 @@ class InstrumentMetadataTests(unittest.TestCase):
         self.assertFalse(metadata.validate_volume(100000001))
         self.assertFalse(metadata.validate_volume(Decimal("2000.5")))
 
-    def test_volume_bounds_must_align_to_step(self):
-        with self.assertRaises(ValueError):
-            make_meta(min_volume_cents=1500)
+    def test_non_aligned_minimum_still_rounds_down_without_raising_size(self):
+        metadata = make_meta(min_volume_cents=1500)
+        self.assertEqual(metadata.round_volume_down(2500), 2000)
+        self.assertIsNone(metadata.round_volume_down(1500))
 
     def test_integer_fields_reject_booleans_and_invalid_values(self):
         for field, value in (
