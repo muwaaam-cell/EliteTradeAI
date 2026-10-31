@@ -24,6 +24,35 @@ def _enum_name(enum_type: object, value: int, field: str) -> str:
         raise ValueError(f"unknown cTrader enum value for {field}") from exc
 
 
+def deposit_currency_from_ctrader(
+    trader: object,
+    assets: Iterable[object] | Mapping[int, str],
+) -> str:
+    """Resolve the authenticated trader's deposit currency from ProtoOAAsset data.
+
+    cTrader identifies the account deposit asset by ProtoOATrader.depositAssetId;
+    this helper resolves that ID without guessing a currency or using symbol quote
+    currency as a substitute.
+    """
+    _require_present(trader, "depositAssetId")
+    if isinstance(assets, Mapping):
+        asset_names = dict(assets)
+    else:
+        asset_names = {}
+        for asset in assets:
+            asset_id = asset.assetId
+            if asset_id in asset_names:
+                raise ValueError(f"duplicate cTrader asset ID: {asset_id}")
+            asset_names[asset_id] = asset.name
+    try:
+        name = asset_names[trader.depositAssetId]
+    except KeyError as exc:
+        raise ValueError("missing account deposit asset metadata") from exc
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("invalid account deposit asset name")
+    return name.strip()
+
+
 def instrument_from_ctrader(
     symbol: object,
     light_symbol: object,
