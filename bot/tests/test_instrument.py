@@ -8,88 +8,105 @@ def make_meta(**overrides) -> InstrumentMetadata:
     values = {
         "symbol": "EURUSD",
         "symbol_id": 1,
-        "tick_size": Decimal("0.00001"),
-        "volume_step": Decimal("1000"),
-        "min_volume": Decimal("1000"),
-        "max_volume": Decimal("100000000"),
-        "contract_size": Decimal("100000"),
+        "digits": 5,
+        "pip_position": 4,
+        "volume_step_cents": 1000,
+        "min_volume_cents": 1000,
+        "max_volume_cents": 100000000,
+        "base_asset_id": 1,
+        "quote_asset_id": 2,
         "base_asset": "EUR",
         "quote_asset": "USD",
-        "pip_position": 4,
-        "digits": 5,
-        "trading_mode": "FULL_ACCESS",
+        "symbol_trading_mode": "ENABLED",
+        "account_access_rights": "FULL_ACCESS",
+        "enable_short_selling": True,
     }
     values.update(overrides)
     return InstrumentMetadata(**values)
 
 
 class InstrumentMetadataTests(unittest.TestCase):
-    def test_valid_construction_and_tradable_mode(self):
+    def test_valid_metadata_and_price_quantum(self):
         metadata = make_meta()
         self.assertTrue(metadata.is_tradable)
-        self.assertEqual(metadata.round_price("1.08567"), Decimal("1.08567"))
+        self.assertEqual(metadata.price_increment, Decimal("0.00001"))
+
+    def test_cents_volume_conversion_is_explicit(self):
+        metadata = make_meta()
+        self.assertEqual(metadata.round_volume_down(2500), 2000)
+        self.assertEqual(metadata.round_volume_down(1000), 1000)
 
     def test_volume_below_minimum_returns_none(self):
-        self.assertIsNone(make_meta().round_volume_down("500"))
-
-    def test_exact_volume_step_is_valid(self):
-        metadata = make_meta()
-        self.assertEqual(metadata.round_volume_down("2000"), Decimal("2000"))
-        self.assertTrue(metadata.validate_volume("2000"))
-
-    def test_volume_between_steps_rounds_down(self):
-        self.assertEqual(make_meta().round_volume_down("2500"), Decimal("2000"))
+        self.assertIsNone(make_meta().round_volume_down(500))
 
     def test_volume_above_maximum_returns_none(self):
-        metadata = make_meta(max_volume=Decimal("5000"))
-        self.assertIsNone(metadata.round_volume_down("6000"))
+        metadata = make_meta(max_volume_cents=5000)
+        self.assertIsNone(metadata.round_volume_down(6000))
 
-    def test_invalid_volume_is_rejected(self):
+    def test_volume_alignment_and_validation(self):
         metadata = make_meta()
-        for value in ("500", "1500", "100001000", "NaN", "Infinity"):
-            self.assertFalse(metadata.validate_volume(value))
-
-    def test_boolean_integer_fields_are_rejected(self):
-        for field, value in (
-            ("symbol_id", True), ("digits", True), ("pip_position", False),
-        ):
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                make_meta(**{field: value})
-
-    def test_nan_and_infinity_are_rejected(self):
-        for field, value in (
-            ("tick_size", float("nan")),
-            ("volume_step", float("inf")),
-            ("contract_size", Decimal("-Infinity")),
-        ):
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                make_meta(**{field: value})
-
-    def test_empty_metadata_strings_are_rejected(self):
-        for field in ("symbol", "base_asset", "quote_asset", "margin_currency"):
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                make_meta(**{field: " "})
+        self.assertTrue(metadata.validate_volume(2000))
+        self.assertFalse(metadata.validate_volume(1500))
+        self.assertFalse(metadata.validate_volume(500))
+        self.assertFalse(metadata.validate_volume(100000001))
+        self.assertFalse(metadata.validate_volume(Decimal("2000.5")))
 
     def test_volume_bounds_must_align_to_step(self):
         with self.assertRaises(ValueError):
-            make_meta(min_volume=Decimal("1500"))
+            make_meta(min_volume_cents=1500)
 
-    def test_non_tradable_mode_is_not_tradable(self):
-        self.assertFalse(make_meta(trading_mode="CLOSE_ONLY").is_tradable)
+    def test_integer_fields_reject_booleans_and_invalid_values(self):
+        for field, value in (
+            ("symbol_id", True), ("digits", True), ("pip_position", False),
+            ("volume_step_cents", 0), ("base_asset_id", -1),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                make_meta(**{field: value})
 
-    def test_price_rounding_ties_to_even(self):
-        metadata = make_meta(tick_size=Decimal("0.00002"))
-        self.assertEqual(
-            metadata.round_price("1.00001"), Decimal("1.00000")
+    def test_asset_names_must_be_non_empty_strings(self):
+        for field, value in (
+            ("symbol", " "), ("base_asset", None), ("quote_asset", ""),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                make_meta(**{field: value})
+
+    def test_account_and_symbol_permissions_are_distinct(self):
+        self.assertFalse(
+            make_meta(account_access_rights="CLOSE_ONLY").is_tradable
         )
-        self.assertEqual(
-            metadata.round_price("1.00003"), Decimal("1.00004")
+        self.assertFalse(
+            make_meta(symbol_trading_mode="CLOSE_ONLY_MODE").is_tradable
         )
+        self.assertFalse(
+            make_meta(symbol_trading_mode="DISABLED_WITHOUT_PENDINGS_EXECUTION")
+            .is_tradable
+        )
+
+    def test_short_selling_permission_is_enforced_separately(self):
+        metadata = make_meta(enable_short_selling=False)
+        self.assertTrue(metadata.can_open_long)
+        self.assertFalse(metadata.can_open_short)
+
+    def test_invalid_modes_are_rejected(self):
+        with self.assertRaises(ValueError):
+            make_meta(symbol_trading_mode="LONG_ONLY")
+        with self.assertRaises(ValueError):
+            make_meta(account_access_rights="ENABLED")
+
+    def test_nan_and_infinity_swaps_are_rejected(self):
+        for value in (float("nan"), float("inf"), Decimal("-Infinity")):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                make_meta(swap_long=value)
 
     def test_directional_price_rounding(self):
-        metadata = make_meta(tick_size=Decimal("0.0001"))
+        metadata = make_meta(digits=4)
         self.assertEqual(metadata.round_price_down("1.23456"), Decimal("1.2345"))
         self.assertEqual(metadata.round_price_up("1.23451"), Decimal("1.2346"))
+
+    def test_price_rounding_ties_to_even(self):
+        metadata = make_meta(digits=4)
+        self.assertEqual(metadata.round_price("1.23445"), Decimal("1.2344"))
+        self.assertEqual(metadata.round_price("1.23455"), Decimal("1.2346"))
 
     def test_invalid_prices_raise(self):
         metadata = make_meta()
