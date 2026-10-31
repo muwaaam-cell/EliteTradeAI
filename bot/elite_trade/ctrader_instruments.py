@@ -63,12 +63,11 @@ def instrument_from_ctrader(
     except KeyError as exc:
         raise ValueError("missing base or quote asset metadata") from exc
 
-    optional_decimal = lambda field: (
-        getattr(symbol, field) if symbol.HasField(field) else None
-    )
-    optional_integer = lambda field: (
-        getattr(symbol, field) if symbol.HasField(field) else None
-    )
+    def optional_decimal(field: str):
+        return getattr(symbol, field) if symbol.HasField(field) else None
+
+    def optional_integer(field: str):
+        return getattr(symbol, field) if symbol.HasField(field) else None
 
     return InstrumentMetadata(
         symbol=light_symbol.symbolName,
