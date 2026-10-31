@@ -88,6 +88,24 @@ market/account data. The deposit-currency identifier can now be resolved from
 account metadata, but live conversion-rate discovery is not implemented.
 No broker connection, order submission, or live execution was added.
 
+## Latest security hardening (2026-10-31)
+
+- `telegram_control.py`: Telegram commands now require both the configured chat ID
+  and sender ID to match, and the chat must be a one-to-one private chat. Group and
+  supergroup commands are rejected, including messages in a group whose chat ID
+  happens to be configured. This prevents other group members from issuing bot
+  controls.
+- `test_security_and_telegram.py`: added tests for group rejection, sender mismatch
+  and non-numeric configured chat IDs.
+- `execution_policy.py`: pre-trade validation now rejects NaN/infinite quote prices,
+  timestamps, stop prices and limits; malformed side/volume values; and invalid
+  quote-age, spread and stop-distance limits. These checks fail closed before any
+  intent can pass policy.
+- `test_execution_policy.py`: added malformed/non-finite input cases.
+- Commits: `657d288`, `031ce3d`, `683fa0c`, `70fe313`.
+- GitHub Actions runs triggered by these commits are still pending at handoff time;
+  do not describe these latest changes as passing until the runs complete.
+
 ## Verified tests and automated quality gates
 
 - Latest full quality-gate run: GitHub Actions run 41182157899 completed successfully on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
