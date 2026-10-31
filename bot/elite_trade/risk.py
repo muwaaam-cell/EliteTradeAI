@@ -79,3 +79,40 @@ def calculate_risk_budget(equity: float, risk_per_trade_pct: float) -> float:
     ):
         raise ValueError("Invalid equity or risk percentage.")
     return equity * risk_per_trade_pct / 100.0
+
+
+def calculate_compounding_risk_budget(
+    settled_balance: float,
+    equity: float,
+    risk_per_trade_pct: float,
+    *,
+    max_risk_cash: float | None = None,
+) -> float:
+    """Calculate a compounding cash-risk budget with a floating-profit guard.
+
+    Uses the lower of settled balance and current equity. Realised account
+    growth can therefore increase the budget gradually, while floating profit
+    alone cannot. Floating losses reduce the budget immediately. An optional
+    absolute cash-risk ceiling provides a second, independent cap.
+
+    This returns cash risk only, not lots or order volume. The caller must
+    still pass the result through broker-aware sizing with verified instrument
+    loss factors, conversion rates, stop distance and broker volume limits.
+    """
+    if (
+        not _finite_number(settled_balance)
+        or not _finite_number(equity)
+        or settled_balance <= 0
+        or equity <= 0
+    ):
+        raise ValueError("Settled balance and equity must be finite and positive.")
+    if max_risk_cash is not None and (
+        not _finite_number(max_risk_cash) or max_risk_cash <= 0
+    ):
+        raise ValueError("Maximum cash risk must be finite and positive.")
+
+    sizing_equity = min(settled_balance, equity)
+    budget = calculate_risk_budget(sizing_equity, risk_per_trade_pct)
+    if max_risk_cash is not None:
+        budget = min(budget, max_risk_cash)
+    return budget
