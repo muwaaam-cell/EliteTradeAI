@@ -39,6 +39,7 @@ Last verified: 2026-10-31 (UTC).
 - Encrypted-at-rest token vault using a separately managed Fernet key.
 - Allow-listed Telegram control module with status, pause, resume and emergency kill commands; close-all explicitly reports unavailable until broker execution is verified.
 - SQLite-backed, expiring, one-time OAuth state store (stores only SHA-256 state digests; atomic consume prevents replay).
+- Vendored Spotware OpenApiPy source (MIT license) from upstream commit e944996e6fe9436b8b4a1b668da4ac41a826bb85, with modern runtime dependencies maintained separately.
 - Spotware OpenApiPy transport lifecycle: SDK TCP client setup, application authentication, access-token account discovery, explicit account selection, account authentication, 10-second heartbeat scheduling and shutdown. No order-placement API is exposed by this adapter.
 - Framework-neutral OAuth callback orchestration: server-side state issuance/consumption, authorization-code exchange and encrypted token-vault persistence; HTTP/TLS deployment remains separate and unverified.
 - Unit tests for OAuth callback state handling, token persistence, state replay rejection, provider denial, OAuth state expiry/replay protection, token encryption/permissions, Telegram chat authorization and refresh HTTP method.
