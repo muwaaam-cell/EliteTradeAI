@@ -17,7 +17,7 @@ Last verified: 2026-10-31 (UTC).
 - Repository: https://github.com/muwaaam-cell/EliteTradeAI
 - Working branch: pepperstone-ctrader-bot
 - Legacy default branch: main (old Android prototype; do not overwrite or present it as the bot).
-- Branch comparison before this handoff update: 69 commits ahead of main, 0 behind (main preserved).
+- Branch comparison immediately before this handoff refresh: 71 commits ahead of main, 0 behind (main preserved).
 - Working bot source: https://github.com/muwaaam-cell/EliteTradeAI/tree/pepperstone-ctrader-bot/bot
 
 ## Spotware application
@@ -49,9 +49,9 @@ Last verified: 2026-10-31 (UTC).
 
 ## Verified tests and automated quality gates
 
-- Latest full quality-gate run: GitHub Actions run 41177110319 completed successfully on commit 12699d10eff2d440635dc94caec75af1f8bc738f.
-- Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41177110319
-- All four jobs passed: 33 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, and Python wheel build/import verification.
+- Latest full quality-gate run: GitHub Actions run 41177210308 completed successfully on commit 40251b90c8b51f5bcc4dda17383484c1b6d3c7e9.
+- Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41177210308
+- All four jobs passed: 33 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
 - Measured total test coverage: 69% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
