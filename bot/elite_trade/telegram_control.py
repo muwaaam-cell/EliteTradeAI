@@ -1,4 +1,4 @@
-"""Minimal allow-listed Telegram control channel; no trade execution is exposed."""
+"""Minimal private-chat Telegram control; no trade execution is exposed."""
 from __future__ import annotations
 
 import json
@@ -19,6 +19,8 @@ class TelegramControl:
         self.chat_id = (chat_id if chat_id is not None else os.getenv("TELEGRAM_CHAT_ID", "")).strip()
         if not self.token or not self.chat_id:
             raise ValueError("Telegram bot token and authorised chat ID are required.")
+        if not self.chat_id.lstrip("-").isdigit():
+            raise ValueError("Telegram authorised chat ID must be a numeric ID.")
         self.kill_switch = kill_switch or KillSwitch()
         self.offset = 0
 
@@ -27,7 +29,7 @@ class TelegramControl:
         data = urlencode(params).encode("utf-8")
         request = Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
         try:
-            with urlopen(request, timeout=20) as response:  # nosec B310: request targets the fixed Telegram HTTPS API host
+            with urlopen(request, timeout=20) as response:  # nosec B310: fixed Telegram HTTPS API host
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception:
             raise RuntimeError("Telegram request failed; check connectivity and bot configuration.") from None
@@ -40,8 +42,13 @@ class TelegramControl:
 
     def handle_update(self, update: dict) -> str | None:
         message = update.get("message") or update.get("edited_message") or {}
-        sender_chat = message.get("chat") or {}
-        if str(sender_chat.get("id", "")) != self.chat_id:
+        chat = message.get("chat") or {}
+        sender = message.get("from") or {}
+        # Only the owner's one-to-one private chat is trusted. Group/supergroup
+        # messages are rejected even if the bot was added to the authorised group.
+        if chat.get("type") != "private":
+            return None
+        if str(chat.get("id", "")) != self.chat_id or str(sender.get("id", "")) != self.chat_id:
             return None
         text = str(message.get("text", "")).strip().split()
         if not text:
