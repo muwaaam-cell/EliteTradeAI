@@ -71,11 +71,15 @@ def validate_callback_state(expected_state: str, received_state: str) -> bool:
     )
 
 
-def _token_request(params: dict[str, str], timeout: float = 15.0) -> OAuthTokens:
+def _token_request(
+    params: dict[str, str], *, method: str = "GET", timeout: float = 15.0
+) -> OAuthTokens:
+    if method not in {"GET", "POST"}:
+        raise ValueError("Unsupported cTrader token request method.")
     request = Request(
         f"{TOKEN_ENDPOINT}?{urlencode(params)}",
         headers={"Accept": "application/json"},
-        method="GET",
+        method=method,
     )
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -88,7 +92,9 @@ def _token_request(params: dict[str, str], timeout: float = 15.0) -> OAuthTokens
         raise RuntimeError("cTrader token response could not be read.") from None
 
     if payload.get("errorCode"):
-        raise RuntimeError(f"cTrader OAuth failed: {payload['errorCode']}")
+        # Do not expose provider descriptions or response bodies in logs.
+        error_code = str(payload["errorCode"])[:80]
+        raise RuntimeError(f"cTrader OAuth failed: {error_code}")
     access = payload.get("accessToken")
     refresh = payload.get("refreshToken")
     if not access or not refresh:
@@ -122,9 +128,11 @@ def refresh_access_token(
 ) -> OAuthTokens:
     if not all(value.strip() for value in (refresh_token, client_id, client_secret)):
         raise ValueError("Refresh token and application credentials are required.")
+    # Spotware documents refresh-token exchange as POST; authorization-code
+    # exchange remains GET. See the official account-authentication guide.
     return _token_request({
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "client_id": client_id,
         "client_secret": client_secret,
-    })
+    }, method="POST")
