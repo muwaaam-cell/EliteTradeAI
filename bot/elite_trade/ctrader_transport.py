@@ -44,6 +44,7 @@ class CTraderSdkTransport:
         on_accounts: Callable[[tuple[TradingAccount, ...]], None] | None = None,
         on_state: Callable[[ConnectionState], None] | None = None,
         on_error: Callable[[str], None] | None = None,
+        on_spot: Callable[[object], None] | None = None,
         sdk=None,
         reactor=None,
         client_factory=None,
@@ -62,6 +63,7 @@ class CTraderSdkTransport:
         self.on_accounts = on_accounts or (lambda accounts: None)
         self.on_state = on_state or (lambda state: None)
         self.on_error = on_error or (lambda message: None)
+        self.on_spot = on_spot or (lambda event: None)
         self._sdk = sdk
         self._reactor = reactor
         self._client_factory = client_factory
@@ -82,6 +84,9 @@ class CTraderSdkTransport:
                 ProtoOAApplicationAuthRes,
                 ProtoOAGetAccountListByAccessTokenReq,
                 ProtoOAGetAccountListByAccessTokenRes,
+                ProtoOASubscribeSpotsReq,
+                ProtoOASpotEvent,
+                ProtoOAErrorRes,
             )
             self._sdk = {
                 "Client": Client,
@@ -95,6 +100,9 @@ class CTraderSdkTransport:
                 "ProtoOAApplicationAuthRes": ProtoOAApplicationAuthRes,
                 "ProtoOAGetAccountListByAccessTokenReq": ProtoOAGetAccountListByAccessTokenReq,
                 "ProtoOAGetAccountListByAccessTokenRes": ProtoOAGetAccountListByAccessTokenRes,
+                "ProtoOASubscribeSpotsReq": ProtoOASubscribeSpotsReq,
+                "ProtoOASpotEvent": ProtoOASpotEvent,
+                "ProtoOAErrorRes": ProtoOAErrorRes,
             }
         if self._reactor is None:
             from twisted.internet import reactor
@@ -175,6 +183,16 @@ class CTraderSdkTransport:
                 self.on_accounts(accounts)
                 if self.requested_account_id is not None:
                     self.select_account(self.requested_account_id)
+            elif payload_type == self._sdk["ProtoOASpotEvent"]().payloadType:
+                event = extract(message)
+                if int(event.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received market data for an unexpected cTrader account.")
+                    return
+                self.on_spot(event)
+            elif payload_type == self._sdk["ProtoOAErrorRes"]().payloadType:
+                error = extract(message)
+                code = str(getattr(error, "errorCode", "unknown"))
+                self._fail(f"cTrader rejected a request ({code}); authentication/data flow stopped.")
             elif payload_type == self._sdk["ProtoOAAccountAuthRes"]().payloadType:
                 response = extract(message)
                 account_id = int(response.ctidTraderAccountId)
@@ -185,6 +203,21 @@ class CTraderSdkTransport:
                 self._set_state(ConnectionState.AUTHENTICATED)
         except Exception:
             self._fail("Unexpected cTrader protocol response; authentication stopped.")
+
+    def subscribe_spots(self, symbol_ids: tuple[int, ...] | list[int]) -> None:
+        """Subscribe to quotes only after the selected account is authenticated."""
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Market-data subscription requires an authenticated account.")
+        if not symbol_ids:
+            raise ValueError("At least one symbol ID is required.")
+        normalized = tuple(int(value) for value in symbol_ids)
+        if any(value <= 0 for value in normalized) or len(set(normalized)) != len(normalized):
+            raise ValueError("Symbol IDs must be unique positive integers.")
+        request = self._sdk["ProtoOASubscribeSpotsReq"]()
+        request.ctidTraderAccountId = self.authenticated_account_id
+        request.symbolId.extend(normalized)
+        request.subscribeToSpotTimestamp = True
+        self._send(request)
 
     def select_account(self, account_id: int) -> None:
         if self.state != ConnectionState.AWAITING_ACCOUNT_SELECTION:
