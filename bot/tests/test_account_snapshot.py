@@ -112,6 +112,17 @@ class CTraderAccountSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate_snapshot_risk_budget(snapshot, "0.5", max_risk_cash="0")
 
+
+    def test_snapshot_risk_budget_rejects_unvalidated_object(self):
+        with self.assertRaisesRegex(ValueError, "validated cTrader"):
+            calculate_snapshot_risk_budget(
+                type("FakeSnapshot", (), {
+                    "settled_balance": Decimal("100"),
+                    "equity": Decimal("100"),
+                })(),
+                "0.5",
+            )
+
     def test_rejects_nonpositive_equity(self):
         self.pnl.positionUnrealizedPnL[0].netUnrealizedPnL = -200000
         self.pnl.positionUnrealizedPnL[1].netUnrealizedPnL = -100000
