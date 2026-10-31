@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from math import isfinite
 
+from elite_trade.account_snapshot import AccountRiskSnapshot
+
 
 @dataclass(frozen=True)
 class RiskSnapshot:
@@ -121,7 +123,7 @@ def calculate_compounding_risk_budget(
 
 
 def calculate_snapshot_risk_budget(
-    account_snapshot: object,
+    account_snapshot: AccountRiskSnapshot,
     risk_per_trade_pct: Decimal | str | int,
     *,
     max_risk_cash: Decimal | str | int | None = None,
@@ -132,6 +134,8 @@ def calculate_snapshot_risk_budget(
     monetary values through binary floats. It still does not calculate volume
     or place orders; the caller must pass this budget to broker-aware sizing.
     """
+    if not isinstance(account_snapshot, AccountRiskSnapshot):
+        raise ValueError("A validated cTrader account snapshot is required.")
     try:
         settled = Decimal(account_snapshot.settled_balance)
         equity = Decimal(account_snapshot.equity)
