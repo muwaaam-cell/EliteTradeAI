@@ -70,6 +70,7 @@ class CTraderSdkTransport:
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
         self._pending_trader = None
         self._pending_pnl = None
+        self._snapshot_in_flight = False
         self._sdk = sdk
         self._reactor = reactor
         self._client_factory = client_factory
@@ -236,10 +237,11 @@ class CTraderSdkTransport:
         """Request broker balance and all open-position net PnL for the authenticated account."""
         if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
             raise RuntimeError("Account snapshot requires an authenticated account.")
-        if self._pending_trader is not None or self._pending_pnl is not None:
+        if self._snapshot_in_flight:
             raise RuntimeError("An account snapshot request is already in progress.")
         self._pending_trader = None
         self._pending_pnl = None
+        self._snapshot_in_flight = True
         trader_request = self._sdk["ProtoOATraderReq"]()
         trader_request.ctidTraderAccountId = self.authenticated_account_id
         pnl_request = self._sdk["ProtoOAGetPositionUnrealizedPnLReq"]()
@@ -253,6 +255,7 @@ class CTraderSdkTransport:
         trader, pnl = self._pending_trader, self._pending_pnl
         self._pending_trader = None
         self._pending_pnl = None
+        self._snapshot_in_flight = False
         try:
             snapshot = account_snapshot_from_ctrader(trader, pnl)
         except (TypeError, ValueError):
@@ -298,6 +301,7 @@ class CTraderSdkTransport:
         self.authenticated_account_id = None
         self._pending_trader = None
         self._pending_pnl = None
+        self._snapshot_in_flight = False
         self._set_state(ConnectionState.DISCONNECTED)
 
     def _cancel_heartbeat(self) -> None:
@@ -311,12 +315,16 @@ class CTraderSdkTransport:
         self.authenticated_account_id = None
         self._pending_trader = None
         self._pending_pnl = None
+        self._snapshot_in_flight = False
         self._set_state(ConnectionState.ERROR)
         self.on_error(message)
 
     def stop(self) -> None:
         self._cancel_heartbeat()
         self.authenticated_account_id = None
+        self._pending_trader = None
+        self._pending_pnl = None
+        self._snapshot_in_flight = False
         if self._client is not None:
             self._client.stopService()
         self._set_state(ConnectionState.DISCONNECTED)
