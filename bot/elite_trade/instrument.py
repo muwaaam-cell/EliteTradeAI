@@ -5,7 +5,13 @@ account access rights are distinct protocol enums and are validated separately.
 Asset names/IDs must be joined from authenticated symbol and asset responses.
 """
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_DOWN, ROUND_HALF_EVEN
+from decimal import (
+    Decimal,
+    InvalidOperation,
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_HALF_EVEN,
+)
 from typing import Optional
 
 
@@ -66,14 +72,10 @@ class InstrumentMetadata:
     max_exposure_cents: Optional[int] = None
 
     def __post_init__(self) -> None:
-        for name in (
-            "symbol", "base_asset", "quote_asset",
-        ):
+        for name in ("symbol", "base_asset", "quote_asset"):
             object.__setattr__(self, name, _non_empty_str(getattr(self, name), name))
 
-        for name in (
-            "symbol_id", "base_asset_id", "quote_asset_id",
-        ):
+        for name in ("symbol_id", "base_asset_id", "quote_asset_id"):
             object.__setattr__(
                 self, name, _integer(getattr(self, name), name, minimum=1)
             )
@@ -88,14 +90,16 @@ class InstrumentMetadata:
 
         if self.min_volume_cents > self.max_volume_cents:
             raise ValueError("invalid volume bounds")
-                if self.lot_size_cents is not None:
+        if self.lot_size_cents is not None:
             object.__setattr__(
-                self, "lot_size_cents",
+                self,
+                "lot_size_cents",
                 _integer(self.lot_size_cents, "lot_size_cents", minimum=1),
             )
         if self.max_exposure_cents is not None:
             object.__setattr__(
-                self, "max_exposure_cents",
+                self,
+                "max_exposure_cents",
                 _integer(self.max_exposure_cents, "max_exposure_cents", minimum=1),
             )
         for name in ("swap_long", "swap_short"):
@@ -123,6 +127,15 @@ class InstrumentMetadata:
     def price_precision_quantum(self) -> Decimal:
         """Display precision quantum derived from ProtoOASymbol.digits."""
         return Decimal(1).scaleb(-self.digits)
+
+    @property
+    def price_increment(self) -> Decimal:
+        """Smallest representable price increment from the symbol's digits.
+
+        cTrader's protocol metadata exposes price precision through digits;
+        this is not an independently verified exchange tick-size guarantee.
+        """
+        return self.price_precision_quantum
 
     @property
     def is_tradable(self) -> bool:
