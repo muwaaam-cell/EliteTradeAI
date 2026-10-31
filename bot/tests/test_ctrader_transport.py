@@ -116,6 +116,8 @@ class CTraderTransportTests(unittest.TestCase):
         transport.authenticated_account_id = 77
 
         transport.request_account_snapshot()
+        with self.assertRaises(RuntimeError):
+            transport.request_account_snapshot()
         self.assertEqual(len(client.sent), 2)
         self.assertEqual(client.sent[-2].ctidTraderAccountId, 77)
         self.assertEqual(client.sent[-1].ctidTraderAccountId, 77)
@@ -133,6 +135,7 @@ class CTraderTransportTests(unittest.TestCase):
         client.received(client, SimpleNamespace(payloadType=14, body=pnl))
         self.assertEqual(len(received), 1)
         self.assertEqual(str(received[0].equity), "100")
+        self.assertFalse(transport._snapshot_in_flight)
 
     def test_account_snapshot_rejects_wrong_account_response(self):
         errors = []
