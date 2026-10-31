@@ -77,8 +77,8 @@ class CalculateVolumeTests(unittest.TestCase):
     def test_fresh_conversion_is_used(self):
         args = dict(
             self.base,
-            quote_currency="EUR",
-            deposit_currency="USD",
+            quote_currency="USD",
+            deposit_currency="EUR",
             quote_to_deposit_rate=Decimal("1.2"),
             conversion_observed_at_epoch=Decimal("18"),
             now_epoch=Decimal("20"),
@@ -89,15 +89,15 @@ class CalculateVolumeTests(unittest.TestCase):
     def test_future_conversion_timestamp_returns_none(self):
         args = dict(
             self.base,
-            quote_currency="EUR",
-            deposit_currency="USD",
+            quote_currency="USD",
+            deposit_currency="EUR",
             conversion_observed_at_epoch=Decimal("21"),
             now_epoch=Decimal("20"),
         )
         self.assertIsNone(calculate_volume(**args))
 
     def test_missing_conversion_timestamp_returns_none(self):
-        args = dict(self.base, quote_currency="EUR", deposit_currency="USD")
+        args = dict(self.base, quote_currency="USD", deposit_currency="EUR")
         self.assertIsNone(calculate_volume(**args))
 
     def test_currency_mismatch_with_metadata_returns_none(self):
