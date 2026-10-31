@@ -1,6 +1,6 @@
 """Configuration and fail-closed execution permissions."""
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 def _bool(name: str, default: bool = False) -> bool:
