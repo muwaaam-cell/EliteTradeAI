@@ -32,7 +32,20 @@ GitHub Actions runs on pushes and pull requests to `pepperstone-ctrader-bot`:
 - pip-audit dependency vulnerability scan.
 - Python wheel build and installed-package import smoke test.
 
-The latest full quality-gate run (41177210308) passed all four jobs: 33 unit tests, Ruff, Bandit, pip-audit, pip dependency-consistency checks, and wheel build/import. The measured total coverage is 69%; the report is retained as a workflow artifact. No minimum coverage threshold is claimed yet. The Spotware OpenApiPy source is vendored under `ctrader_open_api/` from upstream commit `e944996e6fe9436b8b4a1b668da4ac41a826bb85`. The upstream MIT license is included in that directory. This avoids the upstream wheel's stale exact pins on vulnerable transitive dependencies. CI imports the vendored SDK and generated protobuf classes and audits the maintained runtime dependency set. This does not replace a real broker integration test. A green workflow means these automated checks passed for that commit; it does not certify broker connectivity or trading safety.
+
+A full quality-gate run on 2026-10-31, GitHub Actions run #128
+(commit `c0638e9ec363c5ee2742397c9b2fe2b0d3901d15`), passed all four jobs:
+120 unit tests, 79% measured total coverage, Ruff lint, Bandit source scan,
+pip-audit dependency vulnerability audit, dependency-consistency checks, and
+wheel build/import smoke tests. pip-audit reported no known vulnerabilities.
+The report is retained as a workflow artifact; no minimum coverage threshold is
+claimed. See `bot/PROJECT_STATUS.md` for the full history and remaining
+integration gates. The Spotware OpenApiPy source is vendored under
+`ctrader_open_api/` from upstream commit
+`e944996e6fe9436b8b4a1b668da4ac41a826bb85`, with its MIT license included.
+The CI checks demonstrate code/package quality only. They do not prove broker
+connectivity, Pepperstone account authentication, real market data, demo order
+execution or live trading.
 
 ## Requirements
 
