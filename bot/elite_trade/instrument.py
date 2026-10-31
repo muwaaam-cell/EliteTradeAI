@@ -58,6 +58,7 @@ class InstrumentMetadata:
     quote_asset: str
     symbol_trading_mode: str
     account_access_rights: str
+    catalog_enabled: bool
     enable_short_selling: bool
     lot_size_cents: Optional[int] = None
     swap_long: Optional[Decimal] = None
@@ -102,6 +103,8 @@ class InstrumentMetadata:
             if value is not None:
                 object.__setattr__(self, name, _to_decimal(value))
 
+        if not isinstance(self.catalog_enabled, bool):
+            raise ValueError("catalog_enabled must be boolean")
         if not isinstance(self.enable_short_selling, bool):
             raise ValueError("enable_short_selling must be boolean")
         if not isinstance(self.symbol_trading_mode, str) or self.symbol_trading_mode not in {
@@ -124,7 +127,8 @@ class InstrumentMetadata:
     @property
     def is_tradable(self) -> bool:
         return (
-            self.symbol_trading_mode == "ENABLED"
+            self.catalog_enabled
+            and self.symbol_trading_mode == "ENABLED"
             and self.account_access_rights == "FULL_ACCESS"
         )
 
