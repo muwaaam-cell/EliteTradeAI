@@ -74,7 +74,7 @@ Spotware's current Open API model definitions:
   cent, quote-to-deposit conversion rate, conversion freshness, per-volume cost
   reserves and a fixed-cost reserve for minimum fees.
   It caps at broker maximum, rounds down, and rejects a result below broker minimum.
-- `bot/elite_trade/risk.py`: includes `calculate_compounding_risk_budget`, which sizes from `min(settled_balance, equity)`, validates a 0–1% risk input and supports an absolute cash cap. It returns cash risk only, not volume. Tests cover account growth, floating profit/loss, invalid values and caps. The helper is not yet connected to live broker account data or the volume-sizing call path.
+- `bot/elite_trade/risk.py`: includes `calculate_compounding_risk_budget` and `calculate_snapshot_risk_budget`. The latter accepts only a validated `AccountRiskSnapshot`, calculates the budget using exact Decimal arithmetic from `min(settled_balance, equity)`, validates a 0–1% risk input and supports an absolute cash cap. It returns cash risk only, not volume. Tests cover account growth, floating profit/loss, invalid values, caps and rejection of unvalidated objects. It is now a tested pure-code bridge from the account snapshot model to the sizing budget; runtime strategy orchestration still needs to call it with fresh broker data.
 - `bot/elite_trade/risk.py`: rejects non-finite equity/P&L, invalid position counters,
   and invalid or unset risk limits before permitting a trade intent. Cash risk budget
   calculation also rejects non-finite inputs.
@@ -121,10 +121,11 @@ No broker connection, order submission, or live execution was added.
   non-positive equity and non-zero bonus fields until bonus accounting is fully
   verified. Equity is computed as balance plus broker-reported net unrealized P&L
   only when no bonus component is present.
-- Eight unit tests cover normal conversion, empty positions and fail-closed cases;
+- Eight mapper tests cover normal conversion, empty positions and fail-closed cases;
   transport tests cover paired requests, response account matching and snapshot
-  delivery. The resulting snapshot is not yet wired into adaptive risk sizing.
-  No real broker account values have been received or verified.
+  delivery. `calculate_snapshot_risk_budget` now consumes the validated snapshot
+  with exact Decimal arithmetic. No real broker account values have been received
+  or verified, and no live strategy loop invokes this pipeline yet.
 - Spotware references: https://help.ctrader.com/open-api/profit-loss-calculation/
   and https://help.ctrader.com/open-api/model-messages/.
 
@@ -133,9 +134,10 @@ No broker connection, order submission, or live execution was added.
 - Earlier full quality-gate run: GitHub Actions run 41182157899 passed on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
 - Previous security-hardening quality run: GitHub Actions run 41182510209 passed on commit 70fe3135987505151c3c7d9cde60037de68c599e.
 - Previous full quality-gate run: GitHub Actions run 41183925932 passed on commit 091e94a4d2868f5f852d724fe89bb751dd139447 (112 tests, 78% coverage).
-- Latest full quality-gate run: GitHub Actions run 41184007147 passed on commit 629be83aca5cc55a8326898ff83c9c6764658f23.
-- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41184007147
-- All four jobs passed: 115 Python unit tests, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
+- Previous full quality-gate run: GitHub Actions run 41184007147 passed on commit 629be83aca5cc55a8326898ff83c9c6764658f23 (115 tests, 78% coverage).
+- Latest full quality-gate run: GitHub Actions run 41184176213 passed on commit d16f98211fa43b5d3d199e2a3617d50ad451e778.
+- Latest run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41184176213
+- All four jobs passed: 120 Python unit tests, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
 - Measured total test coverage: 78% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
@@ -185,7 +187,7 @@ No broker connection, order submission, or live execution was added.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
 - Live/historical market-data subscription has an initial implementation and unit tests; real broker data has not been received. Historical candle request orchestration, multi-timeframe aggregation, subscription lifecycle and robust reconnect/recovery remain incomplete.
 - Complete strategy validation/backtesting/out-of-sample analysis.
-- Wiring the new account snapshot into the adaptive risk budget and broker-aware volume-sizing call path.
+- Wiring the snapshot-to-budget-to-volume pipeline into the live strategy runtime with freshness enforcement and verified conversion/P&L factors.
 - Correct broker-aware position sizing.
 - Order placement, modification, cancellation, position reconciliation and protective stop verification.
 - Telegram control module exists and is unit-tested; deployment, long-running polling, alert routing and operational recovery are not verified.
