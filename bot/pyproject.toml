@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "ctrader-open-api",
   "python-dotenv",
+  "cryptography>=42.0.0",
 ]
 
 [tool.ruff]
