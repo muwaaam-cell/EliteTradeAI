@@ -27,7 +27,7 @@ class TelegramControl:
         data = urlencode(params).encode("utf-8")
         request = Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
         try:
-            with urlopen(request, timeout=20) as response:
+            with urlopen(request, timeout=20) as response:  # nosec B310: request targets the fixed Telegram HTTPS API host
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception:
             raise RuntimeError("Telegram request failed; check connectivity and bot configuration.") from None
