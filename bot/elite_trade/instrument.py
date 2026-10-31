@@ -87,11 +87,7 @@ class InstrumentMetadata:
 
         if self.min_volume_cents > self.max_volume_cents:
             raise ValueError("invalid volume bounds")
-        if self.min_volume_cents % self.volume_step_cents:
-            raise ValueError("min_volume_cents must align to volume_step_cents")
-        if self.max_volume_cents % self.volume_step_cents:
-            raise ValueError("max_volume_cents must align to volume_step_cents")
-        if self.lot_size_cents is not None:
+                if self.lot_size_cents is not None:
             object.__setattr__(
                 self, "lot_size_cents",
                 _integer(self.lot_size_cents, "lot_size_cents", minimum=1),
@@ -108,21 +104,21 @@ class InstrumentMetadata:
 
         if not isinstance(self.enable_short_selling, bool):
             raise ValueError("enable_short_selling must be boolean")
-        if self.symbol_trading_mode not in {
+        if not isinstance(self.symbol_trading_mode, str) or self.symbol_trading_mode not in {
             "ENABLED",
             "DISABLED_WITHOUT_PENDINGS_EXECUTION",
             "DISABLED_WITH_PENDINGS_EXECUTION",
             "CLOSE_ONLY_MODE",
         }:
             raise ValueError("unsupported cTrader symbol trading mode")
-        if self.account_access_rights not in {
+        if not isinstance(self.account_access_rights, str) or self.account_access_rights not in {
             "FULL_ACCESS", "CLOSE_ONLY", "NO_TRADING", "NO_LOGIN",
         }:
             raise ValueError("unsupported cTrader account access rights")
 
     @property
-    def price_increment(self) -> Decimal:
-        """Display-price quantum derived from ProtoOASymbol.digits."""
+    def price_precision_quantum(self) -> Decimal:
+        """Display precision quantum derived from ProtoOASymbol.digits."""
         return Decimal(1).scaleb(-self.digits)
 
     @property
@@ -144,7 +140,7 @@ class InstrumentMetadata:
         value = _to_decimal(price)
         if value <= 0:
             raise ValueError("price must be positive")
-        return value.quantize(self.price_increment, rounding=ROUND_HALF_EVEN)
+        return value.quantize(self.price_precision_quantum, rounding=ROUND_HALF_EVEN)
 
     def round_price_down(self, price: Decimal | float | str) -> Decimal:
         value = _to_decimal(price)
