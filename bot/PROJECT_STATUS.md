@@ -17,7 +17,7 @@ Last verified: 2026-10-31 (UTC).
 - Repository: https://github.com/muwaaam-cell/EliteTradeAI
 - Working branch: pepperstone-ctrader-bot
 - Legacy default branch: main (old Android prototype; do not overwrite or present it as the bot).
-- Branch comparison last checked: 19 commits ahead of main, 0 behind.
+- Branch comparison last checked: 20 commits ahead of main, 0 behind.
 - Working bot source: https://github.com/muwaaam-cell/EliteTradeAI/tree/pepperstone-ctrader-bot/bot
 
 ## Spotware application
@@ -35,20 +35,23 @@ Last verified: 2026-10-31 (UTC).
 - Broker-independent risk checks and cash risk-budget helper (not lot sizing).
 - Fail-closed order-intent policy: stale quote, spread, volume, stop direction/distance, broker connection, symbol verification and explicit approval checks.
 - Persistent local kill-switch flag.
-- cTrader OAuth URL builder, cryptographically random state, callback state comparison, authorization-code exchange and refresh-token helper.
+- cTrader OAuth URL builder, cryptographically random state, callback state comparison, authorization-code exchange and refresh-token helper; refresh now uses the documented POST method.
+- Encrypted-at-rest token vault using a separately managed Fernet key.
+- Allow-listed Telegram control module with status, pause, resume and emergency kill commands; close-all explicitly reports unavailable until broker execution is verified.
+- Unit tests for token encryption/permissions, Telegram chat authorization and refresh HTTP method.
 - Tests for strategy, risk, kill switch, execution policy and OAuth helper.
 - GitHub Actions workflow to install dependencies and run unit tests.
 - Documentation of cTrader OAuth and integration requirements.
 
 ## Verified tests
 
-- GitHub Actions run 41147537399 completed successfully on commit 9f780a6f93f056748d3a717a57a3dd4d9d50726a.
+- GitHub Actions run 41147574591 completed successfully on commit e2979c408028d26300518a6259f7bba3d1519d43. This run predates the current OAuth, vault and Telegram changes; a new run is required.
 - Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41147537399
 - This proves only that dependency installation and unit tests passed. OAuth tests mock the token endpoint; they do not prove a live Spotware connection.
 
 ## Not implemented / not verified
 
-- Real HTTPS OAuth callback service and encrypted token storage.
+- Real HTTPS OAuth callback service and durable one-time OAuth state handling. Encrypted token vault module exists, but runtime key provisioning and integration are not deployed.
 - cTrader Python SDK transport lifecycle, application authorization, account list retrieval and account authorization.
 - Pepperstone account connection.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
@@ -56,7 +59,7 @@ Last verified: 2026-10-31 (UTC).
 - Complete strategy validation/backtesting/out-of-sample analysis.
 - Correct broker-aware position sizing.
 - Order placement, modification, cancellation, position reconciliation and protective stop verification.
-- Telegram command/alert integration.
+- Telegram control module exists and is unit-tested; deployment, long-running polling, alert routing and operational recovery are not verified.
 - Continuous hosting and uptime.
 - End-to-end demo execution; any live execution.
 
@@ -75,7 +78,7 @@ Last verified: 2026-10-31 (UTC).
 
 ## Next engineering sequence
 
-1. Build secure HTTPS callback endpoint and encrypted token persistence.
+1. Build secure HTTPS callback endpoint and one-time state persistence; connect the encrypted token vault to the callback.
 2. Implement Spotware official Python SDK adapter and account-auth handshake.
 3. Verify connection using a demo Pepperstone account.
 4. Discover instruments and validate symbol metadata.
