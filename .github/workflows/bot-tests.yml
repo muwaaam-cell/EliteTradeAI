@@ -27,9 +27,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --no-deps -r requirements-sdk.txt
           pip install -r requirements.txt coverage
-          python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq; ProtoOAApplicationAuthReq(); print('Spotware SDK import: OK')"
+          python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq; ProtoOAApplicationAuthReq(); print('Vendored Spotware SDK import: OK')"
       - name: Run unit tests with coverage
         run: |
           PYTHONPATH=. coverage run --branch --source=elite_trade -m unittest discover -s tests -v
@@ -98,11 +97,13 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: bot/requirements.txt
-      - name: Install build tools
-        run: python -m pip install --upgrade pip build
+      - name: Install build tools and runtime dependencies
+        run: |
+          python -m pip install --upgrade pip build
+          pip install -r requirements.txt
       - name: Build wheel
         run: python -m build --wheel
       - name: Install wheel and smoke-test package import
         run: |
           python -m pip install --no-deps dist/*.whl
-          python -c "import elite_trade; print('EliteTrade AI package import: OK')"
+          python -c "import elite_trade; print('EliteTrade AI and cTrader SDK package imports: OK')"
