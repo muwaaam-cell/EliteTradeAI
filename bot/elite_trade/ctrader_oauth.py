@@ -41,7 +41,7 @@ def _validate_redirect_uri(redirect_uri: str) -> None:
 
 
 def create_authorization_request(
-    *, client_id: str, redirect_uri: str, scope: str = "trading"
+    *, client_id: str, redirect_uri: str, scope: str = "trading", state: str | None = None
 ) -> OAuthStart:
     """Create a consent URL and unpredictable state value.
 
@@ -53,7 +53,9 @@ def create_authorization_request(
     if scope not in {"accounts", "trading"}:
         raise ValueError("Scope must be 'accounts' or 'trading'.")
     _validate_redirect_uri(redirect_uri)
-    state = secrets.token_urlsafe(32)
+    state = state or secrets.token_urlsafe(32)
+    if not state.strip() or len(state) > 256:
+        raise ValueError("OAuth state must contain between 1 and 256 characters.")
     query = urlencode({
         "client_id": client_id.strip(),
         "redirect_uri": redirect_uri,
