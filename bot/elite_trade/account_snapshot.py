@@ -1,7 +1,7 @@
 """Fail-closed account balance/equity snapshot mapping for cTrader."""
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 
 @dataclass(frozen=True)
