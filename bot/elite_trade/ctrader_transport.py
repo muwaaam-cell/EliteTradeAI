@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
+from elite_trade.account_snapshot import account_snapshot_from_ctrader
+
 
 class ConnectionState(str, Enum):
     DISCONNECTED = "disconnected"
@@ -45,6 +47,7 @@ class CTraderSdkTransport:
         on_state: Callable[[ConnectionState], None] | None = None,
         on_error: Callable[[str], None] | None = None,
         on_spot: Callable[[object], None] | None = None,
+        on_account_snapshot: Callable[[object], None] | None = None,
         sdk=None,
         reactor=None,
         client_factory=None,
@@ -64,6 +67,9 @@ class CTraderSdkTransport:
         self.on_state = on_state or (lambda state: None)
         self.on_error = on_error or (lambda message: None)
         self.on_spot = on_spot or (lambda event: None)
+        self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
+        self._pending_trader = None
+        self._pending_pnl = None
         self._sdk = sdk
         self._reactor = reactor
         self._client_factory = client_factory
@@ -87,6 +93,10 @@ class CTraderSdkTransport:
                 ProtoOASubscribeSpotsReq,
                 ProtoOASpotEvent,
                 ProtoOAErrorRes,
+                ProtoOATraderReq,
+                ProtoOATraderRes,
+                ProtoOAGetPositionUnrealizedPnLReq,
+                ProtoOAGetPositionUnrealizedPnLRes,
             )
             self._sdk = {
                 "Client": Client,
@@ -103,6 +113,10 @@ class CTraderSdkTransport:
                 "ProtoOASubscribeSpotsReq": ProtoOASubscribeSpotsReq,
                 "ProtoOASpotEvent": ProtoOASpotEvent,
                 "ProtoOAErrorRes": ProtoOAErrorRes,
+                "ProtoOATraderReq": ProtoOATraderReq,
+                "ProtoOATraderRes": ProtoOATraderRes,
+                "ProtoOAGetPositionUnrealizedPnLReq": ProtoOAGetPositionUnrealizedPnLReq,
+                "ProtoOAGetPositionUnrealizedPnLRes": ProtoOAGetPositionUnrealizedPnLRes,
             }
         if self._reactor is None:
             from twisted.internet import reactor
@@ -183,6 +197,20 @@ class CTraderSdkTransport:
                 self.on_accounts(accounts)
                 if self.requested_account_id is not None:
                     self.select_account(self.requested_account_id)
+            elif payload_type == self._sdk["ProtoOATraderRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received account balance for an unexpected cTrader account.")
+                    return
+                self._pending_trader = response.trader
+                self._complete_account_snapshot_if_ready()
+            elif payload_type == self._sdk["ProtoOAGetPositionUnrealizedPnLRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received account PnL for an unexpected cTrader account.")
+                    return
+                self._pending_pnl = response
+                self._complete_account_snapshot_if_ready()
             elif payload_type == self._sdk["ProtoOASpotEvent"]().payloadType:
                 event = extract(message)
                 if int(event.ctidTraderAccountId) != self.authenticated_account_id:
@@ -203,6 +231,34 @@ class CTraderSdkTransport:
                 self._set_state(ConnectionState.AUTHENTICATED)
         except Exception:
             self._fail("Unexpected cTrader protocol response; authentication stopped.")
+
+    def request_account_snapshot(self) -> None:
+        """Request broker balance and all open-position net PnL for the authenticated account."""
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Account snapshot requires an authenticated account.")
+        if self._pending_trader is not None or self._pending_pnl is not None:
+            raise RuntimeError("An account snapshot request is already in progress.")
+        self._pending_trader = None
+        self._pending_pnl = None
+        trader_request = self._sdk["ProtoOATraderReq"]()
+        trader_request.ctidTraderAccountId = self.authenticated_account_id
+        pnl_request = self._sdk["ProtoOAGetPositionUnrealizedPnLReq"]()
+        pnl_request.ctidTraderAccountId = self.authenticated_account_id
+        self._send(trader_request)
+        self._send(pnl_request)
+
+    def _complete_account_snapshot_if_ready(self) -> None:
+        if self._pending_trader is None or self._pending_pnl is None:
+            return
+        trader, pnl = self._pending_trader, self._pending_pnl
+        self._pending_trader = None
+        self._pending_pnl = None
+        try:
+            snapshot = account_snapshot_from_ctrader(trader, pnl)
+        except (TypeError, ValueError):
+            self._fail("cTrader account snapshot is incomplete or inconsistent; risk sizing stopped.")
+            return
+        self.on_account_snapshot(snapshot)
 
     def subscribe_spots(self, symbol_ids: tuple[int, ...] | list[int]) -> None:
         """Subscribe to quotes only after the selected account is authenticated."""
@@ -251,6 +307,8 @@ class CTraderSdkTransport:
     def _fail(self, message: str) -> None:
         self._cancel_heartbeat()
         self.authenticated_account_id = None
+        self._pending_trader = None
+        self._pending_pnl = None
         self._set_state(ConnectionState.ERROR)
         self.on_error(message)
 
