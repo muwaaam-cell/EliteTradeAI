@@ -67,7 +67,8 @@ Spotware's current Open API model definitions:
   handling of incomplete or inconsistent broker metadata.
 - `bot/elite_trade/sizing.py`: pure fail-closed sizing function returning cTrader
   API volume cents. It requires an explicit quote-currency loss factor per volume
-  cent, quote-to-deposit conversion rate, conversion freshness, and cost reserves.
+  cent, quote-to-deposit conversion rate, conversion freshness, per-volume cost
+  reserves and a fixed-cost reserve for minimum fees.
   It caps at broker maximum, rounds down, and rejects a result below broker minimum.
 - `bot/tests/test_sizing.py`: 15 unit tests for risk-budget bounds, stale/missing
   conversion data, broker limits, costs, and fail-closed inputs.
