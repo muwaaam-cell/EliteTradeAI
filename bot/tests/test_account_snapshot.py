@@ -9,6 +9,7 @@ from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
     ProtoOATrader,
 )
 from elite_trade.account_snapshot import account_snapshot_from_ctrader
+from elite_trade.risk import calculate_snapshot_risk_budget
 
 
 class CTraderAccountSnapshotTests(unittest.TestCase):
@@ -72,6 +73,44 @@ class CTraderAccountSnapshotTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "duplicate"):
             account_snapshot_from_ctrader(self.trader, self.pnl)
+
+
+    def test_snapshot_drives_exact_compounding_risk_budget(self):
+        snapshot = account_snapshot_from_ctrader(self.trader, self.pnl)
+        self.assertEqual(
+            calculate_snapshot_risk_budget(snapshot, "0.5"),
+            Decimal("6.1728"),
+        )
+
+    def test_snapshot_risk_budget_uses_lower_of_balance_and_equity(self):
+        snapshot = account_snapshot_from_ctrader(self.trader, self.pnl)
+        snapshot = type(snapshot)(
+            account_id=snapshot.account_id,
+            deposit_asset_id=snapshot.deposit_asset_id,
+            settled_balance=Decimal("1000"),
+            equity=Decimal("800"),
+            floating_net_pnl=Decimal("-200"),
+            money_digits=2,
+        )
+        self.assertEqual(
+            calculate_snapshot_risk_budget(snapshot, "0.5"),
+            Decimal("4"),
+        )
+
+    def test_snapshot_risk_budget_applies_absolute_cap(self):
+        snapshot = account_snapshot_from_ctrader(self.trader, self.pnl)
+        self.assertEqual(
+            calculate_snapshot_risk_budget(snapshot, "0.5", max_risk_cash="2"),
+            Decimal("2"),
+        )
+
+    def test_snapshot_risk_budget_rejects_invalid_percentage_and_cap(self):
+        snapshot = account_snapshot_from_ctrader(self.trader, self.pnl)
+        for pct in ("0", "1.01", "NaN", "Infinity"):
+            with self.subTest(pct=pct), self.assertRaises(ValueError):
+                calculate_snapshot_risk_budget(snapshot, pct)
+        with self.assertRaises(ValueError):
+            calculate_snapshot_risk_budget(snapshot, "0.5", max_risk_cash="0")
 
     def test_rejects_nonpositive_equity(self):
         self.pnl.positionUnrealizedPnL[0].netUnrealizedPnL = -200000
