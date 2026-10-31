@@ -66,8 +66,8 @@ class CalculateVolumeTests(unittest.TestCase):
     def test_stale_conversion_returns_none(self):
         args = dict(
             self.base,
-            quote_currency="EUR",
-            deposit_currency="USD",
+            quote_currency="USD",
+            deposit_currency="EUR",
             conversion_observed_at_epoch=Decimal("10"),
             now_epoch=Decimal("20"),
             max_conversion_age_seconds=Decimal("5"),
