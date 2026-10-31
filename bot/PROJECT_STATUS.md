@@ -62,33 +62,43 @@ Spotware's current Open API model definitions:
 - `bot/elite_trade/ctrader_instruments.py`: pure mapper from authenticated
   `ProtoOASymbol`, `ProtoOALightSymbol`, `ProtoOATrader` and `ProtoOAAsset`
   messages into the validated metadata model. It rejects missing protocol fields,
-  mismatched symbol IDs and unresolved base/quote assets.
-- `bot/tests/test_ctrader_instruments.py`: 6 tests for protocol mapping and fail-closed
-  handling of incomplete or inconsistent broker metadata.
+  mismatched symbol IDs and unresolved base/quote assets. It also resolves the
+  account deposit currency from `ProtoOATrader.depositAssetId` and authenticated
+  asset metadata; it does not guess a currency.
+- `bot/tests/test_ctrader_instruments.py`: 9 tests for protocol mapping, account
+  deposit-currency resolution and fail-closed handling of incomplete or inconsistent
+  broker metadata.
 - `bot/elite_trade/sizing.py`: pure fail-closed sizing function returning cTrader
   API volume cents. It requires an explicit quote-currency loss factor per volume
   cent, quote-to-deposit conversion rate, conversion freshness, per-volume cost
   reserves and a fixed-cost reserve for minimum fees.
   It caps at broker maximum, rounds down, and rejects a result below broker minimum.
+- `bot/elite_trade/risk.py`: rejects non-finite equity/P&L, invalid position counters,
+  and invalid or unset risk limits before permitting a trade intent. Cash risk budget
+  calculation also rejects non-finite inputs.
 - `bot/tests/test_sizing.py`: 15 unit tests for risk-budget bounds, stale/missing
   conversion data, broker limits, costs, and fail-closed inputs.
+- `bot/tests/test_core.py`: additional tests for NaN/infinite risk snapshots,
+  invalid risk limits and position counters.
 
 These are committed code additions, not proof of broker-derived values. The
-per-volume-cent P&L factor and conversion rate are caller-supplied inputs and have
-not yet been populated from an authenticated Pepperstone account. The new tests
-have not yet been independently confirmed by a completed GitHub Actions run.
+per-volume-cent P&L factor and quote-to-deposit conversion rate are still caller-
+supplied inputs and have not yet been populated from authenticated Pepperstone
+market/account data. The deposit-currency identifier can now be resolved from
+account metadata, but live conversion-rate discovery is not implemented.
 No broker connection, order submission, or live execution was added.
 
 ## Verified tests and automated quality gates
 
-- Latest full quality-gate run: GitHub Actions run 41177210308 completed successfully on commit 40251b90c8b51f5bcc4dda17383484c1b6d3c7e9.
-- Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41177210308
-- All four jobs passed: 33 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
-- Measured total test coverage: 69% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
+- Latest full quality-gate run: GitHub Actions run 41182157899 completed successfully on commit 8e03a0221c4fbc410ec005b5abd89d52bd936118.
+- Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41182157899
+- All four jobs passed: 73 Python unit tests with branch coverage, Ruff lint, Bandit source-security scan, pip-audit dependency vulnerability scan, Python wheel build/import verification, and pip dependency-consistency checks.
+- Measured total test coverage: 74% (coverage report retained as a workflow artifact). No minimum coverage threshold is claimed yet.
 - The workflow also imports the vendored Spotware SDK and instantiates a generated protobuf request message successfully.
 - Bandit passes with narrow, documented suppressions for fixed public HTTPS endpoint strings/urllib calls; these are not credentials or user-controlled destinations.
 - pip-audit found no known vulnerabilities in the maintained runtime dependency set at the time of this run.
 - These checks establish code/package quality for the tested commit only. They do not prove real Spotware connectivity, Pepperstone account authentication, market data, demo order execution or live trading.
+- Previous passing baseline run 41177210308 remains historical only; the newer run above supersedes it.
 
 ## Not implemented / not verified
 
