@@ -46,6 +46,22 @@ class CTraderOAuthTests(unittest.TestCase):
         self.assertFalse(validate_callback_state("", "random-state"))
 
     @patch("elite_trade.ctrader_oauth.urlopen")
+    def test_refresh_uses_post(self):
+        from elite_trade.ctrader_oauth import refresh_access_token
+
+        with patch("elite_trade.ctrader_oauth.urlopen") as mocked:
+            class FakeResponse:
+                def __enter__(self): return self
+                def __exit__(self, *args): return False
+                def read(self):
+                    return b'{"accessToken":"a","refreshToken":"r","expiresIn":3600,"tokenType":"bearer"}'
+            mocked.return_value = FakeResponse()
+            refresh_access_token(
+                refresh_token="refresh", client_id="id", client_secret="secret"
+            )
+            request = mocked.call_args.args[0]
+            self.assertEqual(request.get_method(), "POST")
+
     def test_token_parser_with_mocked_response(self, mocked_urlopen):
         class FakeResponse:
             def __enter__(self):
