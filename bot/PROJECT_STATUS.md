@@ -47,6 +47,31 @@ Last verified: 2026-10-31 (UTC).
 - GitHub Actions workflow to install dependencies and run unit tests.
 - Documentation of cTrader OAuth and integration requirements.
 
+## Recent engineering commits (2026-10-31)
+
+The following changes are committed on `pepperstone-ctrader-bot` after reviewing
+Spotware's current Open API model definitions:
+
+- `bot/elite_trade/instrument.py`: immutable cTrader instrument/account metadata
+  snapshot, retaining protocol volume in integer cents of a unit; separately
+  validates symbol trading mode and account access rights; validates short-selling
+  permission; derives display-price precision from `digits`; provides directional
+  price rounding and fail-closed volume-step rounding.
+- `bot/tests/test_instrument.py`: 15 unit tests for cTrader-native volume units,
+  metadata validation, permissions, and price rounding.
+- `bot/elite_trade/sizing.py`: pure fail-closed sizing function returning cTrader
+  API volume cents. It requires an explicit quote-currency loss factor per volume
+  cent, quote-to-deposit conversion rate, conversion freshness, and cost reserves.
+  It caps at broker maximum, rounds down, and rejects a result below broker minimum.
+- `bot/tests/test_sizing.py`: 13 unit tests for risk-budget bounds, stale/missing
+  conversion data, broker limits, costs, and fail-closed inputs.
+
+These are committed code additions, not proof of broker-derived values. The
+per-volume-cent P&L factor and conversion rate are caller-supplied inputs and have
+not yet been populated from an authenticated Pepperstone account. The new tests
+have not yet been independently confirmed by a completed GitHub Actions run.
+No broker connection, order submission, or live execution was added.
+
 ## Verified tests and automated quality gates
 
 - Latest full quality-gate run: GitHub Actions run 41177210308 completed successfully on commit 40251b90c8b51f5bcc4dda17383484c1b6d3c7e9.
