@@ -145,6 +145,13 @@ No broker connection, order submission, or live execution was added.
 - These checks establish code/package quality for the tested commit only. They do not prove real Spotware connectivity, Pepperstone account authentication, market data, demo order execution or live trading.
 - Previous passing baseline run 41177210308 remains historical only; the newer run above supersedes it.
 
+## Current branch verification detail (2026-10-31)
+
+- Branch HEAD before this status refresh: `f4a0ac3a99bcda4d2ec98a3afa9ea6fded7b10ee`. It adds the regression test for the single-in-flight account-snapshot guard.
+- GitHub Actions run 41184422759 completed successfully on source commit `acb6e36152c4bf9ad6900d5eb5f6ba881dc256c4`, with 120 tests and 78% coverage. The test-only commit `f4a0ac3` landed after that run's immutable checkout SHA was set, so that run is not evidence for the exact branch HEAD.
+- A fresh push-triggered quality run is required for the current branch contents. Until it completes, the regression test and exact HEAD must be treated as unverified.
+- The successful workflow checks are source/package checks only. The bot entry point still reports broker authentication and market data as NOT CONNECTED and order execution as DISABLED. No external cTrader/Pepperstone integration has been demonstrated.
+
 ## cTrader market-data foundation (2026-10-31)
 
 - `bot/elite_trade/market_data.py` now converts cTrader spot events into validated
