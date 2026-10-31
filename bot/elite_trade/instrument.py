@@ -1,15 +1,15 @@
-"""Validated broker instrument metadata. This module performs no network calls.
+"""Validated cTrader symbol/account metadata. This module performs no network calls.
 
-All broker-specific values must be populated from an authenticated account.
-Unknown or inconsistent metadata must block downstream sizing and execution.
+Open API volume fields are integer cents of a unit. Symbol trading mode and
+account access rights are distinct protocol enums and are validated separately.
+Asset names/IDs must be joined from authenticated symbol and asset responses.
 """
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_EVEN
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_DOWN, ROUND_HALF_EVEN
 from typing import Optional
 
 
 def _to_decimal(value: float | Decimal | str | int) -> Decimal:
-    """Convert a numeric value to finite Decimal, rejecting booleans."""
     if isinstance(value, bool):
         raise ValueError("boolean is not a valid numeric value")
     if isinstance(value, Decimal):
@@ -24,15 +24,9 @@ def _to_decimal(value: float | Decimal | str | int) -> Decimal:
     return result
 
 
-def _positive_int(value: int, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
-
-
-def _non_negative_int(value: int, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{name} must be a non-negative integer")
+def _integer(value: int, name: str, *, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}")
     return value
 
 
@@ -44,117 +38,150 @@ def _non_empty_str(value: str, name: str) -> str:
 
 @dataclass(frozen=True)
 class InstrumentMetadata:
-    """Immutable metadata snapshot needed for price/volume validation.
+    """Immutable snapshot mapped from cTrader ProtoOASymbol/ProtoOALightSymbol.
 
-    Volume values are expressed in the broker's native volume units. Do not
-    assume these are lots or account-currency amounts without verified mapping.
+    Volume fields retain cTrader's native integer-cent representation; e.g.
+    protocol volume 1000 represents 10.00 units. Do not pass lots or raw units
+    without an explicit conversion at the broker adapter boundary.
     """
 
     symbol: str
     symbol_id: int
-    tick_size: Decimal
-    volume_step: Decimal
-    min_volume: Decimal
-    max_volume: Decimal
-    contract_size: Decimal
+    digits: int
+    pip_position: int
+    volume_step_cents: int
+    min_volume_cents: int
+    max_volume_cents: int
+    base_asset_id: int
+    quote_asset_id: int
     base_asset: str
     quote_asset: str
-    pip_position: int
-    digits: int
-    trading_mode: str
-    lot_size: Optional[Decimal] = None
-    margin_currency: Optional[str] = None
+    symbol_trading_mode: str
+    account_access_rights: str
+    enable_short_selling: bool
+    lot_size_cents: Optional[int] = None
     swap_long: Optional[Decimal] = None
     swap_short: Optional[Decimal] = None
+    max_exposure_cents: Optional[int] = None
 
     def __post_init__(self) -> None:
-        decimal_fields = (
-            "tick_size", "volume_step", "min_volume", "max_volume",
-            "contract_size", "lot_size", "swap_long", "swap_short",
-        )
-        for name in decimal_fields:
+        for name in (
+            "symbol", "base_asset", "quote_asset",
+        ):
+            object.__setattr__(self, name, _non_empty_str(getattr(self, name), name))
+
+        for name in (
+            "symbol_id", "base_asset_id", "quote_asset_id",
+        ):
+            object.__setattr__(
+                self, name, _integer(getattr(self, name), name, minimum=1)
+            )
+        for name in ("digits", "pip_position"):
+            object.__setattr__(
+                self, name, _integer(getattr(self, name), name, minimum=0)
+            )
+        for name in ("volume_step_cents", "min_volume_cents", "max_volume_cents"):
+            object.__setattr__(
+                self, name, _integer(getattr(self, name), name, minimum=1)
+            )
+
+        if self.min_volume_cents > self.max_volume_cents:
+            raise ValueError("invalid volume bounds")
+        if self.min_volume_cents % self.volume_step_cents:
+            raise ValueError("min_volume_cents must align to volume_step_cents")
+        if self.max_volume_cents % self.volume_step_cents:
+            raise ValueError("max_volume_cents must align to volume_step_cents")
+        if self.lot_size_cents is not None:
+            object.__setattr__(
+                self, "lot_size_cents",
+                _integer(self.lot_size_cents, "lot_size_cents", minimum=1),
+            )
+        if self.max_exposure_cents is not None:
+            object.__setattr__(
+                self, "max_exposure_cents",
+                _integer(self.max_exposure_cents, "max_exposure_cents", minimum=1),
+            )
+        for name in ("swap_long", "swap_short"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, _to_decimal(value))
 
-        for name in ("symbol", "base_asset", "quote_asset"):
-            object.__setattr__(self, name, _non_empty_str(getattr(self, name), name))
-        if self.margin_currency is not None:
-            object.__setattr__(
-                self, "margin_currency",
-                _non_empty_str(self.margin_currency, "margin_currency"),
-            )
-
-        object.__setattr__(self, "symbol_id", _positive_int(self.symbol_id, "symbol_id"))
-        object.__setattr__(self, "digits", _non_negative_int(self.digits, "digits"))
-        object.__setattr__(
-            self, "pip_position", _non_negative_int(self.pip_position, "pip_position")
-        )
-
-        if self.tick_size <= 0 or self.volume_step <= 0:
-            raise ValueError("tick_size and volume_step must be positive")
-        if self.min_volume <= 0 or self.max_volume < self.min_volume:
-            raise ValueError("invalid volume bounds")
-        if self.min_volume % self.volume_step or self.max_volume % self.volume_step:
-            raise ValueError("volume bounds must be exact multiples of volume_step")
-        if self.contract_size <= 0:
-            raise ValueError("contract_size must be positive")
-        if self.lot_size is not None and self.lot_size <= 0:
-            raise ValueError("lot_size must be positive when present")
-        if not isinstance(self.trading_mode, str) or self.trading_mode not in {
-            "FULL_ACCESS", "CLOSE_ONLY", "DISABLED", "LONG_ONLY", "SHORT_ONLY",
+        if not isinstance(self.enable_short_selling, bool):
+            raise ValueError("enable_short_selling must be boolean")
+        if self.symbol_trading_mode not in {
+            "ENABLED",
+            "DISABLED_WITHOUT_PENDINGS_EXECUTION",
+            "DISABLED_WITH_PENDINGS_EXECUTION",
+            "CLOSE_ONLY_MODE",
         }:
-            raise ValueError("unsupported trading_mode")
+            raise ValueError("unsupported cTrader symbol trading mode")
+        if self.account_access_rights not in {
+            "FULL_ACCESS", "CLOSE_ONLY", "NO_TRADING", "NO_LOGIN",
+        }:
+            raise ValueError("unsupported cTrader account access rights")
+
+    @property
+    def price_increment(self) -> Decimal:
+        """Display-price quantum derived from ProtoOASymbol.digits."""
+        return Decimal(1).scaleb(-self.digits)
 
     @property
     def is_tradable(self) -> bool:
-        return self.trading_mode == "FULL_ACCESS"
+        return (
+            self.symbol_trading_mode == "ENABLED"
+            and self.account_access_rights == "FULL_ACCESS"
+        )
+
+    @property
+    def can_open_long(self) -> bool:
+        return self.is_tradable
+
+    @property
+    def can_open_short(self) -> bool:
+        return self.is_tradable and self.enable_short_selling
 
     def round_price(self, price: Decimal | float | str) -> Decimal:
-        """Round a positive price to the nearest tick; ties round to even."""
         value = _to_decimal(price)
         if value <= 0:
             raise ValueError("price must be positive")
-        steps = (value / self.tick_size).quantize(
-            Decimal("1"), rounding=ROUND_HALF_EVEN
-        )
-        return steps * self.tick_size
+        return value.quantize(self.price_increment, rounding=ROUND_HALF_EVEN)
 
     def round_price_down(self, price: Decimal | float | str) -> Decimal:
-        """Round a positive price down to a valid tick."""
         value = _to_decimal(price)
         if value <= 0:
             raise ValueError("price must be positive")
-        steps = (value / self.tick_size).to_integral_value(rounding=ROUND_DOWN)
-        return steps * self.tick_size
+        return value.quantize(self.price_increment, rounding=ROUND_DOWN)
 
     def round_price_up(self, price: Decimal | float | str) -> Decimal:
-        """Round a positive price up to a valid tick."""
         value = _to_decimal(price)
         if value <= 0:
             raise ValueError("price must be positive")
-        steps = (value / self.tick_size).to_integral_value(rounding="ROUND_CEILING")
-        return steps * self.tick_size
+        return value.quantize(self.price_increment, rounding=ROUND_CEILING)
 
     def round_volume_down(
-        self, volume: Decimal | float | str
-    ) -> Optional[Decimal]:
-        """Round down to a broker step; return None if no valid size remains."""
-        value = _to_decimal(volume)
+        self, volume_cents: Decimal | float | str | int
+    ) -> Optional[int]:
+        """Round API volume cents down; never increase to the broker minimum."""
+        value = _to_decimal(volume_cents)
         if value <= 0:
             return None
-        steps = (value / self.volume_step).to_integral_value(rounding=ROUND_DOWN)
-        rounded = steps * self.volume_step
-        if rounded < self.min_volume or rounded > self.max_volume:
+        steps = (value / self.volume_step_cents).to_integral_value(
+            rounding=ROUND_DOWN
+        )
+        rounded = int(steps) * self.volume_step_cents
+        if rounded < self.min_volume_cents or rounded > self.max_volume_cents:
             return None
         return rounded
 
-    def validate_volume(self, volume: Decimal | float | str) -> bool:
-        """Return True only for finite, in-range multiples of volume_step."""
+    def validate_volume(self, volume_cents: Decimal | float | str | int) -> bool:
         try:
-            value = _to_decimal(volume)
+            value = _to_decimal(volume_cents)
         except ValueError:
             return False
-        if value < self.min_volume or value > self.max_volume:
+        if value != value.to_integral_value():
             return False
-        return value % self.volume_step == 0
+        units = int(value)
+        return (
+            self.min_volume_cents <= units <= self.max_volume_cents
+            and units % self.volume_step_cents == 0
+        )
