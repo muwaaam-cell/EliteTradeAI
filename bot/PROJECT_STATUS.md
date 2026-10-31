@@ -17,7 +17,7 @@ Last verified: 2026-10-31 (UTC).
 - Repository: https://github.com/muwaaam-cell/EliteTradeAI
 - Working branch: pepperstone-ctrader-bot
 - Legacy default branch: main (old Android prototype; do not overwrite or present it as the bot).
-- Branch comparison last checked: 20 commits ahead of main, 0 behind.
+- Branch comparison last checked: 31 commits ahead of main, 0 behind (main preserved).
 - Working bot source: https://github.com/muwaaam-cell/EliteTradeAI/tree/pepperstone-ctrader-bot/bot
 
 ## Spotware application
@@ -35,7 +35,7 @@ Last verified: 2026-10-31 (UTC).
 - Broker-independent risk checks and cash risk-budget helper (not lot sizing).
 - Fail-closed order-intent policy: stale quote, spread, volume, stop direction/distance, broker connection, symbol verification and explicit approval checks.
 - Persistent local kill-switch flag.
-- cTrader OAuth URL builder, cryptographically random state, callback state comparison, authorization-code exchange and refresh-token helper; refresh now uses the documented POST method.
+- cTrader OAuth URL builder, cryptographically random state, callback state comparison, authorization-code exchange (GET) and refresh-token helper (POST), matching Spotware's documented methods.
 - Encrypted-at-rest token vault using a separately managed Fernet key.
 - Allow-listed Telegram control module with status, pause, resume and emergency kill commands; close-all explicitly reports unavailable until broker execution is verified.
 - Unit tests for token encryption/permissions, Telegram chat authorization and refresh HTTP method.
@@ -45,8 +45,9 @@ Last verified: 2026-10-31 (UTC).
 
 ## Verified tests
 
-- GitHub Actions run 41147574591 completed successfully on commit e2979c408028d26300518a6259f7bba3d1519d43. This run predates the current OAuth, vault and Telegram changes; a new run is required.
-- Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41147537399
+- GitHub Actions run 41149288056 completed successfully on commit 470c4e28745dd9d63949072857d149929da885bd.
+- Workflow: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41149288056
+- The workflow installed the official `ctrader-open-api` dependency and ran the complete unit-test suite successfully, including OAuth, strategy, risk, execution-policy, encrypted-vault and Telegram authorization tests.
 - This proves only that dependency installation and unit tests passed. OAuth tests mock the token endpoint; they do not prove a live Spotware connection.
 
 ## Not implemented / not verified
