@@ -45,7 +45,6 @@ class CTraderOAuthTests(unittest.TestCase):
         self.assertFalse(validate_callback_state("random-state", "wrong-state"))
         self.assertFalse(validate_callback_state("", "random-state"))
 
-    @patch("elite_trade.ctrader_oauth.urlopen")
     def test_refresh_uses_post(self):
         from elite_trade.ctrader_oauth import refresh_access_token
 
@@ -62,6 +61,7 @@ class CTraderOAuthTests(unittest.TestCase):
             request = mocked.call_args.args[0]
             self.assertEqual(request.get_method(), "POST")
 
+    @patch("elite_trade.ctrader_oauth.urlopen")
     def test_token_parser_with_mocked_response(self, mocked_urlopen):
         class FakeResponse:
             def __enter__(self):
