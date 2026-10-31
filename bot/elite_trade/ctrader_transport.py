@@ -210,8 +210,11 @@ class CTraderSdkTransport:
             raise RuntimeError("Market-data subscription requires an authenticated account.")
         if not symbol_ids:
             raise ValueError("At least one symbol ID is required.")
-        normalized = tuple(int(value) for value in symbol_ids)
-        if any(value <= 0 for value in normalized) or len(set(normalized)) != len(normalized):
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
+               for value in symbol_ids):
+            raise ValueError("Symbol IDs must be positive integers.")
+        normalized = tuple(symbol_ids)
+        if len(set(normalized)) != len(normalized):
             raise ValueError("Symbol IDs must be unique positive integers.")
         request = self._sdk["ProtoOASubscribeSpotsReq"]()
         request.ctidTraderAccountId = self.authenticated_account_id
