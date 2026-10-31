@@ -73,15 +73,29 @@ class CTraderSdkTransport:
 
     def _load_sdk(self):
         if self._sdk is None:
-            from ctrader_open_api import Client, Protobuf, TcpProtocol, EndPoints
+            from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol
             from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import ProtoHeartbeatEvent
             from ctrader_open_api.messages.OpenApiMessages_pb2 import (
-                ProtoOAApplicationAuthReq, ProtoOAApplicationAuthRes,
+                ProtoOAAccountAuthReq,
+                ProtoOAAccountAuthRes,
+                ProtoOAApplicationAuthReq,
+                ProtoOAApplicationAuthRes,
                 ProtoOAGetAccountListByAccessTokenReq,
                 ProtoOAGetAccountListByAccessTokenRes,
-                ProtoOAAccountAuthReq, ProtoOAAccountAuthRes,
             )
-            self._sdk = locals()
+            self._sdk = {
+                "Client": Client,
+                "EndPoints": EndPoints,
+                "Protobuf": Protobuf,
+                "TcpProtocol": TcpProtocol,
+                "ProtoHeartbeatEvent": ProtoHeartbeatEvent,
+                "ProtoOAAccountAuthReq": ProtoOAAccountAuthReq,
+                "ProtoOAAccountAuthRes": ProtoOAAccountAuthRes,
+                "ProtoOAApplicationAuthReq": ProtoOAApplicationAuthReq,
+                "ProtoOAApplicationAuthRes": ProtoOAApplicationAuthRes,
+                "ProtoOAGetAccountListByAccessTokenReq": ProtoOAGetAccountListByAccessTokenReq,
+                "ProtoOAGetAccountListByAccessTokenRes": ProtoOAGetAccountListByAccessTokenRes,
+            }
         if self._reactor is None:
             from twisted.internet import reactor
             self._reactor = reactor
