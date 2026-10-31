@@ -29,6 +29,16 @@ class MarketDataTests(unittest.TestCase):
         quote = spot_quote_from_ctrader(event, digits=5, received_at_epoch=100.0)
         self.assertIsNone(quote.ask)
         self.assertFalse(quote.is_complete)
+        self.assertFalse(quote.is_fresh(now_epoch=101.0, max_age_seconds=5.0))
+
+    def test_quote_freshness_requires_complete_non_stale_quote(self):
+        event = FakeSpot(ctidTraderAccountId=55, symbolId=9, bid=123000, ask=123020)
+        quote = spot_quote_from_ctrader(event, digits=5, received_at_epoch=100.0)
+        self.assertTrue(quote.is_fresh(now_epoch=104.0, max_age_seconds=5.0))
+        self.assertFalse(quote.is_fresh(now_epoch=106.0, max_age_seconds=5.0))
+        self.assertFalse(quote.is_fresh(now_epoch=99.0, max_age_seconds=5.0))
+        self.assertFalse(quote.is_fresh(now_epoch=101.0, max_age_seconds=0.0))
+        self.assertFalse(quote.is_fresh(now_epoch=float("nan"), max_age_seconds=5.0))
 
     def test_crossed_quote_rejected(self):
         event = FakeSpot(ctidTraderAccountId=55, symbolId=9, bid=123100, ask=123000)
