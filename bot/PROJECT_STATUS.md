@@ -123,13 +123,36 @@ No broker connection, order submission, or live execution was added.
 - These checks establish code/package quality for the tested commit only. They do not prove real Spotware connectivity, Pepperstone account authentication, market data, demo order execution or live trading.
 - Previous passing baseline run 41177210308 remains historical only; the newer run above supersedes it.
 
+## cTrader market-data foundation (2026-10-31)
+
+- `bot/elite_trade/market_data.py` now converts cTrader spot events into validated
+  bid/ask snapshots and trendbars into OHLC candles. It uses Spotware's documented
+  relative-price scale (divide protocol price units by 100000), applies the symbol's
+  decimal precision, checks partial/crossed quotes, validates source timestamps and
+  checks trendbar low-plus-delta OHLC consistency.
+- The quote model preserves local receive time separately from the optional broker
+  event timestamp. A partial bid-only or ask-only event is explicitly marked
+  incomplete and is not suitable for trading decisions.
+- `bot/elite_trade/ctrader_transport.py` now supports quote subscriptions only after
+  account authentication, validates unique positive symbol IDs, forwards spot events
+  only for the authenticated account, and fails closed on account mismatch or
+  cTrader protocol error responses.
+- Tests cover price conversion, partial and crossed quotes, malformed timestamps,
+  trendbar OHLC conversion, subscription gating, wrong-account events and API errors.
+- Official Spotware data guide: https://help.ctrader.com/open-api/symbol-data/
+- Official Spotware model reference: https://help.ctrader.com/open-api/model-messages/
+- Relevant code commits: `51fd49d`, `431d781`, `465898f`, `1704c6d`, `ff939df`.
+- Latest quality run for the current market-data changes is pending at this handoff;
+  the prior intermediate run exposed a lint-only unused import, which was removed in
+  `ff939df`. Do not call the market-data work verified until the latest CI run passes.
+
 ## Not implemented / not verified
 
 - HTTPS OAuth callback HTTP server/deployment, TLS/host hardening, callback access-log redaction and runtime secret provisioning. Callback orchestration is implemented and unit-tested, but has not exchanged a real Spotware code or persisted real broker tokens.
 - Live SDK transport connectivity, application authorization, account list retrieval and account authorization. The adapter implementation exists, but only its mocked lifecycle tests have passed.
 - Pepperstone account connection.
 - Runtime instrument discovery, tick/volume precision, contract size and conversion metadata.
-- Live/historical market data, heartbeat/reconnect handling and multi-timeframe candle aggregation.
+- Live/historical market-data subscription has an initial implementation and unit tests; real broker data has not been received. Historical candle request orchestration, multi-timeframe aggregation, subscription lifecycle and robust reconnect/recovery remain incomplete.
 - Complete strategy validation/backtesting/out-of-sample analysis.
 - Correct broker-aware position sizing.
 - Order placement, modification, cancellation, position reconciliation and protective stop verification.
