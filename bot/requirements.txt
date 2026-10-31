@@ -1,8 +1,9 @@
-# Runtime dependencies maintained independently of the SDK's stale exact pins.
+# Runtime dependencies for the vendored Spotware OpenApiPy source.
 Twisted>=26.10.0
 pyOpenSSL>=26.0.0
 protobuf>=5.29.6,<6
 requests>=2.33.0
 inputimeout>=1.0.4
+service-identity>=24.2.0
 python-dotenv
 cryptography>=49.0.0
