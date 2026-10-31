@@ -1,6 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
+from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAGetPositionUnrealizedPnLRes
+from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOATrader
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 
 
@@ -53,6 +55,9 @@ def fake_sdk():
         ("ProtoOAAccountAuthReq", 5), ("ProtoOAAccountAuthRes", 6),
         ("ProtoHeartbeatEvent", 7), ("ProtoOASubscribeSpotsReq", 8),
         ("ProtoOASpotEvent", 9), ("ProtoOAErrorRes", 10),
+        ("ProtoOATraderReq", 11), ("ProtoOATraderRes", 12),
+        ("ProtoOAGetPositionUnrealizedPnLReq", 13),
+        ("ProtoOAGetPositionUnrealizedPnLRes", 14),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -103,6 +108,51 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.AUTHENTICATED)
         self.assertEqual(transport.authenticated_account_id, 77)
         self.assertEqual(reactor.delay, 10)
+
+    def test_account_snapshot_requests_broker_balance_and_position_pnl(self):
+        received = []
+        transport, client, _ = self.make_transport(on_account_snapshot=received.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+
+        transport.request_account_snapshot()
+        self.assertEqual(len(client.sent), 2)
+        self.assertEqual(client.sent[-2].ctidTraderAccountId, 77)
+        self.assertEqual(client.sent[-1].ctidTraderAccountId, 77)
+
+        trader = ProtoOATrader(
+            ctidTraderAccountId=77, balance=10000, depositAssetId=2, moneyDigits=2
+        )
+        pnl = ProtoOAGetPositionUnrealizedPnLRes(
+            ctidTraderAccountId=77, moneyDigits=2
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=12, body=SimpleNamespace(ctidTraderAccountId=77, trader=trader)
+        ))
+        self.assertEqual(received, [])
+        client.received(client, SimpleNamespace(payloadType=14, body=pnl))
+        self.assertEqual(len(received), 1)
+        self.assertEqual(str(received[0].equity), "100")
+
+    def test_account_snapshot_rejects_wrong_account_response(self):
+        errors = []
+        transport, client, _ = self.make_transport(on_error=errors.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_account_snapshot()
+        trader = ProtoOATrader(
+            ctidTraderAccountId=88, balance=10000, depositAssetId=2, moneyDigits=2
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=12, body=SimpleNamespace(ctidTraderAccountId=88, trader=trader)
+        ))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertTrue(errors)
+
+    def test_account_snapshot_requires_authenticated_account(self):
+        transport, _, _ = self.make_transport()
+        with self.assertRaises(RuntimeError):
+            transport.request_account_snapshot()
 
     def test_spot_subscription_requires_authenticated_account(self):
         transport, client, _ = self.make_transport()
