@@ -57,8 +57,14 @@ Spotware's current Open API model definitions:
   validates symbol trading mode and account access rights; validates short-selling
   permission; derives display-price precision from `digits`; provides directional
   price rounding and fail-closed volume-step rounding.
-- `bot/tests/test_instrument.py`: 15 unit tests for cTrader-native volume units,
+- `bot/tests/test_instrument.py`: 16 unit tests for cTrader-native volume units,
   metadata validation, permissions, and price rounding.
+- `bot/elite_trade/ctrader_instruments.py`: pure mapper from authenticated
+  `ProtoOASymbol`, `ProtoOALightSymbol`, `ProtoOATrader` and `ProtoOAAsset`
+  messages into the validated metadata model. It rejects missing protocol fields,
+  mismatched symbol IDs and unresolved base/quote assets.
+- `bot/tests/test_ctrader_instruments.py`: 6 tests for protocol mapping and fail-closed
+  handling of incomplete or inconsistent broker metadata.
 - `bot/elite_trade/sizing.py`: pure fail-closed sizing function returning cTrader
   API volume cents. It requires an explicit quote-currency loss factor per volume
   cent, quote-to-deposit conversion rate, conversion freshness, and cost reserves.
