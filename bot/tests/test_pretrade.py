@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from elite_trade.daily_session import LOSS_LOCK, DailySessionGuard
+from elite_trade.daily_session import LOSS_LOCK, TARGET_RESUMED, DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote, Side
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.pretrade import authorise_new_entry
@@ -66,13 +66,16 @@ class PreTradeTests(unittest.TestCase):
         self.assertEqual(result.session.state, LOSS_LOCK)
         self.assertFalse(self.guard.resume_after_target(now=self.now))
 
-    def test_target_lock_blocks_until_explicit_guard_resume(self):
-        self.guard.evaluate(
+    def test_profit_target_activates_protection_but_does_not_stop_entries(self):
+        session = self.guard.evaluate(
             daily_net_pnl=50, equity=1000, open_positions=0, now=self.now
         )
-        self.assertFalse(self.decide(daily_net_pnl=50).allow_new_entry)
-        self.assertTrue(self.guard.resume_after_target(now=self.now))
-        self.assertTrue(self.decide(daily_net_pnl=50).allow_new_entry)
+        self.assertEqual(session.state, TARGET_RESUMED)
+        self.assertTrue(session.allow_new_entries)
+        self.assertEqual(session.protection_floor, Decimal("30"))
+        result = self.decide(daily_net_pnl=50)
+        self.assertTrue(result.allow_new_entry)
+        self.assertFalse(self.guard.resume_after_target(now=self.now))
 
     def test_loss_lock_cannot_be_cleared_by_target_resume(self):
         self.guard.evaluate(
