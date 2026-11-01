@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
+from elite_trade.adaptive_risk import MarketCondition, TradingMode
 from elite_trade.daily_session import DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote, Side
 from elite_trade.kill_switch import KillSwitch
@@ -34,10 +35,15 @@ class TradingLoopTests(unittest.TestCase):
                 max_volume_units=5000,
             ),
             symbol_verified=True,
+            market_condition=MarketCondition.GOOD,
+            loss_per_volume_unit=Decimal('0.01'),
+            min_volume_units=1,
+            max_volume_units=5000,
+            volume_step_units=1,
         )
         self.managed = 0
         self.risk = BrokerRiskState(
-            daily_net_pnl=Decimal("0"), equity=Decimal("1000"),
+            daily_net_pnl=Decimal("0"), equity=Decimal("1000"), settled_balance=Decimal("1000"),
             open_positions=0, observed_at_epoch=100.0,
         )
         self.loop = self.make_loop()
@@ -65,10 +71,12 @@ class TradingLoopTests(unittest.TestCase):
         self.assertTrue(result.outcomes[0].decision.allow_new_entry)
         self.assertFalse(result.outcomes[0].submitted)
         self.assertFalse(result.entry_submission_enabled)
+        self.assertEqual(result.outcomes[0].sized_volume_units, 500)
+        self.assertEqual(result.outcomes[0].risk_plan.risk_cash, Decimal('5.000'))
 
     def test_daily_loss_lock_blocks_entries_but_management_continues(self):
         self.risk = BrokerRiskState(
-            daily_net_pnl=Decimal("-15"), equity=Decimal("985"),
+            daily_net_pnl=Decimal("-15"), equity=Decimal("985"), settled_balance=Decimal("1000"),
             open_positions=1, observed_at_epoch=100.0,
         )
         result = self.loop.run_cycle()
@@ -84,7 +92,7 @@ class TradingLoopTests(unittest.TestCase):
 
     def test_stale_account_state_blocks_candidate(self):
         self.risk = BrokerRiskState(
-            daily_net_pnl=Decimal("0"), equity=Decimal("1000"),
+            daily_net_pnl=Decimal("0"), equity=Decimal("1000"), settled_balance=Decimal("1000"),
             open_positions=0, observed_at_epoch=90.0,
         )
         result = self.loop.run_cycle()
@@ -126,6 +134,36 @@ class TradingLoopTests(unittest.TestCase):
         self.assertTrue(result.positions_managed)
         self.assertEqual(result.candidates_seen, 0)
         self.assertEqual(result.outcomes, ())
+
+
+    def test_post_target_risk_is_reduced_to_quarter_of_normal(self):
+        self.risk = BrokerRiskState(
+            daily_net_pnl=Decimal("50"), equity=Decimal("1000"),
+            settled_balance=Decimal("1000"), open_positions=0, observed_at_epoch=100.0,
+        )
+        result = self.loop.run_cycle()
+        outcome = result.outcomes[0]
+        self.assertTrue(outcome.decision.allow_new_entry)
+        self.assertEqual(outcome.risk_plan.mode, TradingMode.PROFIT_PROTECTION)
+        self.assertEqual(outcome.risk_plan.risk_pct, Decimal("0.125"))
+        self.assertEqual(outcome.risk_plan.risk_cash, Decimal("1.250"))
+        self.assertEqual(outcome.sized_volume_units, 125)
+        self.assertFalse(outcome.submitted)
+
+    def test_unknown_market_classification_fails_closed(self):
+        self.candidate = EntryCandidate(
+            **{**self.candidate.__dict__, "market_condition": "GOOD"}
+        )
+        result = self.loop.run_cycle()
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+
+    def test_broker_minimum_volume_over_budget_blocks_entry(self):
+        self.candidate = EntryCandidate(
+            **{**self.candidate.__dict__, "min_volume_units": 1000}
+        )
+        result = self.loop.run_cycle()
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+        self.assertIn("minimum volume", result.outcomes[0].decision.reason)
 
 
 if __name__ == "__main__":
