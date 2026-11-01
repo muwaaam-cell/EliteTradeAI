@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Mapping
 
-from elite_trade.position_ledger import BrokerPositionSnapshot
+from elite_trade.position_ledger import BrokerPositionSnapshot, PositionLedger
 
 
 @dataclass(frozen=True)
@@ -136,3 +136,41 @@ def map_ctrader_reconcile_response(
         positions=tuple(positions),
         pending_orders=tuple(raw_orders),
     )
+
+
+
+def apply_ctrader_reconcile_response(
+    ledger: PositionLedger,
+    response: object,
+    *,
+    expected_account_id: int,
+    symbol_names: Mapping[int, str],
+    observed_at_epoch: float,
+    now_epoch: float,
+    max_age_seconds: float = 5.0,
+) -> CTraderReconcileSnapshot:
+    """Validate and persist a complete broker snapshot into its account-bound ledger.
+
+    This is the safe persistence boundary: an unbound legacy ledger or a ledger
+    bound to another account is refused. Pending orders are returned to the
+    caller; this function does not silently discard or reconcile them.
+    """
+    if not isinstance(ledger, PositionLedger):
+        raise TypeError("A PositionLedger is required.")
+    if ledger.bound_account_id is None:
+        raise ValueError("Position ledger must be explicitly bound to the broker account.")
+    if ledger.bound_account_id != expected_account_id:
+        raise ValueError("Position ledger belongs to a different broker account.")
+    snapshot = map_ctrader_reconcile_response(
+        response,
+        expected_account_id=expected_account_id,
+        symbol_names=symbol_names,
+    )
+    ledger.reconcile(
+        snapshot.positions,
+        complete=True,
+        observed_at_epoch=observed_at_epoch,
+        now_epoch=now_epoch,
+        max_age_seconds=max_age_seconds,
+    )
+    return snapshot
