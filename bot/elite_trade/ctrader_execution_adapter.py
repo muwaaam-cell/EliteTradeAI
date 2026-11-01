@@ -117,3 +117,35 @@ class CTraderDemoExecutionAdapter:
             spec.client_order_id, "PENDING", True,
             "Sent once; awaiting an authenticated broker execution event.",
         )
+
+
+def create_demo_execution_adapter(
+    *,
+    transport: object,
+    ledger: OrderLedger,
+    now_epoch: Callable[[], int],
+) -> CTraderDemoExecutionAdapter:
+    """Compose the demo adapter with the authenticated cTrader transport.
+
+    The returned adapter reads connection/account state from the transport on
+    every submission and delegates to its demo-only protobuf type/account gate.
+    This is composition only: it does not enable the trading loop or live orders.
+    """
+    from elite_trade.ctrader_transport import ConnectionState
+
+    if getattr(transport, "environment", None) != "demo":
+        raise ValueError("Execution adapter composition requires a demo transport.")
+    sender = getattr(transport, "send_demo_order_request", None)
+    if not callable(sender):
+        raise TypeError("Transport does not expose the guarded cTrader demo sender.")
+    if not hasattr(transport, "state") or not hasattr(transport, "authenticated_account_id"):
+        raise TypeError("Transport is missing authenticated connection state.")
+
+    return CTraderDemoExecutionAdapter(
+        ledger=ledger,
+        send_request=sender,
+        connection_ready=lambda: transport.state is ConnectionState.AUTHENTICATED,
+        authenticated_account_id=lambda: transport.authenticated_account_id,
+        environment="demo",
+        now_epoch=now_epoch,
+    )
