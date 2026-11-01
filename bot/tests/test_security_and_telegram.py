@@ -134,5 +134,43 @@ class TelegramTests(unittest.TestCase):
         self.assertEqual(self.guard.profit_target, 50)
 
 
+    def test_first_poll_discards_old_updates_and_persists_cursor(self):
+        cursor = Path(self.folder.name) / "telegram-offset.json"
+        bot = TelegramControl(
+            token="test-token", chat_id="123", kill_switch=self.switch,
+            daily_guard=self.guard, offset_file=cursor,
+        )
+        self.switch.activate()
+        bot._api = lambda method, params: {
+            "result": [{"update_id": 41, **self.private_update(text="/resume emergency confirm")}]
+        }
+        self.assertEqual(bot.poll_once(timeout=10), 1)
+        self.assertTrue(self.switch.is_active(), "a queued old confirmation must not reset the kill switch")
+        self.assertEqual(cursor.read_text(), '{"offset": 42}')
+        self.assertEqual(cursor.stat().st_mode & 0o777, 0o600)
+
+    def test_restart_resumes_from_persisted_update_offset(self):
+        cursor = Path(self.folder.name) / "telegram-offset.json"
+        cursor.write_text('{"offset": 42}')
+        bot = TelegramControl(
+            token="test-token", chat_id="123", kill_switch=self.switch,
+            daily_guard=self.guard, offset_file=cursor,
+        )
+        calls = []
+        bot._api = lambda method, params: (calls.append(params) or {"result": []})
+        self.assertEqual(bot.poll_once(timeout=1), 0)
+        self.assertEqual(calls[0]["offset"], 42)
+        self.assertEqual(calls[0]["timeout"], 1)
+
+    def test_corrupt_persisted_update_offset_fails_closed(self):
+        cursor = Path(self.folder.name) / "telegram-offset.json"
+        cursor.write_text('{"offset": -1}')
+        with self.assertRaises(RuntimeError):
+            TelegramControl(
+                token="test-token", chat_id="123", kill_switch=self.switch,
+                daily_guard=self.guard, offset_file=cursor,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
