@@ -43,6 +43,7 @@ class CTraderMarketData:
         self.account_id = account_id
         self._instruments: dict[int, object] = {}
         self._quotes: dict[int, MarketQuote] = {}
+        self._partial: dict[int, tuple[Decimal | None, Decimal | None]] = {}
         for instrument in instruments:
             symbol_id = getattr(instrument, "symbol_id", None)
             digits = getattr(instrument, "digits", None)
@@ -79,9 +80,8 @@ class CTraderMarketData:
                 raise ValueError("Spot event account does not match the authenticated account.")
         instrument = self._instruments[symbol_id]
         scale = Decimal(10) ** int(instrument.digits)
-        previous = self._quotes.get(symbol_id)
-        bid = previous.quote.bid if previous else None
-        ask = previous.quote.ask if previous else None
+        previous = self._partial.get(symbol_id, (None, None))
+        bid, ask = previous
         if self._has(event, "bid"):
             raw_bid = getattr(event, "bid")
             if isinstance(raw_bid, bool) or not isinstance(raw_bid, int) or raw_bid <= 0:
@@ -92,6 +92,7 @@ class CTraderMarketData:
             if isinstance(raw_ask, bool) or not isinstance(raw_ask, int) or raw_ask <= 0:
                 raise ValueError("Spot ask must be a positive integer price.")
             ask = Decimal(raw_ask) / scale
+        self._partial[symbol_id] = (bid, ask)
         if bid is None or ask is None:
             return None
         if bid <= 0 or ask <= 0 or ask < bid:
@@ -130,3 +131,4 @@ class CTraderMarketData:
     def clear(self) -> None:
         """Discard all quotes on disconnect or account/instrument changes."""
         self._quotes.clear()
+        self._partial.clear()
