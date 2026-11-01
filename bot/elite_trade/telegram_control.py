@@ -7,7 +7,7 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from elite_trade.daily_session import LOSS_LOCK, TARGET_LOCK, DailySessionGuard
+from elite_trade.daily_session import LOSS_LOCK, TARGET_LOCK, TARGET_RESUMED, DailySessionGuard
 from elite_trade.kill_switch import KillSwitch
 
 
@@ -47,8 +47,6 @@ class TelegramControl:
         message = update.get("message") or update.get("edited_message") or {}
         chat = message.get("chat") or {}
         sender = message.get("from") or {}
-        # Only the owner's one-to-one private chat is trusted. Group/supergroup
-        # messages are rejected even if the bot was added to the authorised group.
         if chat.get("type") != "private":
             return None
         if str(chat.get("id", "")) != self.chat_id or str(sender.get("id", "")) != self.chat_id:
@@ -64,8 +62,9 @@ class TelegramControl:
             return (
                 "EliteTrade AI controls: /status, /pause, /kill, /closeall. "
                 "Resume emergency pause: /resume emergency confirm. "
-                "Resume after profit target: /resume target confirm. "
-                "Daily loss locks cannot be resumed. Trading execution is not enabled."
+                "The daily profit target activates reduced-risk profit protection; "
+                "no manual target resume is needed. Giveback and daily-loss locks "
+                "cannot be overridden. Trading execution is not enabled."
             )
         if command == "/status":
             return "EliteTrade AI: " + ("PAUSED (kill switch active)." if self.kill_switch.is_active()
@@ -82,22 +81,23 @@ class TelegramControl:
                 return "Emergency kill switch reset. Daily target/loss locks and all other safety gates remain in force."
             if args == ["target", "confirm"]:
                 if self.daily_guard is None:
-                    return "Target resume unavailable: daily session guard is not connected."
+                    return "Target status unavailable: daily session guard is not connected."
                 try:
                     state = self.daily_guard.state_for_day()
                     if state == LOSS_LOCK:
                         return "Daily LOSS_LOCK is active. It cannot be resumed; entries stay blocked until the next trading day."
-                    if state != TARGET_LOCK:
-                        return "No profit-target lock is awaiting resume."
-                    if not self.daily_guard.resume_after_target():
-                        return "Target resume was refused; entries remain blocked."
+                    if state == TARGET_LOCK:
+                        return "Profit-protection floor has been reached. New entries stay blocked until the next trading day; this lock cannot be overridden."
+                    if state == TARGET_RESUMED:
+                        return "Profit protection is already active. Qualified entries may continue at reduced risk; no manual resume is needed."
+                    return "The daily profit target has not been reached; normal risk controls remain active."
                 except Exception:
                     return "Daily session state could not be verified; entries remain blocked."
-                return "Profit-target lock resumed. Daily loss protection remains active."
             return (
                 "No change made. To confirm emergency-pause reset, send "
-                "/resume emergency confirm. To resume after a profit target, send "
-                "/resume target confirm. A daily loss lock cannot be overridden."
+                "/resume emergency confirm. The daily profit target does not need "
+                "manual resuming; profit protection activates automatically. "
+                "A daily loss or giveback lock cannot be overridden."
             )
         if command == "/closeall":
             return "Close-all is unavailable until a verified broker execution adapter exists. Use cTrader directly to manage open positions."
@@ -121,5 +121,4 @@ class TelegramControl:
             except KeyboardInterrupt:
                 raise
             except Exception:
-                # Avoid tight retry loops and never log token-bearing URLs.
                 time.sleep(5)
