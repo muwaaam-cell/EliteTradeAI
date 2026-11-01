@@ -9,7 +9,7 @@ from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 class FakeRequest:
     def __init__(self):
         self.payloadType = type(self).payload_type
-        if type(self).__name__ == "ProtoOASubscribeSpotsReq":
+        if type(self).__name__ in {"ProtoOASubscribeSpotsReq", "ProtoOASymbolByIdReq"}:
             self.symbolId = []
 
 
