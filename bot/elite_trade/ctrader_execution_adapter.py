@@ -160,4 +160,5 @@ def create_demo_execution_adapter(
         authenticated_account_id=lambda: transport.authenticated_account_id,
         environment="demo",
         now_epoch=now_epoch,
+        authorize_order=authorize_order,
     )
