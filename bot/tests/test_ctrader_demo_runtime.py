@@ -7,6 +7,7 @@ from elite_trade.ctrader_demo_runtime import compose_demo_execution_runtime
 from elite_trade.ctrader_order_requests import MarketOrderSpec
 from elite_trade.ctrader_transport import ConnectionState
 from elite_trade.order_ledger import PENDING, SUBMITTED, OrderLedger
+from elite_trade.position_ledger import PositionLedger
 
 
 class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
@@ -14,6 +15,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.ledger = OrderLedger(Path(self.temp.name) / "orders.sqlite3", account_id=77)
+        self.position_ledger = PositionLedger(Path(self.temp.name) / "positions.sqlite3", account_id=77)
         self.sent = []
         self.unmatched = []
         self.transport = SimpleNamespace(
@@ -30,6 +32,8 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             execution_type_names={2: "ORDER_ACCEPTED", 3: "ORDER_FILLED"},
             now_epoch=lambda: 100,
             on_unmatched=lambda reason, event: self.unmatched.append((reason, event)),
+            position_ledger=self.position_ledger,
+            symbol_names={10: "EURUSD"},
         )
 
     def test_installs_callbacks_and_sends_once_through_shared_ledger(self):
@@ -99,7 +103,22 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
                     execution_type_names={2: "ORDER_ACCEPTED"},
                     now_epoch=lambda: 100,
                     on_unmatched=lambda reason, event: None,
+                    position_ledger=self.position_ledger,
+                    symbol_names={10: "EURUSD"},
                 )
+
+    def test_runtime_wires_reconciliation_callback_to_position_ledger(self):
+        position = SimpleNamespace(
+            positionId=123, positionStatus=1,
+            tradeData=SimpleNamespace(symbolId=10, volume=1000, tradeSide=1),
+            price=1.1, stopLoss=1.09, takeProfit=1.12,
+        )
+        pending = SimpleNamespace(orderId=9001)
+        response = SimpleNamespace(ctidTraderAccountId=77, position=[position], order=[pending])
+        snapshot = self.transport.on_reconcile(response)
+        self.assertEqual(self.position_ledger.get("123").status.value, "OPEN")
+        self.assertEqual(snapshot.pending_orders, (pending,))
+        self.assertIs(self.runtime.on_reconcile.last_snapshot, snapshot)
 
 
 if __name__ == "__main__":
