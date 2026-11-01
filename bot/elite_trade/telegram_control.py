@@ -12,7 +12,7 @@ from elite_trade.kill_switch import KillSwitch
 
 
 class TelegramControl:
-    COMMANDS = {"/start", "/help", "/status", "/pause", "/resume", "/kill", "/closeall"}
+    COMMANDS = {"/start", "/help", "/status", "/target", "/pause", "/resume", "/kill", "/closeall"}
 
     def __init__(self, *, token: str | None = None, chat_id: str | None = None,
                  kill_switch: KillSwitch | None = None,
@@ -60,7 +60,7 @@ class TelegramControl:
             return "Unknown command. Send /help."
         if command in {"/start", "/help"}:
             return (
-                "EliteTrade AI controls: /status, /pause, /kill, /closeall. "
+                "EliteTrade AI controls: /status, /target [USD amount], /pause, /kill, /closeall. "
                 "Resume emergency pause: /resume emergency confirm. "
                 "The daily profit target activates reduced-risk profit protection; "
                 "no manual target resume is needed. Giveback and daily-loss locks "
@@ -69,6 +69,25 @@ class TelegramControl:
         if command == "/status":
             return "EliteTrade AI: " + ("PAUSED (kill switch active)." if self.kill_switch.is_active()
                                         else "RUNNING IN SAFE / NON-EXECUTING MODE.")
+        if command == "/target":
+            if self.daily_guard is None:
+                return "Daily target unavailable: daily session guard is not connected."
+            if len(args) == 0:
+                return f"Current daily profit target: ${self.daily_guard.profit_target} USD."
+            if len(args) != 1:
+                return "Usage: /target 1500 (USD). Target must be a positive amount greater than the configured giveback."
+            try:
+                updated = self.daily_guard.set_profit_target(args[0])
+            except (ValueError, ArithmeticError):
+                return (
+                    "Target not changed. Enter a valid positive USD amount greater than "
+                    "the giveback; changes are only allowed before today's protection or lock activates."
+                )
+            return (
+                f"Daily profit target saved: ${updated} USD. The existing giveback "
+                "and safety limits remain in force. This changes the guard setting only; "
+                "it does not enable broker execution."
+            )
         if command in {"/pause", "/kill"}:
             self.kill_switch.activate("Telegram emergency stop")
             return "Kill switch activated. New trade intents are blocked. Existing broker positions are NOT automatically closed."
