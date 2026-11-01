@@ -1,8 +1,10 @@
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from cryptography.fernet import Fernet
 
+from elite_trade.daily_session import LOSS_LOCK, DailySessionGuard
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.token_vault import TokenVault
 from elite_trade.telegram_control import TelegramControl
@@ -29,8 +31,17 @@ class TelegramTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
-        self.switch = KillSwitch(str(Path(self.folder.name) / "KILL_SWITCH"))
-        self.bot = TelegramControl(token="test-token", chat_id="123", kill_switch=self.switch)
+        root = Path(self.folder.name)
+        self.switch = KillSwitch(str(root / "KILL_SWITCH"))
+        self.guard = DailySessionGuard(
+            root / "sessions.sqlite3", timezone="UTC",
+            profit_target=50, max_daily_loss=15, max_open_positions=2,
+        )
+        self.now = datetime(2026, 11, 1, 10, tzinfo=timezone.utc)
+        self.bot = TelegramControl(
+            token="test-token", chat_id="123", kill_switch=self.switch,
+            daily_guard=self.guard,
+        )
 
     def private_update(self, *, chat_id=123, sender_id=123, text="/pause"):
         return {"message": {
@@ -61,12 +72,43 @@ class TelegramTests(unittest.TestCase):
         self.assertIsNone(self.bot.handle_update(update))
         self.assertFalse(self.switch.is_active())
 
-    def test_resume_does_not_enable_trading(self):
+    def test_plain_resume_only_shows_confirmation_instructions(self):
         self.switch.activate()
         reply = self.bot.handle_update(self.private_update(text="/resume"))
-        self.assertIn("does NOT enable trading", reply)
+        self.assertIn("No change made", reply)
+        self.assertTrue(self.switch.is_active())
+
+    def test_confirmed_emergency_resume_only_resets_kill_switch(self):
+        self.switch.activate()
+        reply = self.bot.handle_update(
+            self.private_update(text="/resume emergency confirm")
+        )
+        self.assertIn("Daily target/loss locks", reply)
         self.assertFalse(self.switch.is_active())
+
+    def test_target_resume_requires_target_lock(self):
+        self.guard.evaluate(
+            daily_net_pnl=50, equity=1000, open_positions=0, now=self.now
+        )
+        reply = self.bot.handle_update(
+            self.private_update(text="/resume target confirm")
+        )
+        self.assertIn("Profit-target lock resumed", reply)
+
+    def test_target_resume_never_overrides_daily_loss_lock(self):
+        self.guard.evaluate(
+            daily_net_pnl=-15, equity=1000, open_positions=0, now=self.now
+        )
+        reply = self.bot.handle_update(
+            self.private_update(text="/resume target confirm")
+        )
+        self.assertIn("LOSS_LOCK", reply)
+        self.assertEqual(self.guard.state_for_day(now=self.now), LOSS_LOCK)
 
     def test_non_numeric_chat_id_is_rejected(self):
         with self.assertRaises(ValueError):
             TelegramControl(token="test-token", chat_id="@somechannel")
+
+
+if __name__ == "__main__":
+    unittest.main()
