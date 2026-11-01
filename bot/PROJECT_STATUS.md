@@ -1,18 +1,53 @@
 # EliteTrade AI — project handoff and source of truth
 
-Last verified: 2026-11-01 13:08 UTC.
+Last verified: 2026-11-01 15:20 UTC.
 
-## Current verified status (supersedes older dated verification entries below)
+## Current verified status (supersedes older dated entries below)
 
-- Current adaptive-risk integration commit: `0eb155b68386e4b7aef8c3d2a362f0a56387a0aa`.
-- GitHub Actions run `41309722555` completed successfully: all four jobs passed (202 unit tests, 83% measured total coverage, Ruff lint, Bandit source scan, pip-audit, wheel build and package import smoke test).
-- `pip-audit` reported: no known vulnerabilities in the declared runtime dependencies at scan time. This is not a guarantee against unknown or future vulnerabilities.
-- The tests are automated unit tests with mocked protocol/client fixtures where applicable. They do not establish live broker connectivity or profitable trading.
-- Daily target is now user-configurable through the private Telegram command `/target <USD amount>` (for example `/target 500`, `/target 1500`, `/target 5000`, `/target 10000`). The selected amount is persisted in SQLite across restarts. The initial default remains $50 until changed. The existing $20 giveback remains fixed; the floor is the higher of target minus $20 and post-target peak minus $20. Target changes are rejected after protection or a daily lock activates for that day. This configures the guard only; it does not enable broker execution.
-- The daily-session guard and pre-trade gate implement target-continuation / giveback-lock state behaviour, and Telegram can change the persisted target. The trading loop now applies the adaptive cash-risk plan to candidate sizing using supplied loss-per-volume-unit and broker volume bounds; post-target 25% risk reduction is covered by tests. The runtime provider must still supply accurate, broker-verified balance/equity, market classification, loss-per-unit and volume metadata. No order is submitted.
-- `trading_loop.py` deliberately submits no orders (`entry_submission_enabled=False`). The bot is not operational for live or demo execution.
-- Spotware application approval, real OAuth exchange, Pepperstone account authentication, live market data, conversion metadata, broker-aware runtime sizing, order submission, broker-side stop confirmation, reconnect/reconciliation E2E, Telegram deployment and continuous hosting remain unverified or incomplete.
-- Live execution must remain disabled. Do not describe the project as a functioning autonomous trading bot until demo order lifecycle tests pass against a real Pepperstone cTrader demo account.
+- Current development branch: `pepperstone-ctrader-bot`.
+- Current branch HEAD: `f5a779a27452fb037db0624e0dab0ae66313e75d`.
+- Latest GitHub Actions run: `41320640982` (run #291), completed successfully on that exact HEAD. All four jobs passed: 254 unit tests, 84% measured total coverage, Ruff lint, Bandit source scan, pip-audit dependency audit, wheel build and package import smoke test.
+- The test suite uses mocked protocol/client fixtures where applicable. It does not establish live Pepperstone connectivity, a real demo order, profitable trading or live readiness.
+- New in this verified increment: `make_execution_event_handler()` connects authenticated cTrader execution-event callbacks to the durable order ledger. It applies only account-matched events with a matching reserved client order ID and requested volume; malformed or uncorrelated events are surfaced to a required callback and are never guessed onto an order. Unrelated valid event types are ignored.
+- A demo-only `CTraderDemoExecutionAdapter` and guarded `send_demo_order_request()` transport method exist. They reserve an order before one send attempt and treat transport uncertainty as UNKNOWN; broker execution events, not socket writes, determine acceptance/fill. The transport rejects live environment, unauthenticated account and mismatched account ID.
+- Market-order protobuf request construction includes a mandatory stop-loss field and validates side/price direction. Separate request builders exist for amending position protection and closing a position. These request builders are not evidence that modification/closure flows are orchestrated or broker-confirmed.
+- The execution adapter and event-handler helpers are not yet connected to the trading loop. `trading_loop.py` still deliberately does not submit orders (`entry_submission_enabled=False`), and `bot/main.py` remains a safe diagnostic entry point that reports broker/data not connected and execution disabled.
+- Account-authenticated instrument discovery, spot subscriptions, balance/PnL snapshots and position reconciliation request/mapping components exist, but have not been run against the user's real Pepperstone cTrader account. BTC is excluded by user decision; instrument selection must be based on the authenticated account's returned catalogue, not hardcoded assumptions.
+- Spotware application 46574 was last reported by the user as pending. No real OAuth exchange, Pepperstone account authentication, account catalogue, market quote, demo order, broker-side protection confirmation, reconnect recovery, Telegram polling/deployment or always-on hosting has been verified.
+- Daily target is user-configurable via private Telegram `/target <USD amount>` and persisted in SQLite. The initial default remains $50 unless changed; the $20 giveback limit is fixed. Target changes are rejected after protection or a daily lock activates for that day. This configures the guard only; it does not enable execution.
+- Daily target/loss protection, post-target risk reduction, adaptive cash-risk budgeting and pre-trade checks are implemented as software components. Runtime use still requires accurate fresh broker-derived values and a complete execution/reconciliation coordinator.
+- Live execution remains disabled. Do not call this a functioning autonomous bot or enable live orders until the demo order lifecycle, protection, restart/reconnect and reconciliation tests pass against a real Pepperstone cTrader demo account.
+
+## Product direction
+
+- Product: unattended trading bot, not an Android trading app.
+- Broker: Pepperstone through cTrader Open API.
+- BTC is excluded because the user reports it is unavailable in their account.
+- Discover tradable instruments from the authenticated account; only enable symbols whose trading mode, permissions and full broker metadata validate.
+- Control channel: the user's existing Telegram bot, with Android as the control device.
+- Avoid paid services where possible. Do not promise free 24/7 hosting without verifying a real hosting option.
+- Demo validation is a required engineering gate; the eventual goal is live trading, but live stays locked until safety criteria pass.
+
+## Repository and external dependency
+
+- Repository: https://github.com/muwaaam-cell/EliteTradeAI
+- Working branch: https://github.com/muwaaam-cell/EliteTradeAI/tree/pepperstone-ctrader-bot
+- Legacy default branch `main` is an older Android prototype and must not be overwritten or represented as the bot.
+- Spotware application ID: 46574; latest user-reported status: pending.
+- Do not invent or register a redirect URI until an HTTPS callback endpoint actually exists and the application is approved.
+- Never ask for passwords, one-time codes, client secrets, access tokens, refresh tokens or Telegram tokens in chat. Configure secrets only in a trusted secret manager/runtime environment.
+
+## Next engineering gates
+
+1. Complete a single runtime composition that wires authenticated cTrader transport, account-scoped instrument/quote providers, fresh account risk snapshots, the trading-loop pre-trade gate, demo-only execution adapter, execution-event and order-error handlers, and durable ledgers. Keep this composition unable to submit live orders.
+2. Implement account-bound order/position reconciliation and a durable recovery journal so restart recovery does not falsely treat separate SQLite ledgers as one atomic transaction.
+3. Implement broker-confirmed SL/TP amend and close lifecycle, including correlated acknowledgements/errors and reconciliation after ambiguous outcomes.
+4. Complete real OAuth callback hosting with HTTPS/TLS, secret provisioning and secure callback logging.
+5. After Spotware approval and secure account configuration, authenticate to the Pepperstone demo account; discover symbols and verify actual account permissions, price/volume precision and conversion data.
+6. Run real demo open/partial-fill/fill/reject/modify/close, broker-side protection verification, disconnect/restart/reconnect and reconciliation scenarios.
+7. Wire the existing Telegram bot into the running process, then validate command authorization and operational alerts.
+8. Prove a supported hosting/runtime option and operational monitoring before claiming continuous operation.
+9. Only consider live enablement after all required demo and recovery tests pass; do not weaken safety gates to achieve speed.
 
 ## Authenticated cTrader instrument metadata mapping (2026-11-01)
 
