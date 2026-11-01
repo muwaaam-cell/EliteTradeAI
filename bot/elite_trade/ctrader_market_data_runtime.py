@@ -60,8 +60,9 @@ class CTraderMarketDataRuntime:
         if account_id is None:
             raise RuntimeError("Authenticated account was lost during instrument discovery.")
 
+        received_instruments = tuple(instruments)
         verified = tuple(
-            item for item in instruments
+            item for item in received_instruments
             if getattr(item, "is_tradable", False) is True
         )
         if not verified:
@@ -93,7 +94,7 @@ class CTraderMarketDataRuntime:
             raise
 
         if callable(self._previous_instruments):
-            self._previous_instruments(tuple(instruments))
+            self._previous_instruments(received_instruments)
 
     def _handle_spot(self, event: object) -> None:
         if self._feed is None:
