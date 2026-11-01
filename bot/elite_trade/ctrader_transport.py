@@ -48,6 +48,7 @@ class CTraderSdkTransport:
         on_error: Callable[[str], None] | None = None,
         on_spot: Callable[[object], None] | None = None,
         on_account_snapshot: Callable[[object], None] | None = None,
+        on_reconcile: Callable[[object], None] | None = None,
         sdk=None,
         reactor=None,
         client_factory=None,
@@ -68,9 +69,11 @@ class CTraderSdkTransport:
         self.on_error = on_error or (lambda message: None)
         self.on_spot = on_spot or (lambda event: None)
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
+        self.on_reconcile = on_reconcile or (lambda response: None)
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
+        self._reconcile_in_flight = False
         self._sdk = sdk
         self._reactor = reactor
         self._client_factory = client_factory
@@ -98,6 +101,8 @@ class CTraderSdkTransport:
                 ProtoOATraderRes,
                 ProtoOAGetPositionUnrealizedPnLReq,
                 ProtoOAGetPositionUnrealizedPnLRes,
+                ProtoOAReconcileReq,
+                ProtoOAReconcileRes,
             )
             self._sdk = {
                 "Client": Client,
@@ -118,6 +123,8 @@ class CTraderSdkTransport:
                 "ProtoOATraderRes": ProtoOATraderRes,
                 "ProtoOAGetPositionUnrealizedPnLReq": ProtoOAGetPositionUnrealizedPnLReq,
                 "ProtoOAGetPositionUnrealizedPnLRes": ProtoOAGetPositionUnrealizedPnLRes,
+                "ProtoOAReconcileReq": ProtoOAReconcileReq,
+                "ProtoOAReconcileRes": ProtoOAReconcileRes,
             }
         if self._reactor is None:
             from twisted.internet import reactor
@@ -212,6 +219,16 @@ class CTraderSdkTransport:
                     return
                 self._pending_pnl = response
                 self._complete_account_snapshot_if_ready()
+            elif payload_type == self._sdk["ProtoOAReconcileRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received position reconciliation for an unexpected cTrader account.")
+                    return
+                if not self._reconcile_in_flight:
+                    self._fail("Received an unsolicited cTrader reconciliation response.")
+                    return
+                self._reconcile_in_flight = False
+                self.on_reconcile(response)
             elif payload_type == self._sdk["ProtoOASpotEvent"]().payloadType:
                 event = extract(message)
                 if int(event.ctidTraderAccountId) != self.authenticated_account_id:
@@ -263,6 +280,29 @@ class CTraderSdkTransport:
             return
         self.on_account_snapshot(snapshot)
 
+    def request_positions_reconcile(self, *, return_protection_orders: bool = False) -> None:
+        """Request cTrader's authoritative open positions and pending orders snapshot.
+
+        The response is forwarded unchanged after account-ID validation. The
+        caller must map and persist it; this method does not infer closures or
+        mark local protection as broker-confirmed by itself.
+        """
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Position reconciliation requires an authenticated account.")
+        if self._reconcile_in_flight:
+            raise RuntimeError("A position reconciliation request is already in progress.")
+        if not isinstance(return_protection_orders, bool):
+            raise ValueError("return_protection_orders must be boolean.")
+        request = self._sdk["ProtoOAReconcileReq"]()
+        request.ctidTraderAccountId = self.authenticated_account_id
+        request.returnProtectionOrders = return_protection_orders
+        self._reconcile_in_flight = True
+        try:
+            self._send(request)
+        except Exception:
+            self._reconcile_in_flight = False
+            raise
+
     def subscribe_spots(self, symbol_ids: tuple[int, ...] | list[int]) -> None:
         """Subscribe to quotes only after the selected account is authenticated."""
         if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
@@ -302,6 +342,7 @@ class CTraderSdkTransport:
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
+        self._reconcile_in_flight = False
         self._set_state(ConnectionState.DISCONNECTED)
 
     def _cancel_heartbeat(self) -> None:
@@ -316,6 +357,7 @@ class CTraderSdkTransport:
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
+        self._reconcile_in_flight = False
         self._set_state(ConnectionState.ERROR)
         self.on_error(message)
 
@@ -325,6 +367,7 @@ class CTraderSdkTransport:
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
+        self._reconcile_in_flight = False
         if self._client is not None:
             self._client.stopService()
         self._set_state(ConnectionState.DISCONNECTED)
