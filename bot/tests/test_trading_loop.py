@@ -82,7 +82,7 @@ class TradingLoopTests(unittest.TestCase):
         self.assertEqual(self.managed, 1)
         self.assertFalse(result.outcomes[0].decision.allow_new_entry)
 
-    def test_missing_account_state_blocks_candidate(self):
+    def test_stale_account_state_blocks_candidate(self):\n        self.risk = BrokerRiskState(\n            daily_net_pnl=Decimal("0"), equity=Decimal("1000"),\n            open_positions=0, observed_at_epoch=90.0\n        )\n        result = self.loop.run_cycle()\n        self.assertTrue(result.positions_managed)\n        self.assertFalse(result.outcomes[0].decision.allow_new_entry)\n\n    def test_missing_account_state_blocks_candidate(self):
         loop = self.make_loop(load_risk_state=lambda: None)
         result = loop.run_cycle()
         self.assertTrue(result.positions_managed)
