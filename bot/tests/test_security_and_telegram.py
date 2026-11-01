@@ -111,5 +111,28 @@ class TelegramTests(unittest.TestCase):
             TelegramControl(token="test-token", chat_id="@somechannel")
 
 
+    def test_owner_can_set_and_read_custom_daily_target(self):
+        reply = self.bot.handle_update(self.private_update(text="/target 1500"))
+        self.assertIn("$1500 USD", reply)
+        self.assertEqual(self.guard.profit_target, 1500)
+        status = self.bot.handle_update(self.private_update(text="/target"))
+        self.assertIn("$1500 USD", status)
+
+    def test_target_command_rejects_change_after_target_activates(self):
+        self.guard.evaluate(
+            daily_net_pnl=50, equity=1000, open_positions=0, now=self.now
+        )
+        reply = self.bot.handle_update(self.private_update(text="/target 5000"))
+        self.assertIn("Target not changed", reply)
+        self.assertEqual(self.guard.profit_target, 50)
+
+    def test_unauthorised_sender_cannot_change_target(self):
+        reply = self.bot.handle_update(
+            self.private_update(sender_id=456, text="/target 10000")
+        )
+        self.assertIsNone(reply)
+        self.assertEqual(self.guard.profit_target, 50)
+
+
 if __name__ == "__main__":
     unittest.main()
