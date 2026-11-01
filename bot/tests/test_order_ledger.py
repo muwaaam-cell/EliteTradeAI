@@ -83,9 +83,8 @@ class OrderLedgerTests(unittest.TestCase):
         self.ledger.mark_unknown("client-1", now=101, error="connection lost")
         restarted = OrderLedger(self.path)
         self.assertEqual(restarted.get("client-1").status, UNKNOWN)
-        self.assertFalse(restarted.resolve_unknown(
-            "client-1", PENDING, now=102
-        ))
+        with self.assertRaises(ValueError):
+            restarted.resolve_unknown("client-1", PENDING, now=102)
         self.assertTrue(restarted.resolve_unknown(
             "client-1", FILLED, now=103, broker_order_id="broker-99"
         ))
