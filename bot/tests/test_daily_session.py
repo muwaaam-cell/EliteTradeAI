@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from elite_trade.daily_session import ACTIVE, LOSS_LOCK, TARGET_LOCK, DailySessionGuard
+from elite_trade.daily_session import ACTIVE, LOSS_LOCK, TARGET_LOCK, TARGET_RESUMED, DailySessionGuard
 
 
 class DailySessionGuardTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class DailySessionGuardTests(unittest.TestCase):
         self.assertFalse(result.allow_new_entries)
         self.assertTrue(result.monitor_existing_positions)
         self.assertTrue(self.guard.resume_after_target(now=self.now))
-        self.assertEqual(self.guard.state_for_day(now=self.now), ACTIVE)
+        self.assertEqual(self.guard.state_for_day(now=self.now), TARGET_RESUMED)
 
     def test_target_lock_persists_across_restart(self):
         self.evaluate("50")
@@ -50,7 +50,7 @@ class DailySessionGuardTests(unittest.TestCase):
         )
         self.assertEqual(restarted.state_for_day(now=self.now), TARGET_LOCK)
 
-    def test_daily_loss_lock_cannot_be_resumed(self):
+    def test_resumed_target_does_not_immediately_relock_and_loss_still_applies(self):\n        self.evaluate("50")\n        self.assertTrue(self.guard.resume_after_target(now=self.now))\n        self.assertEqual(self.evaluate("51").state, TARGET_RESUMED)\n        self.assertEqual(self.evaluate("-15").state, LOSS_LOCK)\n\n    def test_daily_loss_lock_cannot_be_resumed(self):
         result = self.evaluate("-15")
         self.assertEqual(result.state, LOSS_LOCK)
         self.assertFalse(result.allow_new_entries)
