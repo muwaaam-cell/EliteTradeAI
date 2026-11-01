@@ -78,6 +78,7 @@ class CTraderSdkTransport:
         self._catalog_symbols = None
         self._catalog_assets = None
         self._catalog_trader = None
+        self._catalog_full_request_sent = False
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
@@ -330,6 +331,7 @@ class CTraderSdkTransport:
         self._catalog_symbols = None
         self._catalog_assets = None
         self._catalog_trader = None
+        self._catalog_full_request_sent = False
         account_id = self.authenticated_account_id
         requests = (
             ("ProtoOASymbolsListReq", "ctidTraderAccountId"),
@@ -348,6 +350,7 @@ class CTraderSdkTransport:
     def _maybe_request_full_symbol_metadata(self) -> None:
         if (
             not self._catalog_in_flight
+            or self._catalog_full_request_sent
             or self._catalog_symbols is None
             or self._catalog_assets is None
             or self._catalog_trader is None
@@ -360,6 +363,9 @@ class CTraderSdkTransport:
         request = self._sdk["ProtoOASymbolByIdReq"]()
         request.ctidTraderAccountId = self.authenticated_account_id
         request.symbolId.extend(symbol_ids)
+        # Set before sending: duplicate/out-of-order prerequisite responses must
+        # never cause a second full-symbol request for the same catalogue cycle.
+        self._catalog_full_request_sent = True
         try:
             self._send(request)
         except Exception:
@@ -371,6 +377,7 @@ class CTraderSdkTransport:
         self._catalog_symbols = None
         self._catalog_assets = None
         self._catalog_trader = None
+        self._catalog_full_request_sent = False
 
     def request_account_snapshot(self) -> None:
         """Request broker balance and all open-position net PnL for the authenticated account."""
