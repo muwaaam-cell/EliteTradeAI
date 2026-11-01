@@ -1,10 +1,8 @@
-"""Persistent daily session guard for autonomous trading.
+"""Persistent daily session guard with post-target trailing profit protection.
 
-This module decides whether NEW entries may be opened. It never closes,
-modifies, or abandons existing broker positions. The caller must feed a
-fresh broker-derived daily net P&L that includes realised and unrealised P&L,
-commissions, swaps and fees. Missing/stale broker data must block entries
-upstream; this module deliberately does not invent account values.
+The guard authorises NEW entries only. Existing positions must continue to be
+managed independently. Callers must provide fresh broker-derived daily net
+P&L including realised/unrealised P&L, commissions, swaps and fees.
 """
 from __future__ import annotations
 
@@ -16,10 +14,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from elite_trade.adaptive_risk import AdaptiveRiskConfig, ProfitProtectionTracker, TradingMode
+
 
 ACTIVE = "ACTIVE"
-TARGET_LOCK = "TARGET_LOCK"
-TARGET_RESUMED = "TARGET_RESUMED"
+TARGET_LOCK = "TARGET_LOCK"       # Giveback floor reached; locked until next day.
+TARGET_RESUMED = "TARGET_RESUMED" # Target reached; protection active, entries may continue.
 LOSS_LOCK = "LOSS_LOCK"
 
 
@@ -42,10 +42,11 @@ class SessionDecision:
     allow_new_entries: bool
     monitor_existing_positions: bool
     reason: str
+    protection_floor: Decimal = Decimal("0")
 
 
 class DailySessionGuard:
-    """SQLite-persisted daily profit/loss lock with target-only manual resume."""
+    """Persistent daily loss guard plus target-triggered trailing giveback lock."""
 
     def __init__(
         self,
@@ -55,6 +56,7 @@ class DailySessionGuard:
         profit_target: Decimal | str | int,
         max_daily_loss: Decimal | str | int,
         max_open_positions: int,
+        max_giveback: Decimal | str | int = "20",
     ) -> None:
         try:
             self.zone = ZoneInfo(timezone)
@@ -62,12 +64,17 @@ class DailySessionGuard:
             raise ValueError("A valid IANA timezone is required.") from exc
         self.profit_target = _money(profit_target, "profit_target")
         self.max_daily_loss = _money(max_daily_loss, "max_daily_loss")
+        self.max_giveback = _money(max_giveback, "max_giveback")
+        if self.max_giveback >= self.profit_target:
+            raise ValueError("max_giveback must be smaller than profit_target.")
         if isinstance(max_open_positions, bool) or not isinstance(max_open_positions, int) or max_open_positions < 1:
             raise ValueError("max_open_positions must be a positive integer.")
         self.max_open_positions = max_open_positions
         self.database = str(database)
         self._lock = threading.RLock()
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
+        config = AdaptiveRiskConfig(daily_target=self.profit_target, max_giveback=self.max_giveback)
+        self.protection = ProfitProtectionTracker(self.database, config)
         with self._connect() as db:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS daily_sessions (
@@ -91,9 +98,7 @@ class DailySessionGuard:
         return local.date().isoformat(), local
 
     def _read_or_create(self, db: sqlite3.Connection, day: str, now: datetime) -> str:
-        row = db.execute(
-            "SELECT state FROM daily_sessions WHERE trading_day=?", (day,)
-        ).fetchone()
+        row = db.execute("SELECT state FROM daily_sessions WHERE trading_day=?", (day,)).fetchone()
         if row is None:
             db.execute(
                 "INSERT INTO daily_sessions(trading_day,state,updated_at) VALUES(?,?,?)",
@@ -110,7 +115,6 @@ class DailySessionGuard:
         open_positions: int,
         now: datetime | None = None,
     ) -> SessionDecision:
-        """Evaluate using current broker-derived NET P&L and open-position count."""
         try:
             pnl = Decimal(str(daily_net_pnl))
             account_equity = Decimal(str(equity))
@@ -124,46 +128,55 @@ class DailySessionGuard:
         day, local_now = self._day(now)
         with self._lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            state = self._read_or_create(db, day, local_now)
-            # Loss lock has priority and is irreversible until the next local day.
-            if state in {ACTIVE, TARGET_RESUMED} and pnl <= -self.max_daily_loss:
+            previous = self._read_or_create(db, day, local_now)
+            # A previously persisted loss/giveback lock is irreversible today.
+            if previous == LOSS_LOCK:
                 state = LOSS_LOCK
-            elif state == ACTIVE and pnl >= self.profit_target:
+                mode, floor = TradingMode.DAILY_LOSS_LOCK, Decimal("0")
+            elif previous == TARGET_LOCK:
                 state = TARGET_LOCK
-            if state != self._read_state(db, day):
+                mode, floor = TradingMode.GIVEBACK_LOCK, max(
+                    self.profit_target - self.max_giveback, Decimal("0")
+                )
+            else:
+                loss_reached = pnl <= -self.max_daily_loss
+                mode, floor = self.protection.evaluate(
+                    trading_day=local_now.date(),
+                    daily_net_pnl=pnl,
+                    daily_loss_limit_reached=loss_reached,
+                )
+                if mode is TradingMode.DAILY_LOSS_LOCK:
+                    state = LOSS_LOCK
+                elif mode is TradingMode.GIVEBACK_LOCK:
+                    state = TARGET_LOCK
+                elif mode is TradingMode.PROFIT_PROTECTION:
+                    state = TARGET_RESUMED
+                else:
+                    state = ACTIVE
+            if state != previous:
                 db.execute(
                     "UPDATE daily_sessions SET state=?,updated_at=? WHERE trading_day=?",
                     (state, local_now.isoformat(), day),
                 )
 
         if state == LOSS_LOCK:
-            return SessionDecision(day, state, False, True, "Daily loss limit reached; entries locked until next trading day.")
+            return SessionDecision(day, state, False, True,
+                                   "Daily loss limit reached; entries locked until next trading day.", floor)
         if state == TARGET_LOCK:
-            return SessionDecision(day, state, False, True, "Daily profit target reached; entries locked pending explicit /resume.")
+            return SessionDecision(day, state, False, True,
+                                   "Trailing profit-protection floor reached; entries locked until next trading day.", floor)
         if open_positions >= self.max_open_positions:
-            return SessionDecision(day, state, False, True, "Maximum simultaneous open positions reached.")
-        return SessionDecision(day, state, True, True, "Daily limits and position-count check passed.")
-
-    @staticmethod
-    def _read_state(db: sqlite3.Connection, day: str) -> str:
-        row = db.execute(
-            "SELECT state FROM daily_sessions WHERE trading_day=?", (day,)
-        ).fetchone()
-        return str(row[0]) if row else ACTIVE
+            return SessionDecision(day, state, False, True,
+                                   "Maximum simultaneous open positions reached.", floor)
+        if state == TARGET_RESUMED:
+            return SessionDecision(day, state, True, True,
+                                   "Daily target reached; profit protection active and qualified entries may continue.", floor)
+        return SessionDecision(day, state, True, True,
+                               "Daily loss limit not reached; qualified entries may continue.", floor)
 
     def resume_after_target(self, *, now: datetime | None = None) -> bool:
-        """Resume only a profit-target lock. A daily-loss lock cannot be overridden."""
-        day, local_now = self._day(now)
-        with self._lock, self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            state = self._read_or_create(db, day, local_now)
-            if state != TARGET_LOCK:
-                return False
-            db.execute(
-                "UPDATE daily_sessions SET state=?,updated_at=? WHERE trading_day=?",
-                (TARGET_RESUMED, local_now.isoformat(), day),
-            )
-            return True
+        """Target is not a lock; giveback and daily-loss locks cannot be overridden."""
+        return False
 
     def state_for_day(self, *, now: datetime | None = None) -> str:
         day, local_now = self._day(now)
