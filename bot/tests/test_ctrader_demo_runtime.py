@@ -13,7 +13,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.ledger = OrderLedger(Path(self.temp.name) / "orders.sqlite3")
+        self.ledger = OrderLedger(Path(self.temp.name) / "orders.sqlite3", account_id=77)
         self.sent = []
         self.unmatched = []
         self.transport = SimpleNamespace(
