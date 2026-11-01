@@ -5,7 +5,6 @@ Last verified: 2026-11-01 21:45 UTC.
 ## Current verified status (supersedes older dated entries below)
 
 - Current development branch: `pepperstone-ctrader-bot`.
-- Current branch HEAD after the market-data implementation and documentation updates: `87f7e4489da015f3d41075f4ed2c277d3ad9254e`.
 - Latest code/test commit: `95f7e3b6f6bc36aa522bc537083e273d2f968990`. GitHub Actions run [#360](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41353585151) completed successfully: all four jobs passed, including 286 unit tests, 84% measured total coverage, Ruff lint, Bandit source-security scan, dependency vulnerability audit, and wheel build/import. Subsequent commits through this status refresh changed documentation only; no source code changed after the tested commit.
 - Latest implemented increment: both durable SQLite ledgers can be permanently bound to one cTrader account. Reopening either ledger without its original account ID or with a different account ID is rejected. Existing unbound databases can be bound once.
 - The demo runtime now requires matching account-bound order and position ledgers, an explicit selected demo account and a broker symbol-ID/name mapping. It installs authenticated execution-event, order-error and position-reconciliation callbacks before transport startup.
