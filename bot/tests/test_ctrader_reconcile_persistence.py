@@ -64,6 +64,38 @@ class CTraderReconcilePersistenceTests(unittest.TestCase):
                 )
             self.assertIsNone(ledger.get("123"))
 
+    def test_transport_callback_handler_persists_and_retains_pending_orders(self):
+        from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
+
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = PositionLedger(Path(directory) / "positions.db", account_id=77)
+            pending = SimpleNamespace(orderId=900)
+            response = self.response()
+            response.order = [pending]
+            ticks = iter([123.0])
+            handler = PositionLedgerReconcileHandler(
+                ledger, expected_account_id=77, symbol_names={7: "XAUUSD"},
+                clock=lambda: next(ticks),
+            )
+            snapshot = handler(response)
+            self.assertEqual(ledger.get("123").status.value, "OPEN")
+            self.assertEqual(snapshot.pending_orders, (pending,))
+            self.assertIs(handler.last_snapshot, snapshot)
+
+    def test_transport_callback_handler_rejects_wrong_response_account(self):
+        from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
+
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = PositionLedger(Path(directory) / "positions.db", account_id=77)
+            handler = PositionLedgerReconcileHandler(
+                ledger, expected_account_id=77, symbol_names={7: "XAUUSD"},
+                clock=lambda: 123.0,
+            )
+            with self.assertRaisesRegex(ValueError, "different account"):
+                handler(self.response(account_id=88))
+            self.assertIsNone(ledger.get("123"))
+            self.assertIsNone(handler.last_snapshot)
+
 
 if __name__ == "__main__":
     unittest.main()
