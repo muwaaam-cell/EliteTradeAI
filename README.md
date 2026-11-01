@@ -14,11 +14,11 @@ Implemented foundations in `bot/elite_trade/` include:
 - Account balance/equity and open-position P&L snapshot parsing.
 - cTrader quote subscription request and spot-event forwarding.
 - A validated spot-quote cache that decodes bid/ask using instrument precision, rejects unknown symbols and wrong-account events, and expires stale quotes.
-- Account-scoped cTrader execution-event forwarding and strict client-order-ID event decoding into durable ledger updates.
-- Position/order reconciliation request forwarding.
+- Account-scoped cTrader execution-event and order-error event forwarding. Supported execution events can be decoded and applied to the durable local ledger when supplied a verified enum map.
+- Position/order reconciliation request forwarding, with the request validated against the actual generated Spotware protobuf schema.
 - Daily target and giveback protection, daily loss lock, kill switch and adaptive risk sizing.
 - Durable duplicate-resistant order-intent ledger with restart persistence, uncertain-submission reconciliation and cumulative partial-fill tracking.
-- A validated cTrader MARKET-order request builder that resolves SDK enums by name, requires an attached stop-loss, and checks stop/target placement against the supplied entry reference. It constructs protobuf requests only; it does not submit them.
+- A validated cTrader MARKET-order request builder that resolves SDK enums by name, requires an attached stop-loss, and checks stop/target placement against the supplied entry reference. Regression tests also construct the real generated Spotware protobuf type. It constructs requests only; it does not submit them.
 - Fail-closed pre-trade checks; the trading loop manages existing positions before evaluating new entries.
 
 ## What is not yet complete
@@ -37,7 +37,7 @@ Until these items are implemented and verified, this code is an integration foun
 
 ## Safety rules
 
-- Live trading must remain disabled until the complete demo execution lifecycle has passed.
+- Live trading is hard-locked by an internal release-certification constant (`LIVE_RELEASE_CERTIFIED = False`); environment flags cannot bypass it. Do not change this latch until the complete demo execution lifecycle and manual safety review have passed.
 - Missing, stale, inconsistent or unverified broker data must block new entries.
 - Existing-position management and emergency close capability must not depend on permission to open new trades.
 - Never commit cTrader client secrets, access/refresh tokens, Telegram tokens or account credentials. Supply secrets through a protected runtime secret store or environment configuration.
@@ -51,4 +51,4 @@ Until these items are implemented and verified, this code is an integration foun
 
 ## Development checks
 
-Run the Python checks from `bot/` using the project's configured test/lint/security commands. A passing unit suite validates only the tested software behavior; broker demo verification remains a separate release gate.
+Run the Python checks from `bot/` using the project's configured test/lint/security commands. The branch workflow is configured for pushes to `pepperstone-ctrader-bot` and pull requests targeting `main`. At the time of this README update, no current-head PR check result was visible through the connected GitHub status/run query; do not treat earlier CI runs on prior commits as validation of the latest changes. A passing unit suite validates only the tested software behavior; broker demo verification remains a separate release gate.
