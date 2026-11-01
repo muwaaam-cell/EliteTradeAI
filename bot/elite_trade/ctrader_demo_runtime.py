@@ -19,6 +19,8 @@ from elite_trade.ctrader_execution_events import (
     make_order_error_handler,
 )
 from elite_trade.order_ledger import OrderLedger
+from elite_trade.position_ledger import PositionLedger
+from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class CTraderDemoExecutionRuntime:
     adapter: CTraderDemoExecutionAdapter
     on_execution_event: Callable[[object], bool]
     on_order_error: Callable[[object], bool]
+    on_reconcile: Callable[[object], object]
 
 
 def compose_demo_execution_runtime(
@@ -39,6 +42,8 @@ def compose_demo_execution_runtime(
     execution_type_names: Mapping[int, str],
     now_epoch: Callable[[], int],
     on_unmatched: Callable[[str, object], None],
+    position_ledger: PositionLedger,
+    symbol_names: Mapping[int, str],
 ) -> CTraderDemoExecutionRuntime:
     """Wire order sending and broker acknowledgements before transport startup.
 
@@ -59,6 +64,10 @@ def compose_demo_execution_runtime(
         raise ValueError("Transport must explicitly select the expected demo account.")
     if not isinstance(ledger, OrderLedger) or ledger.bound_account_id != expected_account_id:
         raise ValueError("Order ledger must be bound to the expected demo account.")
+    if not isinstance(position_ledger, PositionLedger) or position_ledger.bound_account_id != expected_account_id:
+        raise ValueError("Position ledger must be bound to the expected demo account.")
+    if not isinstance(symbol_names, Mapping):
+        raise TypeError("Runtime requires the authenticated broker symbol-name mapping.")
     if getattr(transport, "state", None) is not None:
         state = getattr(transport.state, "value", transport.state)
         if state != "disconnected":
@@ -85,13 +94,22 @@ def compose_demo_execution_runtime(
         on_unmatched=on_unmatched,
     )
 
-    # Install both callbacks before the transport is allowed to start.
+    reconcile_handler = PositionLedgerReconcileHandler(
+        position_ledger,
+        expected_account_id=expected_account_id,
+        symbol_names=symbol_names,
+        clock=now_epoch,
+    )
+
+    # Install all broker-event callbacks before the transport is allowed to start.
     transport.on_execution_event = execution_handler
     transport.on_order_error = order_error_handler
+    transport.on_reconcile = reconcile_handler
 
     return CTraderDemoExecutionRuntime(
         transport=transport,
         adapter=adapter,
         on_execution_event=execution_handler,
         on_order_error=order_error_handler,
+        on_reconcile=reconcile_handler,
     )
