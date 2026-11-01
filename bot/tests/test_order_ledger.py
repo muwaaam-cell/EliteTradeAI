@@ -100,7 +100,8 @@ class OrderLedgerTests(unittest.TestCase):
         self.assertEqual(self.ledger.get("client-1").filled_volume_units, 40)
 
     def test_legacy_ledger_schema_migrates_without_losing_orders(self):
-        with sqlite3.connect(self.path) as db:
+        legacy_path = Path(self.temp.name) / "legacy.sqlite3"
+        with sqlite3.connect(legacy_path) as db:
             db.execute(
                 """CREATE TABLE orders (
                     client_order_id TEXT PRIMARY KEY,
@@ -117,7 +118,7 @@ class OrderLedgerTests(unittest.TestCase):
                 """INSERT INTO orders VALUES
                    ('old-order','XAUUSD','BUY',100,'SUBMITTED',10,11,'broker-old',NULL)"""
             )
-        migrated = OrderLedger(self.path)
+        migrated = OrderLedger(legacy_path)
         record = migrated.get("old-order")
         self.assertEqual(record.status, SUBMITTED)
         self.assertEqual(record.filled_volume_units, 0)
