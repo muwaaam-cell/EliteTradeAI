@@ -5,8 +5,10 @@ Last verified: 2026-11-01 15:20 UTC.
 ## Current verified status (supersedes older dated entries below)
 
 - Current development branch: `pepperstone-ctrader-bot`.
-- Current branch HEAD: `f5a779a27452fb037db0624e0dab0ae66313e75d`.
-- Latest GitHub Actions run: `41320640982` (run #291), completed successfully on that exact HEAD. All four jobs passed: 254 unit tests, 84% measured total coverage, Ruff lint, Bandit source scan, pip-audit dependency audit, wheel build and package import smoke test.
+- Current branch HEAD at this handoff refresh: `070b4d1271580efbc32dc8b8c5fd1afba044af72`.
+- Latest verified push workflow: `41320717754` (run #293), completed successfully on that exact HEAD. All four jobs passed: unit tests and coverage, Ruff lint and Bandit source scan, pip-audit dependency audit, and wheel build/import smoke test. The unit-test job reports 254 tests and 84% measured total coverage.
+- A pull-request workflow on the same exact HEAD, run `41320723130` (#294), also completed successfully with all four jobs passing.
+- This status file is being refreshed after those verified runs; subsequent documentation-only commits must not be represented as having a new test result until their own workflow completes.
 - The test suite uses mocked protocol/client fixtures where applicable. It does not establish live Pepperstone connectivity, a real demo order, profitable trading or live readiness.
 - New in this verified increment: `make_execution_event_handler()` connects authenticated cTrader execution-event callbacks to the durable order ledger. It applies only account-matched events with a matching reserved client order ID and requested volume; malformed or uncorrelated events are surfaced to a required callback and are never guessed onto an order. Unrelated valid event types are ignored.
 - A demo-only `CTraderDemoExecutionAdapter` and guarded `send_demo_order_request()` transport method exist. They reserve an order before one send attempt and treat transport uncertainty as UNKNOWN; broker execution events, not socket writes, determine acceptance/fill. The transport rejects live environment, unauthenticated account and mismatched account ID.
