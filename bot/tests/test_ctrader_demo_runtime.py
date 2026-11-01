@@ -34,6 +34,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             on_unmatched=lambda reason, event: self.unmatched.append((reason, event)),
             position_ledger=self.position_ledger,
             symbol_names={10: "EURUSD"},
+            authorize_order=lambda spec, symbol: True,
         )
 
     def test_installs_callbacks_and_sends_once_through_shared_ledger(self):
