@@ -1,8 +1,12 @@
 # EliteTrade AI — project handoff and source of truth
 
-Last verified: 2026-11-01 21:45 UTC.
+Last verified: 2026-11-01 22:15 UTC.
 
 ## Current verified status (supersedes older dated entries below)
+
+- Current source/test HEAD: `bf7b57fcf4b660c7c218439d6f23ba7363681a71`. GitHub Actions run [#397](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41356207662) passed all four jobs: 292 unit tests, 84% measured total coverage, Ruff lint, Bandit source-security scan, dependency vulnerability audit and wheel build/import. This verifies the current Telegram cursor hardening and test suite, not real Telegram connectivity or broker execution.
+- Telegram polling now persists its update offset atomically with private file permissions. First-run bootstrap drains the complete pre-existing update queue before the startup-ready notice, preventing old queued control commands from being replayed or a new command sent in response to the notice from being discarded. For each new update, the cursor is persisted before applying its command, preventing at-least-once replay of an emergency-resume confirmation if the process fails while replying. A corrupt cursor fails closed. The path is configurable with `ELITE_TELEGRAM_OFFSET_FILE` and defaults to `state/telegram_offset.json`.
+- Added regression tests for stale queued emergency-resume commands, multi-batch queue draining, persisted offset across restarts, cursor corruption, reply failure after command handling, and startup-notice ordering. Telegram API calls remain mocked in tests; no real Telegram token/chat configuration or deployed polling session has been verified.
 
 - Current development branch: `pepperstone-ctrader-bot`.
 - Latest code/test commit: `95f7e3b6f6bc36aa522bc537083e273d2f968990`. GitHub Actions run [#360](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41353585151) completed successfully: all four jobs passed, including 286 unit tests, 84% measured total coverage, Ruff lint, Bandit source-security scan, dependency vulnerability audit, and wheel build/import. Subsequent commits through this status refresh changed documentation only; no source code changed after the tested commit.
@@ -14,7 +18,7 @@ Last verified: 2026-11-01 21:45 UTC.
 - Earlier intermediate workflow #322 failed because it ran against the runtime-composition commit before the matching test updates had landed. The subsequent final code/test commit `ecd4cf4` passed all four jobs in run #324. The later timeout and enum-contract changes are included in the latest fully green run #330 above.
 - Added `ctrader_market_data_runtime.py` to compose the authenticated instrument catalogue with the freshness-aware quote cache. It subscribes only to broker-verified tradable symbols, scopes spot events to the authenticated account, exposes fresh bid/ask quotes by broker symbol name, and clears quote/instrument state when authentication is lost. Five mocked composition tests are included in the 286-test passing run #360. This does not prove real Pepperstone market-data connectivity and does not submit orders.
 - The demo order adapter and authenticated execution-event handlers exist, but they are not connected to the `TradingLoop`. `trading_loop.py` still deliberately never submits an order (`entry_submission_enabled=False`), and `bot/main.py` remains a safe diagnostic entry point reporting broker authentication and market data as not connected and execution disabled.
-- No actual Pepperstone cTrader OAuth exchange, account authentication, live quote, demo order, broker-confirmed protection, restart/reconnect recovery, Telegram polling/deployment or always-on hosting has been verified.
+- No actual Pepperstone cTrader OAuth exchange, account authentication, live quote, demo order, broker-confirmed protection, restart/reconnect recovery, real Telegram API polling/deployment or always-on hosting has been verified.
 - Spotware application 46574 was last reported by the user as pending. No approval or real account connection has been confirmed.
 - Live execution remains locked. Do not describe this as a functioning autonomous trading bot or enable live orders until the complete demo lifecycle, broker protection, reconciliation and recovery criteria pass against the user's real Pepperstone cTrader demo account.
 
@@ -45,7 +49,7 @@ Last verified: 2026-11-01 21:45 UTC.
 4. Complete real OAuth callback hosting with HTTPS/TLS, secret provisioning and secure callback logging.
 5. After Spotware approval and secure account configuration, authenticate to the Pepperstone demo account; discover symbols and verify actual account permissions, price/volume precision and conversion data.
 6. Run real demo open/partial-fill/fill/reject/modify/close, broker-side protection verification, disconnect/restart/reconnect and reconciliation scenarios.
-7. Wire the existing Telegram bot into the running process, then validate command authorization and operational alerts.
+7. Configure the existing Telegram credentials locally (never in chat or Git), run the polling process on Termux, and verify private-chat commands and operational alerts against the real Telegram API.
 8. Prove a supported hosting/runtime option and operational monitoring before claiming continuous operation.
 9. Only consider live enablement after all required demo and recovery tests pass; do not weaken safety gates to achieve speed.
 
