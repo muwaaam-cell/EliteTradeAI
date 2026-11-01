@@ -44,6 +44,7 @@ def compose_demo_execution_runtime(
     on_unmatched: Callable[[str, object], None],
     position_ledger: PositionLedger,
     symbol_names: Mapping[int, str],
+    authorize_order: Callable[[object, str], bool] | None = None,
 ) -> CTraderDemoExecutionRuntime:
     """Wire order sending and broker acknowledgements before transport startup.
 
@@ -79,6 +80,7 @@ def compose_demo_execution_runtime(
         transport=transport,
         ledger=ledger,
         now_epoch=now_epoch,
+        authorize_order=authorize_order,
     )
     execution_handler = make_execution_event_handler(
         ledger=ledger,
