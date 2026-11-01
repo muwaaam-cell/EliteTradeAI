@@ -5,7 +5,10 @@ Last verified: 2026-11-01 15:20 UTC.
 ## Current verified status (supersedes older dated entries below)
 
 - Current development branch: `pepperstone-ctrader-bot`.
-- Current branch HEAD at this handoff refresh: `070b4d1271580efbc32dc8b8c5fd1afba044af72`.
+- Current branch HEAD at this handoff refresh: `da9985b03af9ba7ede9709629687b3918ec22d8b`.
+- Latest GitHub Actions push run: `41322003370` (run #299), completed successfully on that exact HEAD. All four jobs passed: unit tests and coverage, Ruff lint and Bandit source scan, pip-audit dependency audit, and wheel build/import smoke test.
+- New in this increment: `ctrader_demo_runtime.py` composes the demo-only execution adapter with authenticated execution-event and order-error callbacks before transport startup. All components share the same durable `OrderLedger`; the factory refuses live transports, wrong selected accounts and late composition after transport startup. Tests cover accepted-order correlation, account mismatch, order-error correlation and live/account/startup refusal.
+- This is a tested composition layer only. It does not yet connect the `TradingLoop`, reconcile broker order/position state after restart, implement broker-confirmed modify/close orchestration, or establish a real Pepperstone demo connection.
 - Latest verified push workflow: `41320717754` (run #293), completed successfully on that exact HEAD. All four jobs passed: unit tests and coverage, Ruff lint and Bandit source scan, pip-audit dependency audit, and wheel build/import smoke test. The unit-test job reports 254 tests and 84% measured total coverage.
 - A pull-request workflow on the same exact HEAD, run `41320723130` (#294), also completed successfully with all four jobs passing.
 - This status file is being refreshed after those verified runs; subsequent documentation-only commits must not be represented as having a new test result until their own workflow completes.
@@ -41,7 +44,7 @@ Last verified: 2026-11-01 15:20 UTC.
 
 ## Next engineering gates
 
-1. Complete a single runtime composition that wires authenticated cTrader transport, account-scoped instrument/quote providers, fresh account risk snapshots, the trading-loop pre-trade gate, demo-only execution adapter, execution-event and order-error handlers, and durable ledgers. Keep this composition unable to submit live orders.
+1. Extend the new demo execution composition to include the trading-loop pre-trade gate, verified account-scoped instrument/quote providers and fresh broker risk snapshots. Keep this composition unable to submit live orders.
 2. Implement account-bound order/position reconciliation and a durable recovery journal so restart recovery does not falsely treat separate SQLite ledgers as one atomic transaction.
 3. Implement broker-confirmed SL/TP amend and close lifecycle, including correlated acknowledgements/errors and reconciliation after ambiguous outcomes.
 4. Complete real OAuth callback hosting with HTTPS/TLS, secret provisioning and secure callback logging.
