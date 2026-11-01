@@ -74,6 +74,42 @@ The bot starts in analysis-only mode. The daily profit target defaults to $50 bu
 
 Live trading must remain disabled until OAuth, account selection, symbol metadata, live quotes, order/position reconciliation, broker-confirmed protective stops, daily loss limits, duplicate-order protection, reconnect handling and emergency shutdown are implemented and verified on demo. Live activation also requires your explicit approval.
 
+## Telegram control runtime (safe mode)
+
+The private-chat controller now has a runnable entry point. From the `bot/`
+directory, install the requirements and set the following environment values
+(or place them in an untracked local `.env` file):
+
+```dotenv
+TELEGRAM_BOT_TOKEN=your_existing_bot_token
+TELEGRAM_CHAT_ID=your_numeric_private_chat_id
+ELITE_TRADING_TIMEZONE=UTC
+ELITE_DAILY_TARGET_USD=50
+ELITE_MAX_DAILY_LOSS_USD=50
+ELITE_MAX_GIVEBACK_USD=20
+ELITE_MAX_OPEN_POSITIONS=1
+ELITE_KILL_SWITCH_FILE=state/KILL_SWITCH
+ELITE_SESSION_DATABASE=state/daily_session.sqlite3
+```
+
+Start the control process with:
+
+```bash
+PYTHONPATH=. python -m elite_trade.telegram_runtime
+```
+
+It sends a startup notice, then polls Telegram for private-chat commands.
+Supported controls include `/status`, `/target`, `/pause`, `/kill` and the
+explicitly confirmed emergency reset. `/closeall` remains unavailable because
+broker-side position closure is not implemented. The process does not
+authenticate to cTrader, read market data, start a strategy loop or submit
+orders. Keep the Telegram token private and never commit `.env`.
+
+The local kill-switch file is persistent. Do not remove it to make the bot
+start; use the explicit Telegram emergency reset only after reviewing why it
+was activated. This runtime's kill-switch path is separate from the legacy
+Termux `ELITE_STOP` file unless you deliberately configure the same path.
+
 ## OAuth callback integration
 
 The framework-neutral callback orchestration is in `elite_trade/oauth_callback.py`. It issues state through the SQLite one-time store, consumes state before exchanging the short-lived code, and stores tokens only through the encrypted vault. It does not itself create an HTTPS listener or prove a Spotware connection.
