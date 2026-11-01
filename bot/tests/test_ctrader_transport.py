@@ -153,6 +153,34 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertTrue(received[0][0].is_tradable)
         self.assertFalse(transport._catalog_in_flight)
 
+    def test_duplicate_catalog_prerequisite_response_does_not_resend_full_symbols(self):
+        transport, client, _ = self.make_transport()
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_instrument_catalog()
+
+        light = SimpleNamespace(symbolId=7, symbolName="EURUSD", enabled=True,
+                                baseAssetId=1, quoteAssetId=2)
+        assets = SimpleNamespace(ctidTraderAccountId=77, asset=[
+            SimpleNamespace(assetId=1, name="EUR"), SimpleNamespace(assetId=2, name="USD")
+        ])
+        trader = ProtoOATrader(ctidTraderAccountId=77, balance=10000, depositAssetId=2,
+                               moneyDigits=2, accessRights=0)
+        symbols_response = SimpleNamespace(ctidTraderAccountId=77, symbol=[light])
+        assets_response = SimpleNamespace(ctidTraderAccountId=77, asset=assets.asset)
+        trader_response = SimpleNamespace(ctidTraderAccountId=77, trader=trader)
+
+        client.received(client, SimpleNamespace(payloadType=18, body=symbols_response))
+        client.received(client, SimpleNamespace(payloadType=20, body=assets_response))
+        client.received(client, SimpleNamespace(payloadType=12, body=trader_response))
+        self.assertEqual(len(client.sent), 4)
+        self.assertEqual(client.sent[-1].payloadType, 21)
+
+        # A duplicate trader response after the full-symbol request is sent
+        # must not enqueue another full-symbol request.
+        client.received(client, SimpleNamespace(payloadType=12, body=trader_response))
+        self.assertEqual(len(client.sent), 4)
+
     def test_instrument_catalog_rejects_incomplete_full_symbol_response(self):
         errors = []
         transport, client, _ = self.make_transport(on_error=errors.append)
