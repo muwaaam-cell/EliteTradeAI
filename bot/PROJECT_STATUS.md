@@ -278,6 +278,32 @@ No broker connection, order submission, or live execution was added.
 - https://help.ctrader.com/open-api/connection/
 - https://help.ctrader.com/open-api/python-SDK/python-sdk-index/
 
+## cTrader instrument-catalogue transport verification (2026-11-01)
+
+- The transport now guards the full-symbol metadata request with a per-catalogue
+  sent flag. Duplicate or repeated prerequisite responses cannot enqueue the same
+  full-symbol request twice; the flag resets on catalogue completion, failure,
+  disconnect and shutdown.
+- Added a regression test that replays a duplicate trader response after the
+  full-symbol request is sent and confirms that no duplicate request is emitted.
+- The transport tests now use actual vendored Spotware protobuf message types for
+  light/full symbols, assets and access-right enum values. The fake SDK request
+  fixture explicitly models the repeated symbolId field on ProtoOASymbolByIdReq,
+  matching the generated protocol message.
+- Earlier CI failures in runs 41311010405, 41311701022, 41311704193 and
+  41311922497 were caused by incomplete test doubles: light-symbol fixtures
+  lacked protobuf HasField behaviour and the fake full-symbol request omitted
+  its repeated symbolId collection. These were test-fixture defects; they did
+  not establish a live broker protocol failure. The fixtures were corrected and
+  the complete workflow was rerun.
+- Verified code/test commit: bdb1a087821ff623cd33793ceb65947ca4ef7398.
+- GitHub Actions run 41311974624 passed all four jobs:
+  205 Python unit tests, 83% measured total coverage, Ruff lint, Bandit source
+  security scan, pip-audit dependency scan and wheel build/import verification.
+  Run: https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41311974624.
+- This verifies the mocked transport orchestration and package quality only.
+  No live Pepperstone cTrader account has yet supplied an instrument catalogue.
+
 ## Continuation instruction for a future chat
 
 Continue from this file and inspect the live GitHub branch before making claims. Do not repeat discovery work unnecessarily. Do not say the broker is connected, the bot is complete, or live trading works unless supported by a real integration test. Make commits on pepperstone-ctrader-bot, preserve main, run the GitHub Actions tests after code changes, and update this handoff file whenever project status materially changes.
