@@ -1,15 +1,15 @@
 # EliteTrade AI — project handoff and source of truth
 
-Last verified: 2026-11-01 12:40 UTC.
+Last verified: 2026-11-01 13:00 UTC.
 
 ## Current verified status (supersedes older dated verification entries below)
 
-- Current branch head at verification: `0426c2991c9d779b5b4f35b10fc9399f9669b43e`.
-- GitHub Actions run `41307587508` completed successfully: all four jobs passed (192 unit tests, 80% total statement coverage, Ruff lint, Bandit source scan, pip-audit, dependency consistency, wheel build and package import smoke test).
+- Current configurable-target implementation commit: `bffbfe57a5324175a2eb4598367d2224b2b909e4`.
+- GitHub Actions run `41309124279` completed successfully: all four jobs passed (196 unit tests, 80% measured total coverage, Ruff lint, Bandit source scan, pip-audit, wheel build and package import smoke test).
 - `pip-audit` reported: no known vulnerabilities in the declared runtime dependencies at scan time. This is not a guarantee against unknown or future vulnerabilities.
 - The tests are automated unit tests with mocked protocol/client fixtures where applicable. They do not establish live broker connectivity or profitable trading.
-- Latest agreed daily target behaviour: $50 triggers profit protection, not a trading shutdown; maximum giveback is $20; protection floor is the higher of $30 and the post-target daily peak minus $20; new-entry risk should be reduced to 25% of normal after target. When the floor or daily loss limit is reached, block new entries but continue managing existing positions.
-- The daily-session guard and pre-trade gate implement the target-continuation / giveback-lock state behaviour. The adaptive-risk sizing calculation is **not yet wired into the trading loop**, so the 25% post-target risk reduction is not yet enforced on actual candidate order volume.
+- Daily target is now user-configurable through the private Telegram command `/target <USD amount>` (for example `/target 500`, `/target 1500`, `/target 5000`, `/target 10000`). The selected amount is persisted in SQLite across restarts. The initial default remains $50 until changed. The existing $20 giveback remains fixed; the floor is the higher of target minus $20 and post-target peak minus $20. Target changes are rejected after protection or a daily lock activates for that day. This configures the guard only; it does not enable broker execution.
+- The daily-session guard and pre-trade gate implement target-continuation / giveback-lock state behaviour, and Telegram can change the persisted target. The adaptive-risk sizing calculation is **not yet wired into the trading loop**, so the 25% post-target risk reduction is not yet enforced on actual candidate order volume.
 - `trading_loop.py` deliberately submits no orders (`entry_submission_enabled=False`). The bot is not operational for live or demo execution.
 - Spotware application approval, real OAuth exchange, Pepperstone account authentication, live market data, conversion metadata, broker-aware runtime sizing, order submission, broker-side stop confirmation, reconnect/reconciliation E2E, Telegram deployment and continuous hosting remain unverified or incomplete.
 - Live execution must remain disabled. Do not describe the project as a functioning autonomous trading bot until demo order lifecycle tests pass against a real Pepperstone cTrader demo account.
