@@ -4,10 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from elite_trade.ctrader_execution_events import (
-    apply_execution_update, decode_execution_event,
+    apply_execution_update, apply_order_error, decode_execution_event,
+    decode_order_error_event,
 )
 from elite_trade.execution_policy import OrderIntent, Side
-from elite_trade.order_ledger import FILLED, PARTIALLY_FILLED, SUBMITTED, OrderLedger
+from elite_trade.order_ledger import FILLED, PARTIALLY_FILLED, REJECTED, SUBMITTED, OrderLedger
 
 
 class CTraderExecutionEventTests(unittest.TestCase):
@@ -104,6 +105,52 @@ class CTraderExecutionEventTests(unittest.TestCase):
         filled = self.decode(self.event(3, executed=100))
         self.assertTrue(apply_execution_update(self.ledger, filled, now=3))
         self.assertFalse(apply_execution_update(self.ledger, filled, now=4))
+        self.assertEqual(self.ledger.get("client-1").status, FILLED)
+
+
+    def test_order_error_is_correlated_by_known_broker_order_id_and_rejects_order(self):
+        self.assertTrue(self.ledger.mark_submitted("client-1", "9001", now=2))
+        event = SimpleNamespace(
+            ctidTraderAccountId=77, orderId=9001,
+            errorCode="TRADING_BAD_STOPS", description="Invalid stop distance",
+        )
+        update = decode_order_error_event(event, expected_account_id=77)
+        self.assertEqual(update.broker_order_id, "9001")
+        self.assertTrue(apply_order_error(self.ledger, update, now=3))
+        record = self.ledger.get("client-1")
+        self.assertEqual(record.status, REJECTED)
+        self.assertEqual(record.last_error, "TRADING_BAD_STOPS: Invalid stop distance")
+
+    def test_order_error_wrong_account_missing_id_or_unknown_id_fails_closed(self):
+        event = SimpleNamespace(
+            ctidTraderAccountId=77, orderId=9001,
+            errorCode="TRADING_BAD_STOPS", description="Invalid stops",
+        )
+        with self.assertRaises(ValueError):
+            decode_order_error_event(event, expected_account_id=88)
+        for invalid_id in (None, 0, -1, True):
+            malformed = SimpleNamespace(
+                ctidTraderAccountId=77, orderId=invalid_id,
+                errorCode="TRADING_BAD_STOPS",
+            )
+            with self.assertRaises(ValueError):
+                decode_order_error_event(malformed, expected_account_id=77)
+        update = decode_order_error_event(event, expected_account_id=77)
+        with self.assertRaises(ValueError):
+            apply_order_error(self.ledger, update, now=3)
+        self.assertEqual(self.ledger.get("client-1").status, "PENDING")
+
+    def test_order_error_does_not_reopen_terminal_order(self):
+        self.assertTrue(self.ledger.mark_submitted("client-1", "9001", now=2))
+        self.assertTrue(self.ledger.mark_terminal(
+            "client-1", FILLED, now=3, broker_order_id="9001"
+        ))
+        event = SimpleNamespace(
+            ctidTraderAccountId=77, orderId=9001,
+            errorCode="ORDER_NOT_FOUND",
+        )
+        update = decode_order_error_event(event, expected_account_id=77)
+        self.assertFalse(apply_order_error(self.ledger, update, now=4))
         self.assertEqual(self.ledger.get("client-1").status, FILLED)
 
 
