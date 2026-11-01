@@ -18,9 +18,10 @@ FILLED: Final = "FILLED"
 REJECTED: Final = "REJECTED"
 CANCELLED: Final = "CANCELLED"
 UNKNOWN: Final = "UNKNOWN"
+PARTIALLY_FILLED: Final = "PARTIALLY_FILLED"
 TERMINAL_STATES: Final = frozenset({FILLED, REJECTED, CANCELLED})
-ALL_STATES: Final = frozenset({PENDING, SUBMITTED, FILLED, REJECTED, CANCELLED, UNKNOWN})
-RECONCILED_STATES: Final = frozenset({SUBMITTED, FILLED, REJECTED, CANCELLED})
+ALL_STATES: Final = frozenset({PENDING, SUBMITTED, PARTIALLY_FILLED, FILLED, REJECTED, CANCELLED, UNKNOWN})
+RECONCILED_STATES: Final = frozenset({SUBMITTED, PARTIALLY_FILLED, FILLED, REJECTED, CANCELLED})
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class OrderRecord:
     symbol: str
     side: str
     volume_units: int
+    filled_volume_units: int
     status: str
     created_at: int
     updated_at: int
@@ -50,14 +52,47 @@ class OrderLedger:
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
                     volume_units INTEGER NOT NULL CHECK(volume_units > 0),
+                    filled_volume_units INTEGER NOT NULL DEFAULT 0
+                        CHECK(filled_volume_units >= 0 AND filled_volume_units <= volume_units),
                     status TEXT NOT NULL CHECK(status IN
-                        ('PENDING','SUBMITTED','FILLED','REJECTED','CANCELLED','UNKNOWN')),
+                        ('PENDING','SUBMITTED','PARTIALLY_FILLED','FILLED','REJECTED','CANCELLED','UNKNOWN')),
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     broker_order_id TEXT UNIQUE,
                     last_error TEXT
                 )"""
             )
+            schema = db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'"
+            ).fetchone()["sql"]
+            if "PARTIALLY_FILLED" not in schema or "filled_volume_units" not in schema:
+                db.execute("BEGIN IMMEDIATE")
+                db.execute(
+                    """CREATE TABLE orders_v2 (
+                        client_order_id TEXT PRIMARY KEY,
+                        symbol TEXT NOT NULL,
+                        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+                        volume_units INTEGER NOT NULL CHECK(volume_units > 0),
+                        filled_volume_units INTEGER NOT NULL DEFAULT 0
+                            CHECK(filled_volume_units >= 0 AND filled_volume_units <= volume_units),
+                        status TEXT NOT NULL CHECK(status IN
+                            ('PENDING','SUBMITTED','PARTIALLY_FILLED','FILLED','REJECTED','CANCELLED','UNKNOWN')),
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        broker_order_id TEXT UNIQUE,
+                        last_error TEXT
+                    )"""
+                )
+                db.execute(
+                    """INSERT INTO orders_v2
+                       (client_order_id,symbol,side,volume_units,filled_volume_units,status,
+                        created_at,updated_at,broker_order_id,last_error)
+                       SELECT client_order_id,symbol,side,volume_units,0,status,
+                              created_at,updated_at,broker_order_id,last_error FROM orders"""
+                )
+                db.execute("DROP TABLE orders")
+                db.execute("ALTER TABLE orders_v2 RENAME TO orders")
+                db.execute("COMMIT")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)"
             )
@@ -89,6 +124,7 @@ class OrderLedger:
             symbol=row["symbol"],
             side=row["side"],
             volume_units=row["volume_units"],
+            filled_volume_units=row["filled_volume_units"],
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -172,10 +208,49 @@ class OrderLedger:
             status=SUBMITTED, now=now, broker_order_id=broker_order_id,
         )
 
+    def mark_partial_fill(
+        self,
+        client_order_id: str,
+        filled_volume_units: int,
+        broker_order_id: str,
+        *,
+        now: int,
+    ) -> bool:
+        """Record broker-confirmed cumulative filled volume without losing the remainder."""
+        order_id = self._text(client_order_id, "client_order_id")
+        broker_id = self._text(broker_order_id, "broker_order_id")
+        if isinstance(filled_volume_units, bool) or not isinstance(filled_volume_units, int) or filled_volume_units <= 0:
+            raise ValueError("filled_volume_units must be a positive integer.")
+        if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+            raise ValueError("now must be a non-negative integer timestamp.")
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status,volume_units,filled_volume_units,broker_order_id FROM orders WHERE client_order_id=?",
+                (order_id,),
+            ).fetchone()
+            if row is None or row["status"] not in {SUBMITTED, PARTIALLY_FILLED}:
+                db.execute("ROLLBACK")
+                return False
+            if row["broker_order_id"] and row["broker_order_id"] != broker_id:
+                db.execute("ROLLBACK")
+                raise ValueError("Broker order ID cannot be changed once recorded.")
+            if filled_volume_units < row["filled_volume_units"] or filled_volume_units > row["volume_units"]:
+                db.execute("ROLLBACK")
+                raise ValueError("Cumulative filled volume is decreasing or exceeds requested volume.")
+            status = FILLED if filled_volume_units == row["volume_units"] else PARTIALLY_FILLED
+            db.execute(
+                """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
+                   broker_order_id=COALESCE(broker_order_id,?) WHERE client_order_id=?""",
+                (status, filled_volume_units, now, broker_id, order_id),
+            )
+            db.execute("COMMIT")
+            return True
+
     def mark_unknown(self, client_order_id: str, *, now: int, error: str | None = None) -> bool:
         """Record timeout/uncertain outcome. The ID remains permanently reserved."""
         return self._transition(
-            client_order_id, allowed_from=frozenset({PENDING, SUBMITTED}),
+            client_order_id, allowed_from=frozenset({PENDING, SUBMITTED, PARTIALLY_FILLED}),
             status=UNKNOWN, now=now, error=error,
         )
 
@@ -186,7 +261,7 @@ class OrderLedger:
         if status not in TERMINAL_STATES:
             raise ValueError("status must be FILLED, REJECTED, or CANCELLED.")
         return self._transition(
-            client_order_id, allowed_from=frozenset({PENDING, SUBMITTED}),
+            client_order_id, allowed_from=frozenset({PENDING, SUBMITTED, PARTIALLY_FILLED}),
             status=status, now=now, error=error,
         )
 
@@ -217,7 +292,7 @@ class OrderLedger:
         """Return PENDING, SUBMITTED and UNKNOWN records for recovery/reconciliation."""
         with self._connect() as db:
             rows = db.execute(
-                """SELECT * FROM orders WHERE status IN ('PENDING','SUBMITTED','UNKNOWN')
+                """SELECT * FROM orders WHERE status IN ('PENDING','SUBMITTED','PARTIALLY_FILLED','UNKNOWN')
                    ORDER BY created_at,client_order_id"""
             ).fetchall()
             return [self._record(row) for row in rows if row is not None]
