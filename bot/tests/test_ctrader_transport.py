@@ -62,6 +62,7 @@ def fake_sdk():
         ("ProtoOASymbolsListReq", 17), ("ProtoOASymbolsListRes", 18),
         ("ProtoOAAssetListReq", 19), ("ProtoOAAssetListRes", 20),
         ("ProtoOASymbolByIdReq", 21), ("ProtoOASymbolByIdRes", 22),
+        ("ProtoOAExecutionEvent", 23),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -201,6 +202,24 @@ class CTraderTransportTests(unittest.TestCase):
         client.received(client, SimpleNamespace(payloadType=22, body=SimpleNamespace(
             ctidTraderAccountId=77, symbol=[]
         )))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertTrue(errors)
+
+    def test_execution_events_are_forwarded_only_for_authenticated_account(self):
+        received = []
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_execution_event=received.append, on_error=errors.append
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        event = SimpleNamespace(ctidTraderAccountId=77, executionType=2)
+        client.received(client, SimpleNamespace(payloadType=23, body=event))
+        self.assertEqual(received, [event])
+        self.assertEqual(transport.state, ConnectionState.AUTHENTICATED)
+
+        wrong_account = SimpleNamespace(ctidTraderAccountId=88, executionType=2)
+        client.received(client, SimpleNamespace(payloadType=23, body=wrong_account))
         self.assertEqual(transport.state, ConnectionState.ERROR)
         self.assertTrue(errors)
 
