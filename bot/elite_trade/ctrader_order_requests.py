@@ -1,0 +1,111 @@
+"""Validated cTrader market-order request construction.
+
+This module only builds protobuf requests. It never sends them. Callers must
+reserve the client order ID in the durable ledger before any future submit
+attempt, and must not enable execution until broker-side protection is verified.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class MarketOrderSpec:
+    account_id: int
+    symbol_id: int
+    side: str
+    volume_units: int
+    client_order_id: str
+    entry_reference_price: float
+    stop_loss: float
+    take_profit: float | None = None
+
+
+def _positive_integer(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{field} must be a positive integer.")
+    return value
+
+
+def _finite_price(value: object, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a finite positive price.")
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise ValueError(f"{field} must be a finite positive price.")
+    return result
+
+
+def build_market_order_request(
+    spec: MarketOrderSpec,
+    *,
+    request_type: Any | None = None,
+    order_type_enum: Any | None = None,
+    trade_side_enum: Any | None = None,
+) -> Any:
+    """Build a MARKET request with mandatory broker-side stop loss.
+
+    The generated Spotware SDK types are imported lazily by default. Enum
+    values are resolved by their symbolic names, never by guessed integers.
+    Tests may inject protobuf-compatible types/enums.
+    """
+    if request_type is None or order_type_enum is None or trade_side_enum is None:
+        try:
+            from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+                ProtoOANewOrderReq,
+            )
+            from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+                ProtoOAOrderType,
+                ProtoOATradeSide,
+            )
+        except ImportError as exc:
+            raise RuntimeError("The vendored Spotware protobuf SDK is unavailable.") from exc
+        request_type = request_type or ProtoOANewOrderReq
+        order_type_enum = order_type_enum or ProtoOAOrderType
+        trade_side_enum = trade_side_enum or ProtoOATradeSide
+
+    account_id = _positive_integer(spec.account_id, "account_id")
+    symbol_id = _positive_integer(spec.symbol_id, "symbol_id")
+    volume = _positive_integer(spec.volume_units, "volume_units")
+    if spec.side not in {"BUY", "SELL"}:
+        raise ValueError("side must be BUY or SELL.")
+    if not isinstance(spec.client_order_id, str):
+        raise ValueError("client_order_id must be a non-empty string.")
+    client_order_id = spec.client_order_id.strip()
+    if not client_order_id or len(client_order_id) > 50:
+        raise ValueError("client_order_id must contain 1 to 50 characters.")
+
+    reference = _finite_price(spec.entry_reference_price, "entry_reference_price")
+    stop_loss = _finite_price(spec.stop_loss, "stop_loss")
+    if spec.side == "BUY" and stop_loss >= reference:
+        raise ValueError("A BUY stop loss must be below the entry reference price.")
+    if spec.side == "SELL" and stop_loss <= reference:
+        raise ValueError("A SELL stop loss must be above the entry reference price.")
+
+    take_profit = None
+    if spec.take_profit is not None:
+        take_profit = _finite_price(spec.take_profit, "take_profit")
+        if spec.side == "BUY" and take_profit <= reference:
+            raise ValueError("A BUY take profit must be above the entry reference price.")
+        if spec.side == "SELL" and take_profit >= reference:
+            raise ValueError("A SELL take profit must be below the entry reference price.")
+
+    try:
+        market_order = order_type_enum.Value("MARKET")
+        trade_side = trade_side_enum.Value(spec.side)
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise RuntimeError("Spotware SDK is missing a required order enum.") from exc
+
+    request = request_type()
+    request.ctidTraderAccountId = account_id
+    request.symbolId = symbol_id
+    request.orderType = market_order
+    request.tradeSide = trade_side
+    request.volume = volume
+    request.clientOrderId = client_order_id
+    request.stopLoss = stop_loss
+    if take_profit is not None:
+        request.takeProfit = take_profit
+    return request
