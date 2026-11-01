@@ -3,6 +3,11 @@ import os
 from dataclasses import dataclass
 
 
+# Intentionally false until a complete broker demo lifecycle and manual release
+# review have both been completed. Runtime environment flags cannot bypass it.
+LIVE_RELEASE_CERTIFIED = False
+
+
 def _bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name, str(default)).strip().lower()
     return value in {"1", "true", "yes", "on"}
@@ -56,7 +61,8 @@ class Settings:
         # Fail closed. These flags alone do not replace integration testing
         # and explicit user approval in the eventual release process.
         return (
-            self.ctrader_env == "live"
+            LIVE_RELEASE_CERTIFIED
+            and self.ctrader_env == "live"
             and self.live_trading_enabled
             and self.spotware_approved
             and bool(self.ctrader_client_id)
