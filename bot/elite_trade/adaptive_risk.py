@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -184,7 +185,7 @@ class ProfitProtectionTracker:
         self.config = config
         self._lock = threading.RLock()
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as db:
+        with closing(self._connect()) as db:
             db.execute("""CREATE TABLE IF NOT EXISTS profit_protection (
                 trading_day TEXT PRIMARY KEY,
                 activated INTEGER NOT NULL CHECK(activated IN (0,1)),
@@ -206,7 +207,7 @@ class ProfitProtectionTracker:
         if not isinstance(daily_loss_limit_reached, bool):
             raise ValueError("daily_loss_limit_reached must be boolean.")
         day = trading_day.isoformat()
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT activated, peak_pnl, locked FROM profit_protection WHERE trading_day=?",
