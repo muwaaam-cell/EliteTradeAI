@@ -6,6 +6,7 @@ P&L including realised/unrealised P&L, commissions, swaps and fees.
 """
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -73,7 +74,7 @@ class DailySessionGuard:
         self.database = str(database)
         self._lock = threading.RLock()
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS daily_sessions (
                     trading_day TEXT PRIMARY KEY,
@@ -149,7 +150,7 @@ class DailySessionGuard:
         day, local_now = self._day(now)
         # Read the legacy session lock first, then let the tracker perform its
         # own SQLite transaction. Never nest two write transactions on the DB.
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             previous = self._read_or_create(db, day, local_now)
 
@@ -177,7 +178,7 @@ class DailySessionGuard:
             else:
                 state = ACTIVE
 
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             current = self._read_state(db, day)
             # Never downgrade a lock if another cycle set it concurrently.
@@ -216,7 +217,7 @@ class DailySessionGuard:
         if self.max_giveback >= target:
             raise ValueError("profit_target must be greater than max_giveback.")
         day, _ = self._day(now)
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             state = self._read_state(db, day)
             row = db.execute(
@@ -241,6 +242,6 @@ class DailySessionGuard:
 
     def state_for_day(self, *, now: datetime | None = None) -> str:
         day, local_now = self._day(now)
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             return self._read_or_create(db, day, local_now)
