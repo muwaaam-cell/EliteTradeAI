@@ -62,5 +62,31 @@ class TelegramRuntimeTests(unittest.TestCase):
                 build_controller()
 
 
+    def test_main_bootstraps_updates_before_startup_notice(self) -> None:
+        from elite_trade import telegram_runtime
+
+        calls = []
+
+        class FakeController:
+            def poll_once(self, timeout: int) -> int:
+                calls.append(("poll", timeout))
+                return 0
+
+            def send(self, message: str) -> None:
+                calls.append(("send", message))
+
+            def run_forever(self) -> None:
+                calls.append(("run", None))
+                raise KeyboardInterrupt
+
+        with patch.object(telegram_runtime, "build_controller", return_value=FakeController()):
+            with self.assertRaises(KeyboardInterrupt):
+                telegram_runtime.main()
+
+        self.assertEqual(calls[0], ("poll", 0))
+        self.assertEqual(calls[1][0], "send")
+        self.assertEqual(calls[2], ("run", None))
+
+
 if __name__ == "__main__":
     unittest.main()
