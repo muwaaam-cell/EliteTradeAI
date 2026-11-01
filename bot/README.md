@@ -11,6 +11,7 @@ This is the external Python bot codebase on the separate `pepperstone-ctrader-bo
 - Spotware OpenApiPy transport lifecycle adapter for TCP connection, application authentication, account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown.
 - Allow-listed Telegram controls for status, pause, resume and emergency kill. Close-all is deliberately unavailable until broker execution exists.
 - Automated Python unit tests and GitHub Actions quality checks.
+- Fail-closed mapper for authenticated cTrader light/full symbol, asset and account-access metadata; pure mapping tests are added, but transport discovery is not yet wired.
 
 ## Independent review: use the correct branch
 
