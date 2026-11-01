@@ -179,10 +179,32 @@ class CTraderSdkTransport:
         self._set_state(ConnectionState.CONNECTING)
         self._client.startService()
 
-    def _send(self, request) -> None:
+    def _send(self, request):
+        """Send a protocol request and preserve its Deferred for lifecycle owners."""
+        if self._client is None:
+            raise RuntimeError("cTrader transport is not connected.")
         deferred = self._client.send(request)
         if hasattr(deferred, "addErrback"):
             deferred.addErrback(self._send_failed)
+        return deferred
+
+    def send_demo_order_request(self, request):
+        """Send one already-validated order request on the authenticated demo account.
+
+        The caller must reserve the client order ID before calling this method.
+        This transport method deliberately refuses live accounts and mismatched
+        account IDs; broker execution events still determine acceptance/fill.
+        """
+        if self.environment != "demo":
+            raise RuntimeError("Order submission is restricted to demo accounts.")
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Order submission requires an authenticated cTrader account.")
+        request_account_id = getattr(request, "ctidTraderAccountId", None)
+        if request_account_id != self.authenticated_account_id:
+            raise ValueError("Order request account does not match the authenticated account.")
+        if request.__class__.__name__ != "ProtoOANewOrderReq":
+            raise TypeError("Only validated cTrader market-order requests may use this sender.")
+        return self._send(request)
 
     def _send_failed(self, failure):
         self._fail("cTrader request failed; inspect protected runtime diagnostics.")
