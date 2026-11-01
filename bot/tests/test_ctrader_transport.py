@@ -307,7 +307,7 @@ class CTraderTransportTests(unittest.TestCase):
 
     def test_positions_reconcile_request_and_response_are_account_scoped(self):
         received = []
-        transport, client, _ = self.make_transport(on_reconcile=received.append)
+        transport, client, reactor = self.make_transport(on_reconcile=received.append)
         transport.state = ConnectionState.AUTHENTICATED
         transport.authenticated_account_id = 77
         transport.request_positions_reconcile()
@@ -321,6 +321,8 @@ class CTraderTransportTests(unittest.TestCase):
         client.received(client, SimpleNamespace(payloadType=16, body=response))
         self.assertEqual(received, [response])
         self.assertFalse(transport._reconcile_in_flight)
+        self.assertTrue(transport._reconcile_timeout_call is None)
+        self.assertTrue(reactor.call.cancelled)
 
     def test_positions_reconcile_rejects_wrong_account_and_unsolicited_response(self):
         errors = []
@@ -335,6 +337,35 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.ERROR)
         self.assertFalse(transport._reconcile_in_flight)
         self.assertTrue(errors)
+
+    def test_positions_reconcile_timeout_invalidates_session_and_requires_recovery(self):
+        errors = []
+        transport, client, reactor = self.make_transport(on_error=errors.append, on_reconcile=lambda response: None)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_positions_reconcile()
+        timeout = transport._reconcile_timeout_call
+        self.assertEqual(reactor.delay, transport.RECONCILE_TIMEOUT_SECONDS)
+        self.assertTrue(transport._reconcile_in_flight)
+        timeout.fn()
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertIsNone(transport.authenticated_account_id)
+        self.assertFalse(transport._reconcile_in_flight)
+        self.assertIsNone(transport._reconcile_timeout_call)
+        self.assertTrue(any("timed out" in message for message in errors))
+
+    def test_positions_reconcile_send_failure_cancels_timeout(self):
+        transport, client, reactor = self.make_transport(on_reconcile=lambda response: None)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        def fail_send(request):
+            raise OSError("socket unavailable")
+        client.send = fail_send
+        with self.assertRaises(OSError):
+            transport.request_positions_reconcile()
+        self.assertFalse(transport._reconcile_in_flight)
+        self.assertIsNone(transport._reconcile_timeout_call)
+        self.assertTrue(reactor.call.cancelled)
 
     def test_positions_reconcile_requires_response_handler(self):
         transport, _, _ = self.make_transport()
