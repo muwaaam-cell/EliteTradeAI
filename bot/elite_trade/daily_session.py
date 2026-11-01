@@ -155,6 +155,7 @@ class DailySessionGuard:
         """Resume only a profit-target lock. A daily-loss lock cannot be overridden."""
         day, local_now = self._day(now)
         with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             state = self._read_or_create(db, day, local_now)
             if state != TARGET_LOCK:
                 return False
