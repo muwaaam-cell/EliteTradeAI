@@ -107,6 +107,14 @@ class DailySessionGuard:
             return ACTIVE
         return str(row[0])
 
+    def _read_state(self, db: sqlite3.Connection, day: str) -> str:
+        """Read the persisted state without creating or changing a session."""
+        row = db.execute(
+            "SELECT state FROM daily_sessions WHERE trading_day=?",
+            (day,),
+        ).fetchone()
+        return str(row[0]) if row is not None else ACTIVE
+
     def evaluate(
         self,
         *,
