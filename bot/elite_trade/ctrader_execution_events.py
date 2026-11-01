@@ -111,7 +111,14 @@ def apply_execution_update(
     *,
     now: int,
 ) -> bool:
-    """Apply one decoded broker event; duplicate/out-of-order events are harmless."""
+    """Apply one decoded broker event only to its matching reserved order."""
+    record = ledger.get(update.client_order_id)
+    if record is None:
+        raise ValueError("Broker event has no matching locally reserved order.")
+    if record.volume_units != update.requested_volume_units:
+        raise ValueError("Broker event requested volume does not match the reserved order.")
+    if record.status in {FILLED, REJECTED, CANCELLED}:
+        return False
     if update.status == "SUBMITTED":
         if update.broker_order_id is None:
             raise ValueError("Accepted broker order has no broker order ID.")
@@ -128,5 +135,10 @@ def apply_execution_update(
             now=now,
         )
     if update.status in {FILLED, REJECTED, CANCELLED}:
-        return ledger.mark_terminal(update.client_order_id, update.status, now=now)
+        return ledger.mark_terminal(
+            update.client_order_id,
+            update.status,
+            now=now,
+            broker_order_id=update.broker_order_id,
+        )
     raise ValueError("Unsupported decoded broker order update.")
