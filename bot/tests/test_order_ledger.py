@@ -2,10 +2,11 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+import sqlite3
 
 from elite_trade.execution_policy import OrderIntent, Side
 from elite_trade.order_ledger import (
-    CANCELLED, FILLED, PENDING, REJECTED, SUBMITTED, UNKNOWN, OrderLedger,
+    CANCELLED, FILLED, PARTIALLY_FILLED, PENDING, REJECTED, SUBMITTED, UNKNOWN, OrderLedger,
 )
 
 
@@ -66,6 +67,64 @@ class OrderLedgerTests(unittest.TestCase):
         record = self.ledger.get("client-1")
         self.assertEqual(record.status, FILLED)
         self.assertEqual(record.broker_order_id, "broker-77")
+
+    def test_partial_fill_tracks_cumulative_volume_and_completes(self):
+        self.reserve()
+        self.assertTrue(self.ledger.mark_submitted("client-1", "broker-1", now=101))
+        self.assertTrue(self.ledger.mark_partial_fill(
+            "client-1", 40, "broker-1", now=102
+        ))
+        record = self.ledger.get("client-1")
+        self.assertEqual(record.status, PARTIALLY_FILLED)
+        self.assertEqual(record.filled_volume_units, 40)
+        self.assertEqual(record.volume_units - record.filled_volume_units, 60)
+        self.assertIn("client-1", [row.client_order_id for row in self.ledger.list_in_flight()])
+        self.assertTrue(self.ledger.mark_partial_fill(
+            "client-1", 100, "broker-1", now=103
+        ))
+        record = self.ledger.get("client-1")
+        self.assertEqual(record.status, FILLED)
+        self.assertEqual(record.filled_volume_units, 100)
+        self.assertNotIn("client-1", [row.client_order_id for row in self.ledger.list_in_flight()])
+
+    def test_partial_fill_rejects_decreasing_excess_and_wrong_broker_volume(self):
+        self.reserve()
+        self.ledger.mark_submitted("client-1", "broker-1", now=101)
+        self.ledger.mark_partial_fill("client-1", 40, "broker-1", now=102)
+        with self.assertRaises(ValueError):
+            self.ledger.mark_partial_fill("client-1", 30, "broker-1", now=103)
+        with self.assertRaises(ValueError):
+            self.ledger.mark_partial_fill("client-1", 101, "broker-1", now=103)
+        with self.assertRaises(ValueError):
+            self.ledger.mark_partial_fill("client-1", 50, "broker-2", now=103)
+        self.assertEqual(self.ledger.get("client-1").filled_volume_units, 40)
+
+    def test_legacy_ledger_schema_migrates_without_losing_orders(self):
+        with sqlite3.connect(self.path) as db:
+            db.execute(
+                """CREATE TABLE orders (
+                    client_order_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+                    volume_units INTEGER NOT NULL CHECK(volume_units > 0),
+                    status TEXT NOT NULL CHECK(status IN
+                        ('PENDING','SUBMITTED','FILLED','REJECTED','CANCELLED','UNKNOWN')),
+                    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                    broker_order_id TEXT UNIQUE, last_error TEXT
+                )"""
+            )
+            db.execute(
+                """INSERT INTO orders VALUES
+                   ('old-order','XAUUSD','BUY',100,'SUBMITTED',10,11,'broker-old',NULL)"""
+            )
+        migrated = OrderLedger(self.path)
+        record = migrated.get("old-order")
+        self.assertEqual(record.status, SUBMITTED)
+        self.assertEqual(record.filled_volume_units, 0)
+        self.assertEqual(record.broker_order_id, "broker-old")
+        self.assertTrue(migrated.mark_partial_fill(
+            "old-order", 25, "broker-old", now=12
+        ))
 
     def test_unknown_is_reserved_and_never_auto_resubmitted(self):
         self.assertTrue(self.reserve())
