@@ -1,8 +1,9 @@
-"""Spotware OpenApiPy transport lifecycle (authentication and account discovery only).
+"""Spotware OpenApiPy transport lifecycle and guarded demo order transport.
 
-This adapter deliberately has no order-placement methods. Trading remains
-separately gated until broker metadata, market data, risk sizing and demo
-execution/reconciliation have been implemented and tested.
+Order submission is restricted to an authenticated demo account. This module
+does not decide whether a trade is safe; the trading engine must complete its
+pre-trade checks and the execution adapter must reserve the client order ID
+before calling the demo sender. Broker events remain authoritative.
 """
 from __future__ import annotations
 
@@ -103,6 +104,7 @@ class CTraderSdkTransport:
             from ctrader_open_api.messages.OpenApiMessages_pb2 import (
                 ProtoOAAccountAuthReq,
                 ProtoOAAccountAuthRes,
+                ProtoOANewOrderReq,
                 ProtoOAApplicationAuthReq,
                 ProtoOAApplicationAuthRes,
                 ProtoOAGetAccountListByAccessTokenReq,
@@ -133,6 +135,7 @@ class CTraderSdkTransport:
                 "ProtoHeartbeatEvent": ProtoHeartbeatEvent,
                 "ProtoOAAccountAuthReq": ProtoOAAccountAuthReq,
                 "ProtoOAAccountAuthRes": ProtoOAAccountAuthRes,
+                "ProtoOANewOrderReq": ProtoOANewOrderReq,
                 "ProtoOAApplicationAuthReq": ProtoOAApplicationAuthReq,
                 "ProtoOAApplicationAuthRes": ProtoOAApplicationAuthRes,
                 "ProtoOAGetAccountListByAccessTokenReq": ProtoOAGetAccountListByAccessTokenReq,
@@ -202,8 +205,9 @@ class CTraderSdkTransport:
         request_account_id = getattr(request, "ctidTraderAccountId", None)
         if request_account_id != self.authenticated_account_id:
             raise ValueError("Order request account does not match the authenticated account.")
-        if request.__class__.__name__ != "ProtoOANewOrderReq":
-            raise TypeError("Only validated cTrader market-order requests may use this sender.")
+        order_request_type = self._sdk.get("ProtoOANewOrderReq")
+        if order_request_type is None or not isinstance(request, order_request_type):
+            raise TypeError("Only cTrader market-order protobuf requests may use this sender.")
         return self._send(request)
 
     def _send_failed(self, failure):
