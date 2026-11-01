@@ -7,9 +7,7 @@ from pathlib import Path
 from elite_trade.daily_session import DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote, Side
 from elite_trade.kill_switch import KillSwitch
-from elite_trade.trading_loop import (
-    BrokerRiskState, EntryCandidate, TradingLoop,
-)
+from elite_trade.trading_loop import BrokerRiskState, EntryCandidate, TradingLoop
 
 
 class TradingLoopTests(unittest.TestCase):
@@ -39,7 +37,8 @@ class TradingLoopTests(unittest.TestCase):
         )
         self.managed = 0
         self.risk = BrokerRiskState(
-            daily_net_pnl=Decimal("0"), equity=Decimal("1000"), open_positions=0
+            daily_net_pnl=Decimal("0"), equity=Decimal("1000"),
+            open_positions=0, observed_at_epoch=100.0,
         )
         self.loop = self.make_loop()
 
@@ -69,7 +68,8 @@ class TradingLoopTests(unittest.TestCase):
 
     def test_daily_loss_lock_blocks_entries_but_management_continues(self):
         self.risk = BrokerRiskState(
-            daily_net_pnl=Decimal("-15"), equity=Decimal("985"), open_positions=1
+            daily_net_pnl=Decimal("-15"), equity=Decimal("985"),
+            open_positions=1, observed_at_epoch=100.0,
         )
         result = self.loop.run_cycle()
         self.assertEqual(self.managed, 1)
@@ -82,7 +82,16 @@ class TradingLoopTests(unittest.TestCase):
         self.assertEqual(self.managed, 1)
         self.assertFalse(result.outcomes[0].decision.allow_new_entry)
 
-    def test_stale_account_state_blocks_candidate(self):\n        self.risk = BrokerRiskState(\n            daily_net_pnl=Decimal("0"), equity=Decimal("1000"),\n            open_positions=0, observed_at_epoch=90.0\n        )\n        result = self.loop.run_cycle()\n        self.assertTrue(result.positions_managed)\n        self.assertFalse(result.outcomes[0].decision.allow_new_entry)\n\n    def test_missing_account_state_blocks_candidate(self):
+    def test_stale_account_state_blocks_candidate(self):
+        self.risk = BrokerRiskState(
+            daily_net_pnl=Decimal("0"), equity=Decimal("1000"),
+            open_positions=0, observed_at_epoch=90.0,
+        )
+        result = self.loop.run_cycle()
+        self.assertTrue(result.positions_managed)
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+
+    def test_missing_account_state_blocks_candidate(self):
         loop = self.make_loop(load_risk_state=lambda: None)
         result = loop.run_cycle()
         self.assertTrue(result.positions_managed)
