@@ -57,6 +57,12 @@ class AdaptiveRiskConfig:
         post = _decimal(self.post_target_risk_fraction, "post_target_risk_fraction", positive=True)
         neutral = _decimal(self.neutral_market_fraction, "neutral_market_fraction", positive=True)
         poor = _decimal(self.poor_market_fraction, "poor_market_fraction", positive=True)
+        object.__setattr__(self, "daily_target", target)
+        object.__setattr__(self, "max_giveback", giveback)
+        object.__setattr__(self, "normal_risk_pct", normal)
+        object.__setattr__(self, "post_target_risk_fraction", post)
+        object.__setattr__(self, "neutral_market_fraction", neutral)
+        object.__setattr__(self, "poor_market_fraction", poor)
         if giveback >= target:
             raise ValueError("max_giveback must be smaller than daily_target.")
         if normal > Decimal("1"):
@@ -67,7 +73,10 @@ class AdaptiveRiskConfig:
             if value > 1:
                 raise ValueError(f"{name} cannot exceed 1.")
         if self.max_risk_cash is not None:
-            _decimal(self.max_risk_cash, "max_risk_cash", positive=True)
+            object.__setattr__(
+                self, "max_risk_cash",
+                _decimal(self.max_risk_cash, "max_risk_cash", positive=True),
+            )
 
 
 @dataclass(frozen=True)
@@ -126,6 +135,45 @@ class AdaptiveRiskEngine:
             risk_cash = min(risk_cash, self.config.max_risk_cash)
         return RiskPlan(mode, True, risk_pct, risk_cash,
                         "Risk budget calculated from the lower of settled balance and equity.")
+
+
+
+def calculate_volume_units(
+    *,
+    risk_cash: Decimal | str | int,
+    loss_per_volume_unit: Decimal | str | int,
+    min_volume_units: int,
+    max_volume_units: int,
+    volume_step_units: int,
+) -> int | None:
+    """Size from broker-verified cash loss per volume unit; never guess pip value.
+
+    loss_per_volume_unit must already include contract size, stop distance,
+    tick value, account-currency conversion, and fee/slippage allowance.
+    Returns broker-native units rounded DOWN to the broker step, or None
+    when the risk budget cannot support the broker minimum.
+    """
+    budget = _decimal(risk_cash, "risk_cash")
+    unit_loss = _decimal(loss_per_volume_unit, "loss_per_volume_unit", positive=True)
+    for name, value in (
+        ("min_volume_units", min_volume_units),
+        ("max_volume_units", max_volume_units),
+        ("volume_step_units", volume_step_units),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer.")
+    if min_volume_units > max_volume_units:
+        raise ValueError("minimum volume cannot exceed maximum volume.")
+    if min_volume_units % volume_step_units or max_volume_units < min_volume_units:
+        raise ValueError("volume bounds must be compatible with the broker step.")
+    if budget <= 0:
+        return None
+    raw_units = budget / unit_loss
+    stepped_units = int(raw_units // volume_step_units) * volume_step_units
+    stepped_units = min(stepped_units, max_volume_units)
+    if stepped_units < min_volume_units:
+        return None
+    return stepped_units
 
 
 class ProfitProtectionTracker:
