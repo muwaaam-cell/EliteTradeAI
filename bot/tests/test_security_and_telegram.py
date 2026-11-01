@@ -93,7 +93,8 @@ class TelegramTests(unittest.TestCase):
         reply = self.bot.handle_update(
             self.private_update(text="/resume target confirm")
         )
-        self.assertIn("Profit-target lock resumed", reply)
+        self.assertIn("Profit protection is already active", reply)
+        self.assertIn("reduced risk", reply)
 
     def test_target_resume_never_overrides_daily_loss_lock(self):
         self.guard.evaluate(
