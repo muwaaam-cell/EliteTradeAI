@@ -34,7 +34,8 @@ class FakeClient:
     def stopService(self): self.stopped = True
     def send(self, request):
         self.sent.append(request)
-        return FakeDeferred()
+        self.last_deferred = FakeDeferred()
+        return self.last_deferred
 
 
 class FakeCall:
@@ -420,7 +421,7 @@ class CTraderTransportTests(unittest.TestCase):
         transport.authenticated_account_id = 77
         deferred = transport.send_demo_order_request(request)
         self.assertIs(client.sent[-1], request)
-        self.assertIs(deferred, client.sent[-1] if False else deferred)
+        self.assertIs(deferred, client.last_deferred)
         self.assertEqual(len(client.sent), 1)
         self.assertTrue(callable(deferred.errback))
 
