@@ -13,8 +13,10 @@ Implemented foundations in `bot/elite_trade/` include:
 - Account-scoped symbol and asset catalogue retrieval, with strict metadata validation.
 - Account balance/equity and open-position P&L snapshot parsing.
 - cTrader quote subscription request and spot-event forwarding.
+- A validated spot-quote cache that decodes bid/ask using instrument precision, rejects unknown symbols and wrong-account events, and expires stale quotes.
 - Position/order reconciliation request forwarding.
 - Daily target and giveback protection, daily loss lock, kill switch and adaptive risk sizing.
+- Durable duplicate-resistant order-intent ledger with restart persistence and uncertain-submission reconciliation.
 - Fail-closed pre-trade checks; the trading loop manages existing positions before evaluating new entries.
 
 ## What is not yet complete
@@ -22,9 +24,9 @@ Implemented foundations in `bot/elite_trade/` include:
 The following are prerequisites to calling this a functioning Pepperstone trading bot:
 
 1. Spotware application approval and verified Pepperstone demo-account OAuth credentials.
-2. A runtime that connects the authenticated transport, catalogue, quote stream, account snapshots and strategy inputs.
+2. A runtime that connects the authenticated transport, catalogue, quote cache, account snapshots and strategy inputs.
 3. Broker-derived price/contract-value and account-currency conversion calculations for stop-loss cash risk. Do not substitute generic pip-value assumptions.
-4. A durable, idempotent order/execution adapter with accepted, rejected, partial-fill and completed states.
+4. A durable, idempotent order/execution adapter with accepted, rejected, partial-fill and completed states. The current ledger does not submit orders and does not yet model partial fills.
 5. Broker-confirmed stop-loss placement and modification, close handling, and authoritative restart/reconnect reconciliation.
 6. End-to-end tests against a Pepperstone demo account covering order submission through final position closure.
 7. Operational hosting, health monitoring, Telegram controls/alerts and safe secret management.
