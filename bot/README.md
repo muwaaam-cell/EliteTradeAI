@@ -11,7 +11,8 @@ This is the external Python bot codebase on the separate `pepperstone-ctrader-bo
 - Spotware OpenApiPy transport lifecycle adapter for TCP connection, application authentication, account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown.
 - Allow-listed Telegram controls for status, pause, resume and emergency kill. Close-all is deliberately unavailable until broker execution exists.
 - Automated Python unit tests and GitHub Actions quality checks.
-- Fail-closed mapper for authenticated cTrader light/full symbol, asset and account-access metadata, with account-scoped transport discovery.\n- Demo-only market-data composition that filters broker metadata to tradable symbols, subscribes to their spot quotes, maintains a freshness-bounded bid/ask cache, and clears prices when the authenticated session is lost. This remains mocked/unit-test scope until a real Pepperstone account is connected.
+- Fail-closed mapper for authenticated cTrader light/full symbol, asset and account-access metadata, with account-scoped transport discovery.
+- Demo-only market-data composition that filters broker metadata to tradable symbols, subscribes to their spot quotes, maintains a freshness-bounded bid/ask cache, and clears prices when the authenticated session is lost. This remains mocked/unit-test scope until a real Pepperstone account is connected.
 
 ## Independent review: use the correct branch
 
@@ -124,8 +125,12 @@ The Spotware Python SDK source is maintained locally in `ctrader_open_api/` unde
 
 `elite_trade/ctrader_transport.py` wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, access-token account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It intentionally contains no order-placement API. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
 
+## Market-data runtime composition
+
+`elite_trade/ctrader_market_data_runtime.py` composes the authenticated instrument catalogue with `CTraderMarketData`. It subscribes only to symbols whose authenticated metadata reports `is_tradable`, scopes spot events to the selected account, exposes only fresh bid/ask quotes, and discards its cache when the transport leaves the authenticated state. It does not create trade candidates or submit orders. Unit tests cover the mocked composition; this is not proof of a real Pepperstone quote feed.
+
 ## Current next milestone
 
-Verify the SDK transport against the approved application and a Pepperstone demo account, then implement runtime instrument metadata discovery and quote subscriptions. Only then can we implement and test demo order execution.
+Verify the SDK transport and market-data composition against the approved application and a Pepperstone demo account. Then wire verified quotes and fresh broker account snapshots into the trading-cycle candidate provider and pre-trade gate. Demo order execution remains blocked until that end-to-end risk path and broker-side protection/reconciliation are complete.
 
 Official documentation: https://help.ctrader.com/open-api/
