@@ -70,6 +70,7 @@ class CTraderSdkTransport:
         self.on_spot = on_spot or (lambda event: None)
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
         self.on_reconcile = on_reconcile or (lambda response: None)
+        self._has_reconcile_handler = on_reconcile is not None
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
@@ -289,6 +290,8 @@ class CTraderSdkTransport:
         """
         if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
             raise RuntimeError("Position reconciliation requires an authenticated account.")
+        if not self._has_reconcile_handler:
+            raise RuntimeError("Position reconciliation requires a response handler.")
         if self._reconcile_in_flight:
             raise RuntimeError("A position reconciliation request is already in progress.")
         if not isinstance(return_protection_orders, bool):
