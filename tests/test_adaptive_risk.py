@@ -11,6 +11,45 @@ from elite_trade.adaptive_risk import (
 
 
 class AdaptiveRiskTests(unittest.TestCase):
+
+    def test_string_config_values_are_normalized_to_decimal(self):
+        config = AdaptiveRiskConfig(daily_target="50", max_giveback="20",
+                                    normal_risk_pct="0.5", max_risk_cash="7")
+        self.assertIsInstance(config.daily_target, Decimal)
+        self.assertIsInstance(config.max_risk_cash, Decimal)
+
+    def test_volume_sizing_rounds_down_to_broker_step(self):
+        volume = calculate_volume_units(
+            risk_cash="5", loss_per_volume_unit="0.002",
+            min_volume_units=100, max_volume_units=5000,
+            volume_step_units=100,
+        )
+        self.assertEqual(volume, 2500)
+
+    def test_volume_sizing_never_rounds_up_to_minimum(self):
+        volume = calculate_volume_units(
+            risk_cash="0.1", loss_per_volume_unit="0.002",
+            min_volume_units=100, max_volume_units=5000,
+            volume_step_units=100,
+        )
+        self.assertIsNone(volume)
+
+    def test_volume_sizing_caps_at_broker_maximum(self):
+        volume = calculate_volume_units(
+            risk_cash="100", loss_per_volume_unit="0.001",
+            min_volume_units=100, max_volume_units=2500,
+            volume_step_units=100,
+        )
+        self.assertEqual(volume, 2500)
+
+    def test_volume_sizing_rejects_invalid_broker_steps(self):
+        with self.assertRaises(ValueError):
+            calculate_volume_units(
+                risk_cash="5", loss_per_volume_unit="0.002",
+                min_volume_units=101, max_volume_units=5000,
+                volume_step_units=100,
+            )
+
     def test_post_target_risk_is_quarter_of_normal(self):
         engine = AdaptiveRiskEngine(AdaptiveRiskConfig(normal_risk_pct=Decimal("0.8")))
         normal = engine.plan(settled_balance="1000", equity="1000",
