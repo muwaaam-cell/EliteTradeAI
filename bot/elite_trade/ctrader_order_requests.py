@@ -109,3 +109,90 @@ def build_market_order_request(
     if take_profit is not None:
         request.takeProfit = take_profit
     return request
+
+@dataclass(frozen=True)
+class PositionProtectionSpec:
+    account_id: int
+    position_id: int
+    stop_loss: float | None = None
+    take_profit: float | None = None
+
+
+@dataclass(frozen=True)
+class PositionCloseSpec:
+    account_id: int
+    position_id: int
+    volume_units: int
+
+
+def build_position_protection_request(
+    spec: PositionProtectionSpec,
+    *,
+    request_type: Any | None = None,
+) -> Any:
+    """Build a cTrader position SL/TP amendment request; never sends it.
+
+    Price direction, tick precision and broker minimum stop distance must
+    already have been checked against fresh broker position/instrument data.
+    At least one protection level must be supplied.
+    """
+    if request_type is None:
+        try:
+            from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+                ProtoOAAmendPositionSLTPReq,
+            )
+        except ImportError as exc:
+            raise RuntimeError("The vendored Spotware protobuf SDK is unavailable.") from exc
+        request_type = ProtoOAAmendPositionSLTPReq
+
+    account_id = _positive_integer(spec.account_id, "account_id")
+    position_id = _positive_integer(spec.position_id, "position_id")
+    if spec.stop_loss is None and spec.take_profit is None:
+        raise ValueError("At least one of stop_loss or take_profit must be supplied.")
+    stop_loss = (
+        None if spec.stop_loss is None
+        else _finite_price(spec.stop_loss, "stop_loss")
+    )
+    take_profit = (
+        None if spec.take_profit is None
+        else _finite_price(spec.take_profit, "take_profit")
+    )
+
+    request = request_type()
+    request.ctidTraderAccountId = account_id
+    request.positionId = position_id
+    if stop_loss is not None:
+        request.stopLoss = stop_loss
+    if take_profit is not None:
+        request.takeProfit = take_profit
+    return request
+
+
+def build_close_position_request(
+    spec: PositionCloseSpec,
+    *,
+    request_type: Any | None = None,
+) -> Any:
+    """Build a cTrader position-close request; never sends it.
+
+    The requested volume must be an already validated broker volume-unit
+    quantity no greater than the current broker-confirmed open position size.
+    """
+    if request_type is None:
+        try:
+            from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+                ProtoOAClosePositionReq,
+            )
+        except ImportError as exc:
+            raise RuntimeError("The vendored Spotware protobuf SDK is unavailable.") from exc
+        request_type = ProtoOAClosePositionReq
+
+    account_id = _positive_integer(spec.account_id, "account_id")
+    position_id = _positive_integer(spec.position_id, "position_id")
+    volume = _positive_integer(spec.volume_units, "volume_units")
+
+    request = request_type()
+    request.ctidTraderAccountId = account_id
+    request.positionId = position_id
+    request.volume = volume
+    return request
