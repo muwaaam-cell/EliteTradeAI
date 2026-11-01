@@ -136,6 +136,19 @@ class TradingLoopTests(unittest.TestCase):
         self.assertEqual(result.outcomes, ())
 
 
+    def test_runtime_target_change_updates_adaptive_risk_engine(self):
+        self.guard.set_profit_target(Decimal("100"), now=self.now)
+        self.risk = BrokerRiskState(
+            daily_net_pnl=Decimal("50"), equity=Decimal("1000"),
+            settled_balance=Decimal("1000"), open_positions=0, observed_at_epoch=100.0,
+        )
+        result = self.loop.run_cycle()
+        outcome = result.outcomes[0]
+        self.assertTrue(outcome.decision.allow_new_entry)
+        self.assertEqual(outcome.risk_plan.mode, TradingMode.NORMAL)
+        self.assertEqual(outcome.risk_plan.risk_pct, Decimal("0.50"))
+        self.assertEqual(outcome.risk_plan.risk_cash, Decimal("5.000"))
+
     def test_post_target_risk_is_reduced_to_quarter_of_normal(self):
         self.risk = BrokerRiskState(
             daily_net_pnl=Decimal("50"), equity=Decimal("1000"),
