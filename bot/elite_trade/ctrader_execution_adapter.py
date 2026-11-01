@@ -43,6 +43,7 @@ class CTraderDemoExecutionAdapter:
         authenticated_account_id: Callable[[], int | None],
         environment: str,
         now_epoch: Callable[[], int],
+        authorize_order: Callable[[MarketOrderSpec, str], bool] | None = None,
     ) -> None:
         if environment != "demo":
             raise ValueError("This execution adapter is restricted to cTrader demo.")
@@ -52,6 +53,8 @@ class CTraderDemoExecutionAdapter:
         self.authenticated_account_id = authenticated_account_id
         self.environment = environment
         self.now_epoch = now_epoch
+        # No order can be sent until the caller wires the real pre-trade gate.
+        self.authorize_order = authorize_order
 
     def _mark_uncertain(self, client_order_id: str) -> None:
         self.ledger.mark_unknown(
@@ -69,6 +72,14 @@ class CTraderDemoExecutionAdapter:
         """Reserve then send exactly once; wait for broker event for acceptance."""
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("A verified broker symbol name is required.")
+        if not callable(self.authorize_order):
+            raise RuntimeError("A trading-loop pre-trade authorizer is not wired; order blocked.")
+        try:
+            authorized = self.authorize_order(spec, symbol.strip())
+        except Exception as exc:
+            raise RuntimeError("Pre-trade authorization failed; order blocked.") from exc
+        if authorized is not True:
+            raise RuntimeError("Pre-trade gate did not explicitly authorize this order.")
         account_id = self.authenticated_account_id()
         if (
             not self.connection_ready()
@@ -124,6 +135,7 @@ def create_demo_execution_adapter(
     transport: object,
     ledger: OrderLedger,
     now_epoch: Callable[[], int],
+    authorize_order: Callable[[MarketOrderSpec, str], bool] | None = None,
 ) -> CTraderDemoExecutionAdapter:
     """Compose the demo adapter with the authenticated cTrader transport.
 
