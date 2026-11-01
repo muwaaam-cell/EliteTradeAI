@@ -39,6 +39,7 @@ class CTraderDemoExecutionAdapterTests(unittest.TestCase):
             authenticated_account_id=lambda: 77,
             environment="demo",
             now_epoch=lambda: 100,
+            authorize_order=lambda spec, symbol: True,
         )
         self.spec = MarketOrderSpec(
             account_id=77, symbol_id=10, side="BUY", volume_units=100,
@@ -94,6 +95,7 @@ class CTraderDemoExecutionAdapterTests(unittest.TestCase):
                 connection_ready=lambda: True,
                 authenticated_account_id=lambda: 77,
                 environment="live", now_epoch=lambda: 100,
+                authorize_order=lambda spec, symbol: True,
             )
 
     def test_invalid_request_is_rejected_before_reservation_or_send(self):
@@ -116,7 +118,8 @@ class CTraderDemoExecutionAdapterTests(unittest.TestCase):
             send_demo_order_request=self.sent.append,
         )
         adapter = create_demo_execution_adapter(
-            transport=transport, ledger=self.ledger, now_epoch=lambda: 100
+            transport=transport, ledger=self.ledger, now_epoch=lambda: 100,
+            authorize_order=lambda spec, symbol: True,
         )
         with self.assertRaises(RuntimeError):
             adapter.submit_market_order(self.spec, symbol="EURUSD")
@@ -128,6 +131,26 @@ class CTraderDemoExecutionAdapterTests(unittest.TestCase):
         self.assertEqual(result.state, PENDING)
         self.assertEqual(len(self.sent), 1)
 
+
+    def test_order_is_blocked_without_explicit_pretrade_authorizer(self):
+        adapter = CTraderDemoExecutionAdapter(
+            ledger=self.ledger, send_request=self.sent.append,
+            connection_ready=lambda: True,
+            authenticated_account_id=lambda: 77,
+            environment="demo", now_epoch=lambda: 100,
+        )
+        with self.assertRaisesRegex(RuntimeError, "pre-trade authorizer"):
+            adapter.submit_market_order(self.spec, symbol="EURUSD")
+        self.assertIsNone(self.ledger.get("demo-order-1"))
+        self.assertEqual(self.sent, [])
+
+    def test_order_is_blocked_when_pretrade_authorizer_denies(self):
+        self.adapter.authorize_order = lambda spec, symbol: False
+        with self.assertRaisesRegex(RuntimeError, "did not explicitly authorize"):
+            self.adapter.submit_market_order(self.spec, symbol="EURUSD")
+        self.assertIsNone(self.ledger.get("demo-order-1"))
+        self.assertEqual(self.sent, [])
+
     def test_factory_refuses_live_transport_and_missing_guarded_sender(self):
         live = SimpleNamespace(
             environment="live", state=ConnectionState.AUTHENTICATED,
@@ -135,12 +158,14 @@ class CTraderDemoExecutionAdapterTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             create_demo_execution_adapter(
-                transport=live, ledger=self.ledger, now_epoch=lambda: 100
+                transport=live, ledger=self.ledger, now_epoch=lambda: 100,
+                authorize_order=lambda spec, symbol: True,
             )
         incomplete = SimpleNamespace(environment="demo")
         with self.assertRaises(TypeError):
             create_demo_execution_adapter(
-                transport=incomplete, ledger=self.ledger, now_epoch=lambda: 100
+                transport=incomplete, ledger=self.ledger, now_epoch=lambda: 100,
+                authorize_order=lambda spec, symbol: True,
             )
 
 
