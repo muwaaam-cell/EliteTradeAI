@@ -48,6 +48,7 @@ class CTraderSdkTransport:
         on_state: Callable[[ConnectionState], None] | None = None,
         on_error: Callable[[str], None] | None = None,
         on_spot: Callable[[object], None] | None = None,
+        on_execution_event: Callable[[object], None] | None = None,
         on_account_snapshot: Callable[[object], None] | None = None,
         on_reconcile: Callable[[object], None] | None = None,
         on_instruments: Callable[[tuple[object, ...]], None] | None = None,
@@ -70,6 +71,7 @@ class CTraderSdkTransport:
         self.on_state = on_state or (lambda state: None)
         self.on_error = on_error or (lambda message: None)
         self.on_spot = on_spot or (lambda event: None)
+        self.on_execution_event = on_execution_event or (lambda event: None)
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
         self.on_reconcile = on_reconcile or (lambda response: None)
         self._has_reconcile_handler = on_reconcile is not None
@@ -105,6 +107,7 @@ class CTraderSdkTransport:
                 ProtoOAGetAccountListByAccessTokenRes,
                 ProtoOASubscribeSpotsReq,
                 ProtoOASpotEvent,
+                ProtoOAExecutionEvent,
                 ProtoOAErrorRes,
                 ProtoOATraderReq,
                 ProtoOATraderRes,
@@ -133,6 +136,7 @@ class CTraderSdkTransport:
                 "ProtoOAGetAccountListByAccessTokenRes": ProtoOAGetAccountListByAccessTokenRes,
                 "ProtoOASubscribeSpotsReq": ProtoOASubscribeSpotsReq,
                 "ProtoOASpotEvent": ProtoOASpotEvent,
+                "ProtoOAExecutionEvent": ProtoOAExecutionEvent,
                 "ProtoOAErrorRes": ProtoOAErrorRes,
                 "ProtoOATraderReq": ProtoOATraderReq,
                 "ProtoOATraderRes": ProtoOATraderRes,
@@ -301,6 +305,12 @@ class CTraderSdkTransport:
                     self._fail("Received market data for an unexpected cTrader account.")
                     return
                 self.on_spot(event)
+            elif payload_type == self._sdk["ProtoOAExecutionEvent"]().payloadType:
+                event = extract(message)
+                if int(event.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received an execution event for an unexpected cTrader account.")
+                    return
+                self.on_execution_event(event)
             elif payload_type == self._sdk["ProtoOAErrorRes"]().payloadType:
                 error = extract(message)
                 code = str(getattr(error, "errorCode", "unknown"))
