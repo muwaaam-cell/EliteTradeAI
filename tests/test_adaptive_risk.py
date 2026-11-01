@@ -6,7 +6,7 @@ from pathlib import Path
 
 from elite_trade.adaptive_risk import (
     AdaptiveRiskConfig, AdaptiveRiskEngine, MarketCondition,
-    ProfitProtectionTracker, TradingMode,
+    ProfitProtectionTracker, TradingMode, calculate_volume_units,
 )
 
 
