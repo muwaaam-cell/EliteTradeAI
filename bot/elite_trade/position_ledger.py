@@ -82,8 +82,9 @@ class PositionLedger:
 
     def __init__(self, database: str | Path) -> None:
         self.database = str(database)
-        if self.database != ":memory:":
-            Path(self.database).parent.mkdir(parents=True, exist_ok=True)
+        if self.database == ":memory:":
+            raise ValueError("A file-backed database is required for durable position state.")
+        Path(self.database).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         with self._connect() as db:
             db.execute(
@@ -103,18 +104,22 @@ class PositionLedger:
                 )"""
             )
             db.execute("CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status)")
-        if self.database != ":memory:":
-            try:
-                Path(self.database).chmod(0o600)
-            except OSError:
-                pass
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS position_reconcile_meta (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    last_snapshot_epoch REAL NOT NULL
+                )"""
+            )
+        try:
+            Path(self.database).chmod(0o600)
+        except OSError:
+            pass
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
         db.row_factory = sqlite3.Row
-        if self.database != ":memory:":
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=FULL")
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA synchronous=FULL")
         db.execute("PRAGMA busy_timeout=10000")
         return db
 
@@ -239,7 +244,10 @@ class PositionLedger:
 
         with self._lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            previous = db.execute("SELECT MAX(last_snapshot_epoch) FROM positions").fetchone()[0]
+            previous_row = db.execute(
+                "SELECT last_snapshot_epoch FROM position_reconcile_meta WHERE singleton=1"
+            ).fetchone()
+            previous = previous_row["last_snapshot_epoch"] if previous_row else None
             if previous is not None and observed < previous:
                 db.execute("ROLLBACK")
                 raise ValueError("Snapshot is older than the last applied broker snapshot.")
@@ -276,12 +284,6 @@ class PositionLedger:
                      str(tp) if tp is not None else None, now, observed),
                 )
             # Persist the snapshot watermark even when the complete snapshot is empty.
-            db.execute(
-                """CREATE TABLE IF NOT EXISTS position_reconcile_meta (
-                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-                    last_snapshot_epoch REAL NOT NULL
-                )"""
-            )
             db.execute(
                 """INSERT INTO position_reconcile_meta(singleton,last_snapshot_epoch)
                    VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET
