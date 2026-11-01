@@ -126,34 +126,45 @@ class DailySessionGuard:
             raise ValueError("open_positions must be a non-negative integer.")
 
         day, local_now = self._day(now)
+        # Read the legacy session lock first, then let the tracker perform its
+        # own SQLite transaction. Never nest two write transactions on the DB.
         with self._lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             previous = self._read_or_create(db, day, local_now)
-            # A previously persisted loss/giveback lock is irreversible today.
-            if previous == LOSS_LOCK:
+
+        if previous == LOSS_LOCK:
+            state = LOSS_LOCK
+            mode, floor = TradingMode.DAILY_LOSS_LOCK, Decimal("0")
+        elif previous == TARGET_LOCK:
+            state = TARGET_LOCK
+            mode, floor = TradingMode.GIVEBACK_LOCK, max(
+                self.profit_target - self.max_giveback, Decimal("0")
+            )
+        else:
+            loss_reached = pnl <= -self.max_daily_loss
+            mode, floor = self.protection.evaluate(
+                trading_day=local_now.date(),
+                daily_net_pnl=pnl,
+                daily_loss_limit_reached=loss_reached,
+            )
+            if mode is TradingMode.DAILY_LOSS_LOCK:
                 state = LOSS_LOCK
-                mode, floor = TradingMode.DAILY_LOSS_LOCK, Decimal("0")
-            elif previous == TARGET_LOCK:
+            elif mode is TradingMode.GIVEBACK_LOCK:
                 state = TARGET_LOCK
-                mode, floor = TradingMode.GIVEBACK_LOCK, max(
-                    self.profit_target - self.max_giveback, Decimal("0")
-                )
+            elif mode is TradingMode.PROFIT_PROTECTION:
+                state = TARGET_RESUMED
             else:
-                loss_reached = pnl <= -self.max_daily_loss
-                mode, floor = self.protection.evaluate(
-                    trading_day=local_now.date(),
-                    daily_net_pnl=pnl,
-                    daily_loss_limit_reached=loss_reached,
-                )
-                if mode is TradingMode.DAILY_LOSS_LOCK:
-                    state = LOSS_LOCK
-                elif mode is TradingMode.GIVEBACK_LOCK:
-                    state = TARGET_LOCK
-                elif mode is TradingMode.PROFIT_PROTECTION:
-                    state = TARGET_RESUMED
-                else:
-                    state = ACTIVE
-            if state != previous:
+                state = ACTIVE
+
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            current = self._read_state(db, day)
+            # Never downgrade a lock if another cycle set it concurrently.
+            if current == LOSS_LOCK:
+                state = LOSS_LOCK
+            elif current == TARGET_LOCK:
+                state = TARGET_LOCK
+            if state != current:
                 db.execute(
                     "UPDATE daily_sessions SET state=?,updated_at=? WHERE trading_day=?",
                     (state, local_now.isoformat(), day),
