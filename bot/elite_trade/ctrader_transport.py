@@ -376,8 +376,8 @@ class CTraderSdkTransport:
         """Request broker balance and all open-position net PnL for the authenticated account."""
         if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
             raise RuntimeError("Account snapshot requires an authenticated account.")
-        if self._snapshot_in_flight:
-            raise RuntimeError("An account snapshot request is already in progress.")
+        if self._snapshot_in_flight or self._catalog_in_flight:
+            raise RuntimeError("Another account metadata/snapshot request is already in progress.")
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = True
