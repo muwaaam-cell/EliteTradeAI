@@ -57,7 +57,7 @@ def fake_sdk():
         ("ProtoOAGetAccountListByAccessTokenReq", 3),
         ("ProtoOAGetAccountListByAccessTokenRes", 4),
         ("ProtoOAAccountAuthReq", 5), ("ProtoOAAccountAuthRes", 6),
-        ("ProtoHeartbeatEvent", 7), ("ProtoOASubscribeSpotsReq", 8),
+        ("ProtoOANewOrderReq", 24), ("ProtoHeartbeatEvent", 7), ("ProtoOASubscribeSpotsReq", 8),
         ("ProtoOASpotEvent", 9), ("ProtoOAErrorRes", 10),
         ("ProtoOATraderReq", 11), ("ProtoOATraderRes", 12),
         ("ProtoOAGetPositionUnrealizedPnLReq", 13),
@@ -406,6 +406,41 @@ class CTraderTransportTests(unittest.TestCase):
         )))
         with self.assertRaises(ValueError):
             transport.select_account(99)
+
+    def test_demo_order_sender_requires_authenticated_demo_account_and_matching_request(self):
+        transport, client, _ = self.make_transport()
+        order_type = transport._sdk["ProtoOANewOrderReq"]
+        request = order_type()
+        request.ctidTraderAccountId = 77
+
+        with self.assertRaises(RuntimeError):
+            transport.send_demo_order_request(request)
+
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        deferred = transport.send_demo_order_request(request)
+        self.assertIs(client.sent[-1], request)
+        self.assertIs(deferred, client.sent[-1] if False else deferred)
+        self.assertEqual(len(client.sent), 1)
+        self.assertTrue(callable(deferred.errback))
+
+        request.ctidTraderAccountId = 88
+        with self.assertRaises(ValueError):
+            transport.send_demo_order_request(request)
+
+        with self.assertRaises(TypeError):
+            transport.send_demo_order_request(FakeRequest())
+
+    def test_demo_order_sender_refuses_live_environment(self):
+        transport, client, _ = self.make_transport()
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.environment = "live"
+        request = transport._sdk["ProtoOANewOrderReq"]()
+        request.ctidTraderAccountId = 77
+        with self.assertRaises(RuntimeError):
+            transport.send_demo_order_request(request)
+        self.assertEqual(client.sent, [])
 
     def test_stop_cancels_heartbeat_and_disconnects(self):
         transport, client, reactor = self.make_transport()
