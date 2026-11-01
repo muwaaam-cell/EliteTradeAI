@@ -41,8 +41,13 @@ class OrderRecord:
 class OrderLedger:
     """SQLite WAL ledger; reserve is the mandatory pre-submission operation."""
 
-    def __init__(self, database: str | Path) -> None:
+    def __init__(self, database: str | Path, *, account_id: int | None = None) -> None:
         self.database = str(database)
+        if account_id is not None and (
+            isinstance(account_id, bool) or not isinstance(account_id, int) or account_id <= 0
+        ):
+            raise ValueError("account_id must be a positive integer when supplied.")
+        self._account_id = account_id
         self._lock = threading.RLock()
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
@@ -96,10 +101,36 @@ class OrderLedger:
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)"
             )
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS order_ledger_account (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    account_id INTEGER NOT NULL CHECK(account_id>0)
+                )"""
+            )
+            stored_account = db.execute(
+                "SELECT account_id FROM order_ledger_account WHERE singleton=1"
+            ).fetchone()
+            if stored_account is None and account_id is not None:
+                db.execute(
+                    "INSERT INTO order_ledger_account(singleton,account_id) VALUES(1,?)",
+                    (account_id,),
+                )
+            elif stored_account is not None and (
+                account_id is None or stored_account["account_id"] != account_id
+            ):
+                raise ValueError(
+                    "Order database is bound to a different cTrader account; use its original account ID."
+                )
+            self._account_id = stored_account["account_id"] if stored_account is not None else account_id
         try:
             Path(self.database).chmod(0o600)
         except OSError:
             pass
+
+    @property
+    def bound_account_id(self) -> int | None:
+        """Account identity permanently bound to this database, if configured."""
+        return self._account_id
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
