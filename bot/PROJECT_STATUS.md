@@ -29,14 +29,22 @@ Last verified: 2026-11-01 13:08 UTC.
   redundant with the canonical protobuf-aware module and has been removed,
   along with its duplicate tests. The canonical mapper and its existing tests
   remain the single source of truth.
-- The mapper is not yet wired into transport requests. The transport still
-  needs to request the account's light-symbol catalogue and asset list, fetch
-  full metadata for the symbols, validate the complete response set and publish
-  the resulting catalogue. It does not calculate tick value, per-volume stop
-  loss or deposit-currency conversion by itself.
-- The latest mapper experiment's CI was not verifiable from the available
-  commit-status results; its duplicate code has been removed rather than
-  reported as passing. New cleanup commits also require CI verification.
+- The transport now has an account-authenticated instrument-catalogue
+  request path: it requests the light-symbol list, asset list and trader
+  permissions, then requests full symbol metadata and joins the responses by
+  symbol ID before publishing the catalogue callback. Empty, duplicate,
+  mismatched or incomplete responses fail closed. Concurrent catalogue and
+  balance-snapshot requests are blocked to avoid ambiguous trader responses.
+- Added mocked transport tests for the successful catalogue request/response
+  sequence and an incomplete full-symbol response. These are committed but
+  their CI result has not yet been verified.
+- The catalogue path is not yet exercised against a real Pepperstone cTrader
+  account. It does not calculate tick value, per-volume stop loss, deposit-
+  currency conversion or live risk sizing by itself. There is no broker order
+  submission in this transport.
+- Cleanup and transport commits: `17017f6`, `b747dbf`, `9712ef3`,
+  `94fd3ff`, `45085df`, `3185749`. Do not count their tests as passing
+  until GitHub Actions confirms the relevant branch run.
 
 ## Product direction
 
