@@ -11,11 +11,9 @@ class DailySessionGuardTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.guard = DailySessionGuard(
-            Path(self.temp.name) / "sessions.sqlite3",
-            timezone="UTC",
-            profit_target="50",
-            max_daily_loss="15",
-            max_open_positions=2,
+            Path(self.temp.name) / "sessions.sqlite3", timezone="UTC",
+            profit_target="50", max_daily_loss="15", max_open_positions=2,
+            max_giveback="20",
         )
         self.now = datetime(2026, 11, 1, 10, tzinfo=timezone.utc)
 
@@ -23,53 +21,53 @@ class DailySessionGuardTests(unittest.TestCase):
         self.temp.cleanup()
 
     def evaluate(self, pnl, positions=0, now=None):
-        return self.guard.evaluate(
-            daily_net_pnl=Decimal(str(pnl)), equity="1000",
-            open_positions=positions, now=now or self.now,
-        )
+        return self.guard.evaluate(daily_net_pnl=Decimal(str(pnl)), equity="1000",
+                                   open_positions=positions, now=now or self.now)
 
-    def test_active_session_allows_entries_below_threshold(self):
+    def test_active_session_allows_entries_below_target(self):
         result = self.evaluate("12")
         self.assertEqual(result.state, ACTIVE)
         self.assertTrue(result.allow_new_entries)
-        self.assertTrue(result.monitor_existing_positions)
 
-    def test_profit_target_locks_entries_and_can_be_resumed(self):
+    def test_target_activates_protection_and_keeps_trading(self):
         result = self.evaluate("50")
+        self.assertEqual(result.state, TARGET_RESUMED)
+        self.assertTrue(result.allow_new_entries)
+        self.assertEqual(result.protection_floor, Decimal("30"))
+
+    def test_profit_peak_moves_floor_up_and_entries_continue(self):
+        self.evaluate("50")
+        result = self.evaluate("80")
+        self.assertEqual(result.state, TARGET_RESUMED)
+        self.assertTrue(result.allow_new_entries)
+        self.assertEqual(result.protection_floor, Decimal("60"))
+
+    def test_giveback_floor_locks_entries_for_day(self):
+        self.evaluate("50")
+        self.evaluate("80")
+        result = self.evaluate("60")
         self.assertEqual(result.state, TARGET_LOCK)
         self.assertFalse(result.allow_new_entries)
-        self.assertTrue(result.monitor_existing_positions)
-        self.assertTrue(self.guard.resume_after_target(now=self.now))
-        self.assertEqual(self.guard.state_for_day(now=self.now), TARGET_RESUMED)
+        self.assertEqual(result.protection_floor, Decimal("60"))
+        # A recovery later the same day must not silently unlock entries.
+        self.assertFalse(self.evaluate("90").allow_new_entries)
 
-    def test_target_lock_persists_across_restart(self):
+    def test_target_protection_persists_across_restart(self):
         self.evaluate("50")
         restarted = DailySessionGuard(
             Path(self.temp.name) / "sessions.sqlite3", timezone="UTC",
             profit_target=50, max_daily_loss=15, max_open_positions=2,
+            max_giveback=20,
         )
-        self.assertEqual(restarted.state_for_day(now=self.now), TARGET_LOCK)
+        self.assertEqual(restarted.evaluate(daily_net_pnl=55, equity=1000,
+                         open_positions=0, now=self.now).state, TARGET_RESUMED)
 
-    def test_resumed_target_does_not_immediately_relock_and_loss_still_applies(self):
-        self.evaluate("50")
-        self.assertTrue(self.guard.resume_after_target(now=self.now))
-        self.assertEqual(self.evaluate("51").state, TARGET_RESUMED)
-        self.assertEqual(self.evaluate("-15").state, LOSS_LOCK)
-
-    def test_daily_loss_lock_cannot_be_resumed(self):
+    def test_daily_loss_lock_overrides_and_persists(self):
         result = self.evaluate("-15")
         self.assertEqual(result.state, LOSS_LOCK)
         self.assertFalse(result.allow_new_entries)
         self.assertFalse(self.guard.resume_after_target(now=self.now))
-        self.assertEqual(self.guard.state_for_day(now=self.now), LOSS_LOCK)
-
-    def test_loss_lock_remains_even_if_pnl_recovers(self):
-        self.evaluate("-15")
         self.assertEqual(self.evaluate("100").state, LOSS_LOCK)
-
-    def test_target_lock_remains_even_if_pnl_falls(self):
-        self.evaluate("50")
-        self.assertEqual(self.evaluate("-1").state, TARGET_LOCK)
 
     def test_new_local_day_starts_fresh_session(self):
         self.evaluate("-15")
@@ -87,34 +85,30 @@ class DailySessionGuardTests(unittest.TestCase):
         result = guard.evaluate(daily_net_pnl=0, equity=1000, open_positions=0, now=late_utc)
         self.assertEqual(result.trading_day, "2026-11-02")
 
-    def test_max_open_positions_blocks_new_entry_but_keeps_monitoring(self):
+    def test_max_open_positions_blocks_new_entry_but_keeps_management(self):
         result = self.evaluate("0", positions=2)
         self.assertFalse(result.allow_new_entries)
         self.assertTrue(result.monitor_existing_positions)
 
-    def test_invalid_pnl_equity_and_position_data_fail_closed(self):
+    def test_invalid_inputs_fail_closed(self):
         for pnl, equity, positions in (
-            ("NaN", 1000, 0), ("Infinity", 1000, 0), (0, 0, 0), (0, "NaN", 0),
-            (0, 1000, -1), (0, 1000, True),
+            ("NaN", 1000, 0), ("Infinity", 1000, 0), (0, 0, 0),
+            (0, "NaN", 0), (0, 1000, -1), (0, 1000, True),
         ):
             with self.subTest(pnl=pnl, equity=equity, positions=positions):
                 with self.assertRaises(ValueError):
-                    self.guard.evaluate(
-                        daily_net_pnl=pnl, equity=equity, open_positions=positions,
-                        now=self.now,
-                    )
+                    self.guard.evaluate(daily_net_pnl=pnl, equity=equity,
+                                         open_positions=positions, now=self.now)
 
-    def test_naive_datetime_is_rejected(self):
+    def test_naive_datetime_rejected(self):
         with self.assertRaises(ValueError):
             self.evaluate(0, now=datetime(2026, 11, 1, 10))
 
-    def test_bad_timezone_and_limits_are_rejected(self):
+    def test_invalid_configuration_rejected(self):
         with self.assertRaises(ValueError):
-            DailySessionGuard(Path(self.temp.name) / "bad.db", timezone="Not/AZone",
-                              profit_target=50, max_daily_loss=15, max_open_positions=2)
-        with self.assertRaises(ValueError):
-            DailySessionGuard(Path(self.temp.name) / "bad2.db", timezone="UTC",
-                              profit_target=0, max_daily_loss=15, max_open_positions=2)
+            DailySessionGuard(Path(self.temp.name) / "bad.db", timezone="UTC",
+                              profit_target=10, max_daily_loss=15,
+                              max_open_positions=2, max_giveback=10)
 
 
 if __name__ == "__main__":
