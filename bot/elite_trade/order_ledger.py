@@ -305,3 +305,12 @@ class OrderLedger:
                    ORDER BY created_at,client_order_id"""
             ).fetchall()
             return [self._record(row) for row in rows if row is not None]
+
+
+    def get_by_broker_order_id(self, broker_order_id: str) -> OrderRecord | None:
+        """Find a locally reserved order by its broker-assigned order ID."""
+        broker_id = self._text(broker_order_id, "broker_order_id")
+        with self._connect() as db:
+            return self._record(db.execute(
+                "SELECT * FROM orders WHERE broker_order_id=?", (broker_id,)
+            ).fetchone())
