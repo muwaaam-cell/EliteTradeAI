@@ -49,6 +49,7 @@ class CTraderSdkTransport:
         on_error: Callable[[str], None] | None = None,
         on_spot: Callable[[object], None] | None = None,
         on_execution_event: Callable[[object], None] | None = None,
+        on_order_error: Callable[[object], None] | None = None,
         on_account_snapshot: Callable[[object], None] | None = None,
         on_reconcile: Callable[[object], None] | None = None,
         on_instruments: Callable[[tuple[object, ...]], None] | None = None,
@@ -72,6 +73,7 @@ class CTraderSdkTransport:
         self.on_error = on_error or (lambda message: None)
         self.on_spot = on_spot or (lambda event: None)
         self.on_execution_event = on_execution_event or (lambda event: None)
+        self.on_order_error = on_order_error or (lambda event: None)
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
         self.on_reconcile = on_reconcile or (lambda response: None)
         self._has_reconcile_handler = on_reconcile is not None
@@ -108,6 +110,7 @@ class CTraderSdkTransport:
                 ProtoOASubscribeSpotsReq,
                 ProtoOASpotEvent,
                 ProtoOAExecutionEvent,
+                ProtoOAOrderErrorEvent,
                 ProtoOAErrorRes,
                 ProtoOATraderReq,
                 ProtoOATraderRes,
@@ -137,6 +140,7 @@ class CTraderSdkTransport:
                 "ProtoOASubscribeSpotsReq": ProtoOASubscribeSpotsReq,
                 "ProtoOASpotEvent": ProtoOASpotEvent,
                 "ProtoOAExecutionEvent": ProtoOAExecutionEvent,
+                "ProtoOAOrderErrorEvent": ProtoOAOrderErrorEvent,
                 "ProtoOAErrorRes": ProtoOAErrorRes,
                 "ProtoOATraderReq": ProtoOATraderReq,
                 "ProtoOATraderRes": ProtoOATraderRes,
@@ -311,6 +315,12 @@ class CTraderSdkTransport:
                     self._fail("Received an execution event for an unexpected cTrader account.")
                     return
                 self.on_execution_event(event)
+            elif payload_type == self._sdk["ProtoOAOrderErrorEvent"]().payloadType:
+                event = extract(message)
+                if int(event.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received an order-error event for an unexpected cTrader account.")
+                    return
+                self.on_order_error(event)
             elif payload_type == self._sdk["ProtoOAErrorRes"]().payloadType:
                 error = extract(message)
                 code = str(getattr(error, "errorCode", "unknown"))
@@ -419,7 +429,7 @@ class CTraderSdkTransport:
             return
         self.on_account_snapshot(snapshot)
 
-    def request_positions_reconcile(self, *, return_protection_orders: bool = False) -> None:
+    def request_positions_reconcile(self) -> None:
         """Request cTrader's authoritative open positions and pending orders snapshot.
 
         The response is forwarded unchanged after account-ID validation. The
@@ -432,11 +442,8 @@ class CTraderSdkTransport:
             raise RuntimeError("Position reconciliation requires a response handler.")
         if self._reconcile_in_flight:
             raise RuntimeError("A position reconciliation request is already in progress.")
-        if not isinstance(return_protection_orders, bool):
-            raise ValueError("return_protection_orders must be boolean.")
         request = self._sdk["ProtoOAReconcileReq"]()
         request.ctidTraderAccountId = self.authenticated_account_id
-        request.returnProtectionOrders = return_protection_orders
         self._reconcile_in_flight = True
         try:
             self._send(request)
