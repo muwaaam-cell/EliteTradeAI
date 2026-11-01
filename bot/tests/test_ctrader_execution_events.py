@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from elite_trade.ctrader_execution_events import (
     apply_execution_update, apply_order_error, decode_execution_event,
-    decode_order_error_event, make_order_error_handler,
+    decode_order_error_event, make_execution_event_handler, make_order_error_handler,
 )
 from elite_trade.execution_policy import OrderIntent, Side
 from elite_trade.order_ledger import FILLED, PARTIALLY_FILLED, REJECTED, SUBMITTED, OrderLedger
@@ -107,6 +107,41 @@ class CTraderExecutionEventTests(unittest.TestCase):
         self.assertFalse(apply_execution_update(self.ledger, filled, now=4))
         self.assertEqual(self.ledger.get("client-1").status, FILLED)
 
+    def test_execution_transport_handler_updates_ledger_and_surfaces_ambiguity(self):
+        unmatched = []
+        handler = make_execution_event_handler(
+            ledger=self.ledger,
+            expected_account_id=77,
+            execution_type_names=self.names,
+            now_epoch=lambda: 2,
+            on_unmatched=lambda reason, event: unmatched.append((reason, event)),
+        )
+        self.assertTrue(handler(self.event(2)))
+        self.assertEqual(self.ledger.get("client-1").status, SUBMITTED)
+
+        malformed = self.event(3, executed=100, client_id="")
+        self.assertFalse(handler(malformed))
+        self.assertEqual(len(unmatched), 1)
+        self.assertIn("no client order ID", unmatched[0][0])
+        self.assertEqual(self.ledger.get("client-1").status, SUBMITTED)
+
+        # A valid but unrelated event type is ignored, not misreported as an error.
+        self.assertFalse(handler(self.event(9)))
+        self.assertEqual(len(unmatched), 1)
+
+    def test_execution_handler_requires_explicit_callbacks_and_enum_map(self):
+        with self.assertRaises(TypeError):
+            make_execution_event_handler(
+                ledger=self.ledger, expected_account_id=77,
+                execution_type_names=self.names, now_epoch=None,
+                on_unmatched=lambda reason, event: None,
+            )
+        with self.assertRaises(TypeError):
+            make_execution_event_handler(
+                ledger=self.ledger, expected_account_id=77,
+                execution_type_names={}, now_epoch=lambda: 2,
+                on_unmatched=lambda reason, event: None,
+            )
 
     def test_order_error_is_correlated_by_known_broker_order_id_and_rejects_order(self):
         self.assertTrue(self.ledger.mark_submitted("client-1", "9001", now=2))
@@ -152,7 +187,6 @@ class CTraderExecutionEventTests(unittest.TestCase):
         update = decode_order_error_event(event, expected_account_id=77)
         self.assertFalse(apply_order_error(self.ledger, update, now=4))
         self.assertEqual(self.ledger.get("client-1").status, FILLED)
-
 
     def test_order_error_transport_handler_applies_match_and_reports_unmatched(self):
         self.assertTrue(self.ledger.mark_submitted("client-1", "9001", now=2))
