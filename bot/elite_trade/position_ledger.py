@@ -7,6 +7,7 @@ Positions omitted from a complete snapshot become UNKNOWN, never CLOSED.
 from __future__ import annotations
 
 import math
+from contextlib import closing
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -91,7 +92,7 @@ class PositionLedger:
             raise ValueError("A file-backed database is required for durable position state.")
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS positions (
                     broker_position_id TEXT PRIMARY KEY,
@@ -198,7 +199,7 @@ class PositionLedger:
         tp = _optional_price(take_profit, "take_profit")
         now = _timestamp(now_epoch, "now_epoch")
 
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT status FROM positions WHERE broker_position_id=?", (position_id,)
@@ -276,7 +277,7 @@ class PositionLedger:
         batch = tuple(snapshots)
         self._validate_snapshot(batch)
 
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             previous_row = db.execute(
                 "SELECT last_snapshot_epoch FROM position_reconcile_meta WHERE singleton=1"
@@ -328,20 +329,20 @@ class PositionLedger:
 
     def get(self, broker_position_id: str) -> PositionRecord | None:
         position_id = _text(broker_position_id, "broker_position_id")
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             return self._record(db.execute(
                 "SELECT * FROM positions WHERE broker_position_id=?", (position_id,)
             ).fetchone())
 
     def list_open(self) -> list[PositionRecord]:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             rows = db.execute(
                 "SELECT * FROM positions WHERE status='OPEN' ORDER BY broker_position_id"
             ).fetchall()
             return [self._record(row) for row in rows]
 
     def list_unknown(self) -> list[PositionRecord]:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             rows = db.execute(
                 "SELECT * FROM positions WHERE status='UNKNOWN' ORDER BY broker_position_id"
             ).fetchall()
