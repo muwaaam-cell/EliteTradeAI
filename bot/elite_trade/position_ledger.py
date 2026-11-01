@@ -127,7 +127,8 @@ class PositionLedger:
     def _record(row: sqlite3.Row | None) -> PositionRecord | None:
         if row is None:
             return None
-        dec = lambda value: Decimal(value) if value is not None else None
+        def dec(value: str | None) -> Decimal | None:
+            return Decimal(value) if value is not None else None
         return PositionRecord(
             broker_position_id=row["broker_position_id"],
             symbol=row["symbol"],
@@ -158,7 +159,7 @@ class PositionLedger:
         """Store local intent only; never promote it to broker-confirmed OPEN."""
         position_id = _text(broker_position_id, "broker_position_id")
         instrument = _text(symbol, "symbol", 64)
-        if side not in {"BUY", "SELL"}:
+        if not isinstance(side, str) or side not in {"BUY", "SELL"}:
             raise ValueError("side must be BUY or SELL.")
         volume = _decimal(volume_units, "volume_units", positive=True)
         entry = _decimal(entry_price, "entry_price", positive=True)
@@ -200,12 +201,14 @@ class PositionLedger:
     def _validate_snapshot(snapshots: tuple[BrokerPositionSnapshot, ...]) -> None:
         seen: set[str] = set()
         for snap in snapshots:
+            if not isinstance(snap, BrokerPositionSnapshot):
+                raise ValueError("Every snapshot item must be a BrokerPositionSnapshot.")
             position_id = _text(snap.broker_position_id, "broker_position_id")
             if position_id in seen:
                 raise ValueError("Duplicate broker position ID in snapshot.")
             seen.add(position_id)
             _text(snap.symbol, "symbol", 64)
-            if snap.side not in {"BUY", "SELL"}:
+            if not isinstance(snap.side, str) or snap.side not in {"BUY", "SELL"}:
                 raise ValueError("Snapshot side must be BUY or SELL.")
             _decimal(snap.volume_units, "volume_units", positive=True)
             _decimal(snap.entry_price, "entry_price", positive=True)
