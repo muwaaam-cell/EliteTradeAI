@@ -144,6 +144,41 @@ def apply_execution_update(
     raise ValueError("Unsupported decoded broker order update.")
 
 
+def make_execution_event_handler(
+    *,
+    ledger: OrderLedger,
+    expected_account_id: int,
+    execution_type_names: Mapping[int, str],
+    now_epoch: Callable[[], int],
+    on_unmatched: Callable[[str, object], None],
+) -> Callable[[object], bool]:
+    """Create a transport callback that applies correlated execution events.
+
+    Malformed, wrong-account, or uncorrelated events are reported to the
+    supplied sink and never guessed onto a local order. Unrelated valid
+    execution types are ignored without changing the ledger.
+    """
+    if not callable(now_epoch) or not callable(on_unmatched):
+        raise TypeError("Execution handler requires clock and unmatched-event callbacks.")
+    if not isinstance(execution_type_names, Mapping) or not execution_type_names:
+        raise TypeError("Execution handler requires an explicit execution-type map.")
+
+    def handle(event: object) -> bool:
+        try:
+            update = decode_execution_event(
+                event,
+                expected_account_id=expected_account_id,
+                execution_type_names=execution_type_names,
+            )
+            if update is None:
+                return False
+            return apply_execution_update(ledger, update, now=now_epoch())
+        except (TypeError, ValueError) as exc:
+            on_unmatched(str(exc), event)
+            return False
+
+    return handle
+
 
 @dataclass(frozen=True)
 class BrokerOrderError:
