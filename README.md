@@ -18,7 +18,7 @@ Implemented foundations in `bot/elite_trade/` include:
 - Position/order reconciliation request forwarding, with the request validated against the actual generated Spotware protobuf schema.
 - Daily target and giveback protection, daily loss lock, kill switch and adaptive risk sizing.
 - Durable duplicate-resistant order-intent ledger with restart persistence, uncertain-submission reconciliation and cumulative partial-fill tracking.
-- A validated cTrader MARKET-order request builder that resolves SDK enums by name, requires an attached stop-loss, and checks stop/target placement against the supplied entry reference. Regression tests also construct the real generated Spotware protobuf type. It constructs requests only; it does not submit them.
+- Validated cTrader protobuf builders for MARKET entry requests, position SL/TP amendment requests and position-close requests. Tests instantiate the real generated Spotware protobuf types. These builders do not send requests, validate broker-side execution outcomes, or confirm that stops are active.
 - Fail-closed pre-trade checks; the trading loop manages existing positions before evaluating new entries.
 
 ## What is not yet complete
