@@ -77,7 +77,7 @@ class DailySessionGuard:
             )
 
     def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.database, timeout=10, isolation_level="IMMEDIATE")
+        db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=FULL")
         return db
