@@ -189,6 +189,28 @@ class OrderLedgerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ledger.resolve_unknown("missing", PENDING, now=100)
 
+    def test_order_ledger_account_binding_persists_and_rejects_mismatch(self):
+        bound = OrderLedger(self.path, account_id=77)
+        self.assertEqual(bound.bound_account_id, 77)
+        reopened = OrderLedger(self.path, account_id=77)
+        self.assertEqual(reopened.bound_account_id, 77)
+        with self.assertRaisesRegex(ValueError, "different cTrader account"):
+            OrderLedger(self.path, account_id=88)
+        with self.assertRaisesRegex(ValueError, "different cTrader account"):
+            OrderLedger(self.path)
+
+    def test_legacy_unbound_order_ledger_can_be_bound_once(self):
+        self.assertIsNone(self.ledger.bound_account_id)
+        bound = OrderLedger(self.path, account_id=77)
+        self.assertEqual(bound.bound_account_id, 77)
+        with self.assertRaisesRegex(ValueError, "different cTrader account"):
+            OrderLedger(self.path, account_id=88)
+
+    def test_invalid_order_ledger_account_ids_are_rejected(self):
+        for account_id in (0, -1, True, 77.0, "77"):
+            with self.subTest(account_id=account_id), self.assertRaises(ValueError):
+                OrderLedger(Path(self.temp.name) / f"bad-{account_id}.sqlite3", account_id=account_id)
+
 
 class DecimalValue(str):
     """String-compatible fixture accepted by the OrderIntent dataclass."""
