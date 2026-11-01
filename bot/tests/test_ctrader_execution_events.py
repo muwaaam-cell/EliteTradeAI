@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from elite_trade.ctrader_execution_events import (
     apply_execution_update, apply_order_error, decode_execution_event,
-    decode_order_error_event,
+    decode_order_error_event, make_order_error_handler,
 )
 from elite_trade.execution_policy import OrderIntent, Side
 from elite_trade.order_ledger import FILLED, PARTIALLY_FILLED, REJECTED, SUBMITTED, OrderLedger
@@ -152,6 +152,39 @@ class CTraderExecutionEventTests(unittest.TestCase):
         update = decode_order_error_event(event, expected_account_id=77)
         self.assertFalse(apply_order_error(self.ledger, update, now=4))
         self.assertEqual(self.ledger.get("client-1").status, FILLED)
+
+
+    def test_order_error_transport_handler_applies_match_and_reports_unmatched(self):
+        self.assertTrue(self.ledger.mark_submitted("client-1", "9001", now=2))
+        unmatched = []
+        handler = make_order_error_handler(
+            ledger=self.ledger,
+            expected_account_id=77,
+            now_epoch=lambda: 3,
+            on_unmatched=lambda reason, event: unmatched.append((reason, event)),
+        )
+        matched = SimpleNamespace(
+            ctidTraderAccountId=77, orderId=9001,
+            errorCode="TRADING_BAD_STOPS", description="Invalid stops",
+        )
+        self.assertTrue(handler(matched))
+        self.assertEqual(self.ledger.get("client-1").status, REJECTED)
+
+        uncorrelated = SimpleNamespace(
+            ctidTraderAccountId=77, orderId=0,
+            errorCode="TRADING_BAD_STOPS",
+        )
+        self.assertFalse(handler(uncorrelated))
+        self.assertEqual(len(unmatched), 1)
+        self.assertIn("no usable broker order ID", unmatched[0][0])
+        self.assertEqual(self.ledger.get("client-1").status, REJECTED)
+
+    def test_order_error_handler_requires_unmatched_event_sink(self):
+        with self.assertRaises(TypeError):
+            make_order_error_handler(
+                ledger=self.ledger, expected_account_id=77,
+                now_epoch=lambda: 3, on_unmatched=None,
+            )
 
 
 class DecimalFixture(str):
