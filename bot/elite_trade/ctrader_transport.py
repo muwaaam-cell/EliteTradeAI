@@ -36,6 +36,7 @@ class CTraderSdkTransport:
     """Asynchronous SDK adapter; caller explicitly selects the account ID."""
 
     HEARTBEAT_SECONDS = 10
+    RECONCILE_TIMEOUT_SECONDS = 15
 
     def __init__(
         self,
@@ -88,6 +89,7 @@ class CTraderSdkTransport:
         self._pending_pnl = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
+        self._reconcile_timeout_call = None
         self._sdk = sdk
         self._reactor = reactor
         self._client_factory = client_factory
@@ -327,6 +329,7 @@ class CTraderSdkTransport:
                 if not self._reconcile_in_flight:
                     self._fail("Received an unsolicited cTrader reconciliation response.")
                     return
+                self._cancel_reconcile_timeout()
                 self._reconcile_in_flight = False
                 self.on_reconcile(response)
             elif payload_type == self._sdk["ProtoOASpotEvent"]().payloadType:
@@ -472,10 +475,28 @@ class CTraderSdkTransport:
         request.ctidTraderAccountId = self.authenticated_account_id
         self._reconcile_in_flight = True
         try:
+            self._reconcile_timeout_call = self._reactor.callLater(
+                self.RECONCILE_TIMEOUT_SECONDS, self._reconcile_timed_out
+            )
             self._send(request)
         except Exception:
+            self._cancel_reconcile_timeout()
             self._reconcile_in_flight = False
             raise
+
+    def _reconcile_timed_out(self) -> None:
+        self._reconcile_timeout_call = None
+        if not self._reconcile_in_flight:
+            return
+        # The request outcome is now ambiguous. Invalidate the session and
+        # require a fresh authenticated recovery/reconciliation cycle.
+        self._fail("cTrader position reconciliation timed out; session invalidated for recovery.")
+
+    def _cancel_reconcile_timeout(self) -> None:
+        call = self._reconcile_timeout_call
+        if call is not None and getattr(call, "active", lambda: False)():
+            call.cancel()
+        self._reconcile_timeout_call = None
 
     def subscribe_spots(self, symbol_ids: tuple[int, ...] | list[int]) -> None:
         """Subscribe to quotes only after the selected account is authenticated."""
@@ -512,6 +533,7 @@ class CTraderSdkTransport:
 
     def _disconnected(self, client, reason) -> None:
         self._cancel_heartbeat()
+        self._cancel_reconcile_timeout()
         self.authenticated_account_id = None
         self._pending_trader = None
         self._pending_pnl = None
@@ -528,6 +550,7 @@ class CTraderSdkTransport:
 
     def _fail(self, message: str) -> None:
         self._cancel_heartbeat()
+        self._cancel_reconcile_timeout()
         self.authenticated_account_id = None
         self._pending_trader = None
         self._pending_pnl = None
@@ -539,6 +562,7 @@ class CTraderSdkTransport:
 
     def stop(self) -> None:
         self._cancel_heartbeat()
+        self._cancel_reconcile_timeout()
         self.authenticated_account_id = None
         self._pending_trader = None
         self._pending_pnl = None
