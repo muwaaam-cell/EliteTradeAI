@@ -58,6 +58,7 @@ def fake_sdk():
         ("ProtoOATraderReq", 11), ("ProtoOATraderRes", 12),
         ("ProtoOAGetPositionUnrealizedPnLReq", 13),
         ("ProtoOAGetPositionUnrealizedPnLRes", 14),
+        ("ProtoOAReconcileReq", 15), ("ProtoOAReconcileRes", 16),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -156,6 +157,40 @@ class CTraderTransportTests(unittest.TestCase):
         transport, _, _ = self.make_transport()
         with self.assertRaises(RuntimeError):
             transport.request_account_snapshot()
+
+    def test_positions_reconcile_request_and_response_are_account_scoped(self):
+        received = []
+        transport, client, _ = self.make_transport(on_reconcile=received.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_positions_reconcile(return_protection_orders=True)
+        request = client.sent[-1]
+        self.assertEqual(request.payloadType, 15)
+        self.assertEqual(request.ctidTraderAccountId, 77)
+        self.assertTrue(request.returnProtectionOrders)
+        with self.assertRaises(RuntimeError):
+            transport.request_positions_reconcile()
+        response = SimpleNamespace(ctidTraderAccountId=77, position=[], order=[])
+        client.received(client, SimpleNamespace(payloadType=16, body=response))
+        self.assertEqual(received, [response])
+        self.assertFalse(transport._reconcile_in_flight)
+
+    def test_positions_reconcile_rejects_wrong_account_and_unsolicited_response(self):
+        errors = []
+        transport, client, _ = self.make_transport(on_error=errors.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_positions_reconcile()
+        wrong = SimpleNamespace(ctidTraderAccountId=88, position=[], order=[])
+        client.received(client, SimpleNamespace(payloadType=16, body=wrong))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertFalse(transport._reconcile_in_flight)
+        self.assertTrue(errors)
+
+    def test_positions_reconcile_requires_authenticated_account(self):
+        transport, _, _ = self.make_transport()
+        with self.assertRaises(RuntimeError):
+            transport.request_positions_reconcile()
 
     def test_spot_subscription_requires_authenticated_account(self):
         transport, client, _ = self.make_transport()
