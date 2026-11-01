@@ -120,5 +120,135 @@ class InstrumentMetadataTests(unittest.TestCase):
                 metadata.round_price(value)
 
 
+
+class FakeProto:
+    def __init__(self, **values):
+        self.values = values
+        for name, value in values.items():
+            setattr(self, name, value)
+
+    def HasField(self, name):
+        return name in self.values
+
+
+def make_ctrader_metadata_inputs(**overrides):
+    light = {
+        "symbolId": 77, "symbolName": "EURUSD", "enabled": True,
+        "baseAssetId": 1, "quoteAssetId": 2,
+    }
+    full = {
+        "symbolId": 77, "digits": 5, "pipPosition": 4,
+        "minVolume": 1000, "maxVolume": 1000000, "stepVolume": 1000,
+        "tradingMode": 0, "enableShortSelling": True,
+    }
+    trader = {"accessRights": 0}
+    light.update(overrides.pop("light", {}))
+    full.update(overrides.pop("full", {}))
+    trader.update(overrides.pop("trader", {}))
+    assets = [
+        FakeProto(assetId=1, name="EUR"),
+        FakeProto(assetId=2, name="USD"),
+    ]
+    return FakeProto(**light), FakeProto(**full), assets, FakeProto(**trader)
+
+
+class CTraderInstrumentMappingTests(unittest.TestCase):
+    def test_maps_joined_symbol_assets_and_account_permissions(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs(
+            full={"swapLong": -1.25, "swapShort": 0.5, "lotSize": 100000},
+        )
+        metadata = instrument_metadata_from_ctrader(light, full, assets, trader)
+        self.assertEqual(metadata.symbol, "EURUSD")
+        self.assertEqual(metadata.symbol_id, 77)
+        self.assertEqual(metadata.base_asset, "EUR")
+        self.assertEqual(metadata.quote_asset, "USD")
+        self.assertEqual(metadata.volume_step_cents, 1000)
+        self.assertEqual(metadata.min_volume_cents, 1000)
+        self.assertEqual(metadata.max_volume_cents, 1000000)
+        self.assertEqual(metadata.swap_long, Decimal("-1.25"))
+        self.assertEqual(metadata.swap_short, Decimal("0.5"))
+        self.assertEqual(metadata.lot_size_cents, 100000)
+        self.assertTrue(metadata.is_tradable)
+
+    def test_missing_broker_volume_bound_fails_closed(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs()
+        del full.values["minVolume"]
+        del full.minVolume
+        with self.assertRaises(ValueError):
+            instrument_metadata_from_ctrader(light, full, assets, trader)
+
+    def test_symbol_id_mismatch_is_rejected(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs(
+            full={"symbolId": 78},
+        )
+        with self.assertRaises(ValueError):
+            instrument_metadata_from_ctrader(light, full, assets, trader)
+
+    def test_unknown_asset_is_rejected(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs(
+            light={"quoteAssetId": 999},
+        )
+        with self.assertRaises(ValueError):
+            instrument_metadata_from_ctrader(light, full, assets, trader)
+
+    def test_duplicate_asset_id_is_rejected(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs()
+        assets.append(FakeProto(assetId=1, name="DUPLICATE"))
+        with self.assertRaises(ValueError):
+            instrument_metadata_from_ctrader(light, full, assets, trader)
+
+    def test_disabled_symbol_or_restricted_account_is_not_tradable(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs(
+            light={"enabled": False},
+        )
+        metadata = instrument_metadata_from_ctrader(light, full, assets, trader)
+        self.assertFalse(metadata.is_tradable)
+
+        light, full, assets, trader = make_ctrader_metadata_inputs(
+            trader={"accessRights": 1},
+        )
+        metadata = instrument_metadata_from_ctrader(light, full, assets, trader)
+        self.assertFalse(metadata.is_tradable)
+
+    def test_unknown_protocol_enum_is_rejected(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs(
+            full={"tradingMode": 99},
+        )
+        with self.assertRaises(ValueError):
+            instrument_metadata_from_ctrader(light, full, assets, trader)
+
+    def test_optional_unreported_fields_are_not_guessed(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs()
+        metadata = instrument_metadata_from_ctrader(light, full, assets, trader)
+        self.assertIsNone(metadata.lot_size_cents)
+        self.assertIsNone(metadata.swap_long)
+        self.assertIsNone(metadata.max_exposure_cents)
+
+    def test_missing_access_rights_is_rejected(self):
+        from elite_trade.instrument import instrument_metadata_from_ctrader
+
+        light, full, assets, trader = make_ctrader_metadata_inputs()
+        trader.values.clear()
+        del trader.accessRights
+        with self.assertRaises(ValueError):
+            instrument_metadata_from_ctrader(light, full, assets, trader)
+
+
 if __name__ == "__main__":
     unittest.main()
