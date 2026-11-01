@@ -59,6 +59,9 @@ def fake_sdk():
         ("ProtoOAGetPositionUnrealizedPnLReq", 13),
         ("ProtoOAGetPositionUnrealizedPnLRes", 14),
         ("ProtoOAReconcileReq", 15), ("ProtoOAReconcileRes", 16),
+        ("ProtoOASymbolsListReq", 17), ("ProtoOASymbolsListRes", 18),
+        ("ProtoOAAssetListReq", 19), ("ProtoOAAssetListRes", 20),
+        ("ProtoOASymbolByIdReq", 21), ("ProtoOASymbolByIdRes", 22),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -109,6 +112,72 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.AUTHENTICATED)
         self.assertEqual(transport.authenticated_account_id, 77)
         self.assertEqual(reactor.delay, 10)
+
+    def test_instrument_catalog_requests_account_scoped_lists_and_full_symbols(self):
+        received = []
+        transport, client, _ = self.make_transport(on_instruments=received.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_instrument_catalog()
+        self.assertEqual([r.payloadType for r in client.sent], [17, 19, 11])
+        self.assertTrue(all(r.ctidTraderAccountId == 77 for r in client.sent))
+        with self.assertRaises(RuntimeError):
+            transport.request_instrument_catalog()
+
+        light = SimpleNamespace(symbolId=7, symbolName="EURUSD", enabled=True,
+                                 baseAssetId=1, quoteAssetId=2)
+        asset_list = SimpleNamespace(
+            ctidTraderAccountId=77,
+            asset=[SimpleNamespace(assetId=1, name="EUR"), SimpleNamespace(assetId=2, name="USD")]
+        )
+        trader = ProtoOATrader(ctidTraderAccountId=77, balance=10000, depositAssetId=2,
+                               moneyDigits=2, accessRights=0)
+        client.received(client, SimpleNamespace(payloadType=18, body=SimpleNamespace(
+            ctidTraderAccountId=77, symbol=[light]
+        )))
+        client.received(client, SimpleNamespace(payloadType=20, body=asset_list))
+        client.received(client, SimpleNamespace(payloadType=12, body=SimpleNamespace(
+            ctidTraderAccountId=77, trader=trader
+        )))
+        full = SimpleNamespace(symbolId=7, digits=5, pipPosition=4, minVolume=1000,
+                                maxVolume=100000, stepVolume=1000, tradingMode=0,
+                                enableShortSelling=True, HasField=lambda field: field in {
+                                    "minVolume", "maxVolume", "stepVolume", "tradingMode",
+                                    "enableShortSelling"
+                                })
+        client.received(client, SimpleNamespace(payloadType=22, body=SimpleNamespace(
+            ctidTraderAccountId=77, symbol=[full]
+        )))
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][0].symbol, "EURUSD")
+        self.assertTrue(received[0][0].is_tradable)
+        self.assertFalse(transport._catalog_in_flight)
+
+    def test_instrument_catalog_rejects_incomplete_full_symbol_response(self):
+        errors = []
+        transport, client, _ = self.make_transport(on_error=errors.append)
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_instrument_catalog()
+        light = SimpleNamespace(symbolId=7, symbolName="EURUSD", enabled=True,
+                                 baseAssetId=1, quoteAssetId=2)
+        assets = SimpleNamespace(ctidTraderAccountId=77, asset=[
+            SimpleNamespace(assetId=1, name="EUR"), SimpleNamespace(assetId=2, name="USD")
+        ])
+        trader = ProtoOATrader(ctidTraderAccountId=77, balance=10000, depositAssetId=2,
+                               moneyDigits=2, accessRights=0)
+        client.received(client, SimpleNamespace(payloadType=18, body=SimpleNamespace(
+            ctidTraderAccountId=77, symbol=[light]
+        )))
+        client.received(client, SimpleNamespace(payloadType=20, body=assets))
+        client.received(client, SimpleNamespace(payloadType=12, body=SimpleNamespace(
+            ctidTraderAccountId=77, trader=trader
+        )))
+        client.received(client, SimpleNamespace(payloadType=22, body=SimpleNamespace(
+            ctidTraderAccountId=77, symbol=[]
+        )))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertTrue(errors)
 
     def test_account_snapshot_requests_broker_balance_and_position_pnl(self):
         received = []
