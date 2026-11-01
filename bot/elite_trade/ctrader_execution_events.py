@@ -7,7 +7,7 @@ Unknown or malformed execution events fail closed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Callable, Mapping
 
 from elite_trade.order_ledger import (
     CANCELLED, FILLED, PARTIALLY_FILLED, REJECTED, OrderLedger,
@@ -215,3 +215,32 @@ def apply_order_error(
         error=error[:1000],
         broker_order_id=update.broker_order_id,
     )
+
+
+def make_order_error_handler(
+    *,
+    ledger: OrderLedger,
+    expected_account_id: int,
+    now_epoch: Callable[[], int],
+    on_unmatched: Callable[[str, object], None],
+) -> Callable[[object], bool]:
+    """Build a transport callback that records matched errors and reports ambiguity.
+
+    Pass the returned callable as CTraderSdkTransport(on_order_error=...).
+    An uncorrelated event is surfaced to on_unmatched and never guessed or
+    allowed to mutate an arbitrary local order.
+    """
+    if not callable(now_epoch) or not callable(on_unmatched):
+        raise TypeError("Order-error handler requires clock and unmatched-event callbacks.")
+
+    def handle(event: object) -> bool:
+        try:
+            update = decode_order_error_event(
+                event, expected_account_id=expected_account_id
+            )
+            return apply_order_error(ledger, update, now=now_epoch())
+        except (TypeError, ValueError) as exc:
+            on_unmatched(str(exc), event)
+            return False
+
+    return handle
