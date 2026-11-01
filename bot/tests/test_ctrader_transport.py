@@ -1,7 +1,11 @@
 import unittest
 from types import SimpleNamespace
 
-from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAGetPositionUnrealizedPnLRes
+from ctrader_open_api.messages.OpenApiMessages_pb2 import (
+    ProtoOAGetPositionUnrealizedPnLRes,
+    ProtoOAOrderErrorEvent,
+    ProtoOAReconcileReq,
+)
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAAsset, ProtoOALightSymbol, ProtoOASymbol, ProtoOATrader, ProtoOATradingMode, ProtoOAAccessRights
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 
@@ -66,6 +70,8 @@ def fake_sdk():
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
+    classes["ProtoOAReconcileReq"] = ProtoOAReconcileReq
+    classes["ProtoOAOrderErrorEvent"] = ProtoOAOrderErrorEvent
     classes.update({
         "EndPoints": SimpleNamespace(PROTOBUF_LIVE_HOST="live", PROTOBUF_DEMO_HOST="demo", PROTOBUF_PORT=5035),
         "TcpProtocol": object,
@@ -276,11 +282,11 @@ class CTraderTransportTests(unittest.TestCase):
         transport, client, _ = self.make_transport(on_reconcile=received.append)
         transport.state = ConnectionState.AUTHENTICATED
         transport.authenticated_account_id = 77
-        transport.request_positions_reconcile(return_protection_orders=True)
+        transport.request_positions_reconcile()
         request = client.sent[-1]
-        self.assertEqual(request.payloadType, 15)
+        self.assertEqual(request.payloadType, ProtoOAReconcileReq().payloadType)
         self.assertEqual(request.ctidTraderAccountId, 77)
-        self.assertTrue(request.returnProtectionOrders)
+        self.assertFalse(hasattr(request, "returnProtectionOrders"))
         with self.assertRaises(RuntimeError):
             transport.request_positions_reconcile()
         response = SimpleNamespace(ctidTraderAccountId=77, position=[], order=[])
