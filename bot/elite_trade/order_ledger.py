@@ -21,7 +21,7 @@ UNKNOWN: Final = "UNKNOWN"
 PARTIALLY_FILLED: Final = "PARTIALLY_FILLED"
 TERMINAL_STATES: Final = frozenset({FILLED, REJECTED, CANCELLED})
 ALL_STATES: Final = frozenset({PENDING, SUBMITTED, PARTIALLY_FILLED, FILLED, REJECTED, CANCELLED, UNKNOWN})
-RECONCILED_STATES: Final = frozenset({SUBMITTED, PARTIALLY_FILLED, FILLED, REJECTED, CANCELLED})
+RECONCILED_STATES: Final = frozenset({SUBMITTED, FILLED, REJECTED, CANCELLED})
 
 
 @dataclass(frozen=True)
@@ -195,8 +195,11 @@ class OrderLedger:
             db.execute(
                 """UPDATE orders SET status=?,updated_at=?,
                    broker_order_id=COALESCE(broker_order_id,?),
-                   last_error=? WHERE client_order_id=?""",
-                (status, now, broker_id, safe_error, order_id),
+                   last_error=?,
+                   filled_volume_units=CASE WHEN ?='FILLED' THEN volume_units
+                                            ELSE filled_volume_units END
+                   WHERE client_order_id=?""",
+                (status, now, broker_id, safe_error, status, order_id),
             )
             db.execute("COMMIT")
             return True
