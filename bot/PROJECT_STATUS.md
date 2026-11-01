@@ -351,3 +351,12 @@ Continue from this file and inspect the live GitHub branch before making claims.
 - GitHub Actions pull-request run [#335](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41334130380) completed successfully on this exact commit. All four jobs passed: unit tests and coverage, Ruff lint/Bandit security checks, dependency vulnerability audit, and wheel build/import.
 - These are simulated/unit-level checks using supplied risk and broker metadata. They do not establish that Pepperstone accepts the minimum volume, that the USD 10 account is eligible for a particular instrument, or that any broker order was placed.
 - Small-account support means risk-aware sizing and skipping unaffordable trades. It does not mean the bot can safely guarantee growth from USD 10 to USD 1,000 or more.
+
+## Explicit pre-trade authorization gate and verified CI (2026-11-01)
+
+- Current verified branch HEAD: `10c974988e878d9c8cc8b77a6df3c2aabcac1191`.
+- The demo execution adapter now refuses to send unless a caller supplies a pre-trade authorization callback and that callback returns the literal boolean `True`. Missing, false, or exception-raising authorization blocks before ledger reservation or network send.
+- The demo runtime composition exposes this authorization dependency. It is deliberately optional at composition time so diagnostics can still be assembled, but the adapter remains unable to send when it is absent.
+- Tests cover missing authorization, explicit denial, successful explicit authorization, and propagation of the callback through the demo runtime factory.
+- GitHub Actions run [#346](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41334419514) completed successfully on this exact HEAD. All four jobs passed: 278 unit tests, Ruff lint, Bandit source-security scan, dependency vulnerability audit, and wheel build/import.
+- Important limitation: the callback is a required safety interface, not yet the actual `TradingLoop` integration. No production trading-loop callback is wired, no real Pepperstone demo order has been sent, and live execution remains locked. Do not pass a permissive callback in a deployed runtime.
