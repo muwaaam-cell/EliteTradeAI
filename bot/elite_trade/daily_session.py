@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 ACTIVE = "ACTIVE"
-TARGET_LOCK = "TARGET_LOCK"
+TARGET_LOCK = "TARGET_LOCK"\nTARGET_RESUMED = "TARGET_RESUMED"
 LOSS_LOCK = "LOSS_LOCK"
 
 
@@ -71,7 +71,7 @@ class DailySessionGuard:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS daily_sessions (
                     trading_day TEXT PRIMARY KEY,
-                    state TEXT NOT NULL CHECK(state IN ('ACTIVE','TARGET_LOCK','LOSS_LOCK')),
+                    state TEXT NOT NULL CHECK(state IN ('ACTIVE','TARGET_LOCK','TARGET_RESUMED','LOSS_LOCK')),
                     updated_at TEXT NOT NULL
                 )"""
             )
