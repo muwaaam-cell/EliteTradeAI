@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from elite_trade.daily_session import LOSS_LOCK, TARGET_LOCK, DailySessionGuard
+from elite_trade.daily_session import LOSS_LOCK, DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote, Side
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.pretrade import authorise_new_entry
