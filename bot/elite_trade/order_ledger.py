@@ -258,14 +258,20 @@ class OrderLedger:
         )
 
     def mark_terminal(
-        self, client_order_id: str, status: str, *, now: int, error: str | None = None
+        self,
+        client_order_id: str,
+        status: str,
+        *,
+        now: int,
+        error: str | None = None,
+        broker_order_id: str | None = None,
     ) -> bool:
         """Record a definitive terminal broker event; UNKNOWN requires reconciliation."""
         if status not in TERMINAL_STATES:
             raise ValueError("status must be FILLED, REJECTED, or CANCELLED.")
         return self._transition(
             client_order_id, allowed_from=frozenset({PENDING, SUBMITTED, PARTIALLY_FILLED}),
-            status=status, now=now, error=error,
+            status=status, now=now, broker_order_id=broker_order_id, error=error,
         )
 
     def resolve_unknown(
