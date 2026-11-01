@@ -91,6 +91,7 @@ ELITE_MAX_GIVEBACK_USD=20
 ELITE_MAX_OPEN_POSITIONS=1
 ELITE_KILL_SWITCH_FILE=state/KILL_SWITCH
 ELITE_SESSION_DATABASE=state/daily_session.sqlite3
+ELITE_TELEGRAM_OFFSET_FILE=state/telegram_offset.json
 ```
 
 Start the control process with:
@@ -102,9 +103,7 @@ PYTHONPATH=. python -m elite_trade.telegram_runtime
 It sends a startup notice, then polls Telegram for private-chat commands.
 Supported controls include `/status`, `/target`, `/pause`, `/kill` and the
 explicitly confirmed emergency reset. `/closeall` remains unavailable because
-broker-side position closure is not implemented. The process does not
-authenticate to cTrader, read market data, start a strategy loop or submit
-orders. Keep the Telegram token private and never commit `.env`.
+broker-side position closure is not implemented. The process persists its Telegram update cursor in the offset file (created with private file permissions). On the first run with no cursor, it discards already-queued updates so an old emergency-resume confirmation cannot be replayed; send commands after the startup notice. Keep the Telegram token private and never commit `.env`. The process does not authenticate to cTrader, read market data, start a strategy loop or submit orders.
 
 The local kill-switch file is persistent. Do not remove it to make the bot
 start; use the explicit Telegram emergency reset only after reviewing why it
