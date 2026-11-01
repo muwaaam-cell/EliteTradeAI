@@ -57,6 +57,8 @@ def compose_demo_execution_runtime(
         raise ValueError("A positive expected cTrader account ID is required.")
     if getattr(transport, "requested_account_id", None) != expected_account_id:
         raise ValueError("Transport must explicitly select the expected demo account.")
+    if not isinstance(ledger, OrderLedger) or ledger.bound_account_id != expected_account_id:
+        raise ValueError("Order ledger must be bound to the expected demo account.")
     if getattr(transport, "state", None) is not None:
         state = getattr(transport.state, "value", transport.state)
         if state != "disconnected":
