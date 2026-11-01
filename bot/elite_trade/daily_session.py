@@ -126,7 +126,7 @@ class DailySessionGuard:
             db.execute("BEGIN IMMEDIATE")
             state = self._read_or_create(db, day, local_now)
             # Loss lock has priority and is irreversible until the next local day.
-            if state == ACTIVE and pnl <= -self.max_daily_loss:
+            if state in {ACTIVE, TARGET_RESUMED} and pnl <= -self.max_daily_loss:
                 state = LOSS_LOCK
             elif state == ACTIVE and pnl >= self.profit_target:
                 state = TARGET_LOCK
