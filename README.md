@@ -1,24 +1,50 @@
-# EliteTrade AI — Android source starter
+# EliteTrade AI — Pepperstone / cTrader bot
 
-This is source code for an early native Android demo prototype, not a compiled APK.
+This repository contains the Python trading-bot implementation under `bot/`. The separate `SharpEntry/` Android project is not the trading engine and does not connect to Pepperstone.
 
-## Build in GitHub Actions from an Android phone
-1. Create a new **public** repository on GitHub (public standard GitHub-hosted Actions runners are free).
-2. Upload all files from this folder to the repository root, including hidden `.github/workflows/build-apk.yml`.
-3. Open the repository's **Actions** tab and select **Build EliteTrade AI APK**.
-4. Tap **Run workflow** (or push to `main` to trigger a build).
-5. Open the completed run, find **Artifacts**, and download `EliteTradeAI-debug-apk`. Extract the downloaded artifact ZIP to get `app-debug.apk`.
+## Current integration status
 
-Do not add billing or payment details. Do not publish API keys, passwords, or broker credentials in a public repository. The project contains no broker credentials.
+**Broker target:** Pepperstone through cTrader Open API (Spotware).  
+**Execution mode:** disabled. No live or demo orders can be submitted by the current trading loop.
 
-## Prototype scope and safety
-- Mobile terminal tabs: Market, Chart, Analysis, Trade, Account.
-- Simulated example prices only. No live data connection.
-- Paper orders only. No real order execution.
-- Exness and MT5 are not connected.
-- No deposits or withdrawals.
-- Live automated trading is disabled.
-- The prototype is not yet comprehensively tested; test only in demo mode.
+Implemented foundations in `bot/elite_trade/` include:
 
-## If the build fails
-Open the failed workflow and inspect the build log. The source uses Android Gradle Plugin 8.6.1 and Java 17; GitHub Actions downloads required build tools. A successful build has not been verified yet.
+- cTrader application/account authentication transport and explicit account selection.
+- Account-scoped symbol and asset catalogue retrieval, with strict metadata validation.
+- Account balance/equity and open-position P&L snapshot parsing.
+- cTrader quote subscription request and spot-event forwarding.
+- Position/order reconciliation request forwarding.
+- Daily target and giveback protection, daily loss lock, kill switch and adaptive risk sizing.
+- Fail-closed pre-trade checks; the trading loop manages existing positions before evaluating new entries.
+
+## What is not yet complete
+
+The following are prerequisites to calling this a functioning Pepperstone trading bot:
+
+1. Spotware application approval and verified Pepperstone demo-account OAuth credentials.
+2. A runtime that connects the authenticated transport, catalogue, quote stream, account snapshots and strategy inputs.
+3. Broker-derived price/contract-value and account-currency conversion calculations for stop-loss cash risk. Do not substitute generic pip-value assumptions.
+4. A durable, idempotent order/execution adapter with accepted, rejected, partial-fill and completed states.
+5. Broker-confirmed stop-loss placement and modification, close handling, and authoritative restart/reconnect reconciliation.
+6. End-to-end tests against a Pepperstone demo account covering order submission through final position closure.
+7. Operational hosting, health monitoring, Telegram controls/alerts and safe secret management.
+
+Until these items are implemented and verified, this code is an integration foundation—not an operational autonomous trading service. CI/unit tests do not prove broker connectivity, execution quality or profitability.
+
+## Safety rules
+
+- Live trading must remain disabled until the complete demo execution lifecycle has passed.
+- Missing, stale, inconsistent or unverified broker data must block new entries.
+- Existing-position management and emergency close capability must not depend on permission to open new trades.
+- Never commit cTrader client secrets, access/refresh tokens, Telegram tokens or account credentials. Supply secrets through a protected runtime secret store or environment configuration.
+- Do not increase risk to recover losses or chase a daily target.
+
+## Project layout
+
+- `bot/elite_trade/` — Python trading engine, risk controls and cTrader integration.
+- `bot/tests/` — automated tests.
+- `SharpEntry/` — separate Android project; not the Pepperstone execution service.
+
+## Development checks
+
+Run the Python checks from `bot/` using the project's configured test/lint/security commands. A passing unit suite validates only the tested software behavior; broker demo verification remains a separate release gate.
