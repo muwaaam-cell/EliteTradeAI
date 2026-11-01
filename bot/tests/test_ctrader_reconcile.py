@@ -103,6 +103,19 @@ class CTraderReconcileMappingTests(unittest.TestCase):
                 malformed, expected_account_id=77, symbol_names={}
             )
 
+    def test_numeric_position_and_trade_side_values_match_installed_spotware_proto(self):
+        from ctrader_open_api.messages import OpenApiModelMessages_pb2
+
+        enums = OpenApiModelMessages_pb2.DESCRIPTOR.enum_types_by_name
+        position_status = enums["ProtoOAPositionStatus"].values_by_name
+        trade_side = enums["ProtoOATradeSide"].values_by_name
+        self.assertEqual(position_status["POSITION_STATUS_OPEN"].number, 1)
+        self.assertEqual(position_status["POSITION_STATUS_CLOSED"].number, 2)
+        self.assertEqual(position_status["POSITION_STATUS_CREATED"].number, 3)
+        self.assertEqual(position_status["POSITION_STATUS_ERROR"].number, 4)
+        self.assertEqual(trade_side["BUY"].number, 1)
+        self.assertEqual(trade_side["SELL"].number, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
