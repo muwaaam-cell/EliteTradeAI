@@ -198,3 +198,129 @@ class InstrumentMetadata:
             self.min_volume_cents <= units <= self.max_volume_cents
             and units % self.volume_step_cents == 0
         )
+
+
+
+def _required_proto_field(message: object, field: str) -> object:
+    """Read a protobuf field only when the response explicitly contains it."""
+    has_field = getattr(message, "HasField", None)
+    if not callable(has_field):
+        raise ValueError(f"cannot verify cTrader field presence: {field}")
+    try:
+        present = has_field(field)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"cannot verify cTrader field presence: {field}") from exc
+    if not present:
+        raise ValueError(f"cTrader response is missing required field: {field}")
+    return getattr(message, field)
+
+
+def _optional_proto_field(message: object, field: str):
+    has_field = getattr(message, "HasField", None)
+    if not callable(has_field):
+        raise ValueError(f"cannot verify cTrader field presence: {field}")
+    try:
+        return getattr(message, field) if has_field(field) else None
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"cannot verify cTrader field presence: {field}") from exc
+
+
+def _enum_name(value: object, mapping: dict[int, str], field: str) -> str:
+    if isinstance(value, bool):
+        raise ValueError(f"invalid cTrader enum value: {field}")
+    if isinstance(value, int):
+        try:
+            return mapping[value]
+        except KeyError as exc:
+            raise ValueError(f"unsupported cTrader enum value: {field}") from exc
+    if isinstance(value, str) and value in mapping.values():
+        return value
+    raise ValueError(f"unsupported cTrader enum value: {field}")
+
+
+def instrument_metadata_from_ctrader(
+    light_symbol: object,
+    full_symbol: object,
+    assets: object,
+    trader: object,
+) -> InstrumentMetadata:
+    """Join authenticated cTrader light/full symbol and asset/account metadata.
+
+    Missing optional protocol fields that are essential for safe order sizing
+    (enabled state, trading mode, short permission and volume bounds) are
+    rejected instead of replaced with guessed defaults. This mapper does not
+    infer tick value, contract P&L or deposit-currency conversion.
+    """
+    light_id = _required_proto_field(light_symbol, "symbolId")
+    full_id = _required_proto_field(full_symbol, "symbolId")
+    if light_id != full_id:
+        raise ValueError("cTrader light and full symbol IDs do not match")
+
+    symbol_name = _required_proto_field(light_symbol, "symbolName")
+    enabled = _required_proto_field(light_symbol, "enabled")
+    base_asset_id = _required_proto_field(light_symbol, "baseAssetId")
+    quote_asset_id = _required_proto_field(light_symbol, "quoteAssetId")
+    if not isinstance(enabled, bool):
+        raise ValueError("cTrader symbol enabled flag must be boolean")
+
+    asset_names: dict[int, str] = {}
+    try:
+        asset_items = tuple(assets)
+    except TypeError as exc:
+        raise ValueError("cTrader asset response must be iterable") from exc
+    for asset in asset_items:
+        asset_id = _required_proto_field(asset, "assetId")
+        asset_name = _required_proto_field(asset, "name")
+        _integer(asset_id, "assetId", minimum=1)
+        _non_empty_str(asset_name, "asset name")
+        if asset_id in asset_names:
+            raise ValueError("duplicate cTrader asset ID")
+        asset_names[asset_id] = asset_name
+    if base_asset_id not in asset_names or quote_asset_id not in asset_names:
+        raise ValueError("cTrader symbol references an unknown base or quote asset")
+
+    digits = _required_proto_field(full_symbol, "digits")
+    pip_position = _required_proto_field(full_symbol, "pipPosition")
+    min_volume = _required_proto_field(full_symbol, "minVolume")
+    max_volume = _required_proto_field(full_symbol, "maxVolume")
+    step_volume = _required_proto_field(full_symbol, "stepVolume")
+    trading_mode = _required_proto_field(full_symbol, "tradingMode")
+    short_selling = _required_proto_field(full_symbol, "enableShortSelling")
+    if not isinstance(short_selling, bool):
+        raise ValueError("cTrader short-selling flag must be boolean")
+
+    access_rights = _required_proto_field(trader, "accessRights")
+    trading_modes = {
+        0: "ENABLED",
+        1: "DISABLED_WITHOUT_PENDINGS_EXECUTION",
+        2: "DISABLED_WITH_PENDINGS_EXECUTION",
+        3: "CLOSE_ONLY_MODE",
+    }
+    account_rights = {
+        0: "FULL_ACCESS",
+        1: "CLOSE_ONLY",
+        2: "NO_TRADING",
+        3: "NO_LOGIN",
+    }
+
+    return InstrumentMetadata(
+        symbol=symbol_name,
+        symbol_id=light_id,
+        digits=digits,
+        pip_position=pip_position,
+        volume_step_cents=step_volume,
+        min_volume_cents=min_volume,
+        max_volume_cents=max_volume,
+        base_asset_id=base_asset_id,
+        quote_asset_id=quote_asset_id,
+        base_asset=asset_names[base_asset_id],
+        quote_asset=asset_names[quote_asset_id],
+        symbol_trading_mode=_enum_name(trading_mode, trading_modes, "tradingMode"),
+        account_access_rights=_enum_name(access_rights, account_rights, "accessRights"),
+        catalog_enabled=enabled,
+        enable_short_selling=short_selling,
+        lot_size_cents=_optional_proto_field(full_symbol, "lotSize"),
+        swap_long=_optional_proto_field(full_symbol, "swapLong"),
+        swap_short=_optional_proto_field(full_symbol, "swapShort"),
+        max_exposure_cents=_optional_proto_field(full_symbol, "maxExposure"),
+    )
