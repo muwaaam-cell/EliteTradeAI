@@ -179,5 +179,47 @@ class TradingLoopTests(unittest.TestCase):
         self.assertIn("minimum volume", result.outcomes[0].decision.reason)
 
 
+    def test_ten_dollar_account_uses_half_percent_cash_risk_and_respects_minimum(self):
+        self.risk = BrokerRiskState(
+            daily_net_pnl=Decimal("0"),
+            equity=Decimal("10"),
+            settled_balance=Decimal("10"),
+            open_positions=0,
+            observed_at_epoch=100.0,
+        )
+        self.candidate = EntryCandidate(
+            **{**self.candidate.__dict__, "min_volume_units": 6,
+               "max_volume_units": 5000, "volume_step_units": 1}
+        )
+        result = self.loop.run_cycle()
+        outcome = result.outcomes[0]
+        self.assertEqual(outcome.risk_plan.risk_cash, Decimal("0.050"))
+        self.assertFalse(outcome.decision.allow_new_entry)
+        self.assertIsNone(outcome.sized_volume_units)
+        self.assertIn("minimum volume", outcome.decision.reason)
+        self.assertFalse(outcome.submitted)
+
+    def test_ten_dollar_account_can_only_size_within_five_cent_risk_budget(self):
+        self.risk = BrokerRiskState(
+            daily_net_pnl=Decimal("0"),
+            equity=Decimal("10"),
+            settled_balance=Decimal("10"),
+            open_positions=0,
+            observed_at_epoch=100.0,
+        )
+        self.candidate = EntryCandidate(
+            **{**self.candidate.__dict__, "min_volume_units": 1,
+               "max_volume_units": 5000, "volume_step_units": 1}
+        )
+        result = self.loop.run_cycle()
+        outcome = result.outcomes[0]
+        self.assertEqual(outcome.risk_plan.risk_cash, Decimal("0.050"))
+        self.assertEqual(outcome.sized_volume_units, 5)
+        self.assertTrue(outcome.decision.allow_new_entry)
+        # A passing pre-trade decision is not permission to bypass demo execution.
+        self.assertFalse(outcome.submitted)
+        self.assertFalse(result.entry_submission_enabled)
+
+
 if __name__ == "__main__":
     unittest.main()
