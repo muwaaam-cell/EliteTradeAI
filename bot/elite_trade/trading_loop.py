@@ -163,6 +163,14 @@ class TradingLoop:
                 )
                 if not isinstance(candidate.market_condition, MarketCondition):
                     raise ValueError("Candidate market condition must be explicitly classified.")
+                # Telegram may change the target before protection activates.
+                # Keep the sizing engine aligned with the guard's persisted settings
+                # instead of retaining the constructor-time target for this process.
+                self.risk_engine.config = replace(
+                    self.risk_engine.config,
+                    daily_target=self.guard.profit_target,
+                    max_giveback=self.guard.max_giveback,
+                )
                 plan = self.risk_engine.plan(
                     settled_balance=risk.settled_balance,
                     equity=risk.equity,
