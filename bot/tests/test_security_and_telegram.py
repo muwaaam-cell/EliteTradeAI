@@ -172,5 +172,52 @@ class TelegramTests(unittest.TestCase):
             )
 
 
+    def test_first_poll_drains_multiple_backlog_batches(self):
+        cursor = Path(self.folder.name) / "telegram-offset.json"
+        bot = TelegramControl(
+            token="test-token", chat_id="123", kill_switch=self.switch,
+            daily_guard=self.guard, offset_file=cursor,
+        )
+        first_batch = [
+            {"update_id": index, **self.private_update(text="/resume emergency confirm")}
+            for index in range(1, 101)
+        ]
+        calls = []
+
+        def fake_api(method, params):
+            calls.append(params)
+            if len(calls) == 1:
+                return {"result": first_batch}
+            return {"result": [{"update_id": 101, **self.private_update(text="/kill")}]}
+
+        bot._api = fake_api
+        self.switch.activate()
+        self.assertEqual(bot.poll_once(), 101)
+        self.assertTrue(self.switch.is_active())
+        self.assertEqual([item["offset"] for item in calls], [0, 101])
+        self.assertEqual(cursor.read_text(), '{"offset": 102}')
+
+    def test_update_cursor_is_saved_before_command_reply(self):
+        cursor = Path(self.folder.name) / "telegram-offset.json"
+        cursor.write_text('{"offset": 50}')
+        self.switch.activate()
+        bot = TelegramControl(
+            token="test-token", chat_id="123", kill_switch=self.switch,
+            daily_guard=self.guard, offset_file=cursor,
+        )
+        bot._api = lambda method, params: {
+            "result": [{"update_id": 50, **self.private_update(text="/resume emergency confirm")}]
+        }
+
+        def failed_send(message):
+            raise RuntimeError("simulated reply failure")
+
+        bot.send = failed_send
+        with self.assertRaises(RuntimeError):
+            bot.poll_once()
+        self.assertFalse(self.switch.is_active())
+        self.assertEqual(cursor.read_text(), '{"offset": 51}')
+
+
 if __name__ == "__main__":
     unittest.main()
