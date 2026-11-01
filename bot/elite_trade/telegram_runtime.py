@@ -44,6 +44,9 @@ def build_controller() -> TelegramControl:
 
 def main() -> None:
     controller = build_controller()
+    # Complete first-run stale-update draining before telling the operator
+    # the bot is ready, so a command sent in response to the notice is not lost.
+    controller.poll_once(timeout=0)
     controller.send(
         "EliteTrade AI Telegram control connected. "
         "Mode: SAFE MONITORING ONLY. Broker authentication is not connected; "
