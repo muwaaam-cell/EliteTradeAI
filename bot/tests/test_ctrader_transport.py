@@ -177,7 +177,9 @@ class CTraderTransportTests(unittest.TestCase):
 
     def test_positions_reconcile_rejects_wrong_account_and_unsolicited_response(self):
         errors = []
-        transport, client, _ = self.make_transport(on_error=errors.append)
+        transport, client, _ = self.make_transport(
+            on_error=errors.append, on_reconcile=lambda response: None
+        )
         transport.state = ConnectionState.AUTHENTICATED
         transport.authenticated_account_id = 77
         transport.request_positions_reconcile()
