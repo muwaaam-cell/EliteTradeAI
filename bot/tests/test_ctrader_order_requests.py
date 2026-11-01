@@ -2,7 +2,11 @@ import unittest
 
 from elite_trade.ctrader_order_requests import (
     MarketOrderSpec,
+    PositionCloseSpec,
+    PositionProtectionSpec,
+    build_close_position_request,
     build_market_order_request,
+    build_position_protection_request,
 )
 
 
@@ -80,6 +84,55 @@ class CTraderOrderRequestTests(unittest.TestCase):
         self.assertEqual(request.clientOrderId, "elite-unique-001")
         self.assertEqual(request.stopLoss, 1.20)
         self.assertEqual(request.takeProfit, 1.35)
+
+
+    def test_builds_real_position_protection_amendment(self):
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAAmendPositionSLTPReq
+
+        request = build_position_protection_request(
+            PositionProtectionSpec(
+                account_id=123, position_id=987, stop_loss=1.20, take_profit=1.35
+            )
+        )
+        self.assertIsInstance(request, ProtoOAAmendPositionSLTPReq)
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.positionId, 987)
+        self.assertEqual(request.stopLoss, 1.20)
+        self.assertEqual(request.takeProfit, 1.35)
+
+    def test_position_protection_allows_one_level_and_rejects_empty_or_invalid(self):
+        request = build_position_protection_request(
+            PositionProtectionSpec(account_id=123, position_id=987, stop_loss=1.20)
+        )
+        self.assertTrue(request.HasField("stopLoss"))
+        self.assertFalse(request.HasField("takeProfit"))
+        for spec in (
+            PositionProtectionSpec(account_id=123, position_id=987),
+            PositionProtectionSpec(account_id=123, position_id=987, stop_loss=float("nan")),
+            PositionProtectionSpec(account_id=0, position_id=987, stop_loss=1.2),
+        ):
+            with self.subTest(spec=spec), self.assertRaises(ValueError):
+                build_position_protection_request(spec)
+
+    def test_builds_real_position_close_request(self):
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAClosePositionReq
+
+        request = build_close_position_request(
+            PositionCloseSpec(account_id=123, position_id=987, volume_units=1000)
+        )
+        self.assertIsInstance(request, ProtoOAClosePositionReq)
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.positionId, 987)
+        self.assertEqual(request.volume, 1000)
+
+    def test_position_close_rejects_invalid_account_position_and_volume(self):
+        for spec in (
+            PositionCloseSpec(account_id=0, position_id=987, volume_units=1000),
+            PositionCloseSpec(account_id=123, position_id=0, volume_units=1000),
+            PositionCloseSpec(account_id=123, position_id=987, volume_units=0),
+        ):
+            with self.subTest(spec=spec), self.assertRaises(ValueError):
+                build_close_position_request(spec)
 
     def test_rejects_buy_stop_loss_on_wrong_side(self):
         with self.assertRaises(ValueError):
