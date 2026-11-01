@@ -1,5 +1,4 @@
 import unittest
-from types import SimpleNamespace
 
 from elite_trade.ctrader_order_requests import (
     MarketOrderSpec,
