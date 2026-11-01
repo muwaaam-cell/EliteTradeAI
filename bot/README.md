@@ -69,7 +69,7 @@ On Windows, activate with `.venv\\Scripts\\activate`.
 
 ## Safety
 
-The bot starts in analysis-only mode. Never put credentials, OAuth tokens, Telegram tokens or account identifiers in source files or commit them to Git. Use the host's secret/environment-variable manager.
+The bot starts in analysis-only mode. The $50 daily target is a profit-protection trigger, not an automatic stop: the intended configuration is a $20 maximum giveback, a minimum $30 floor, and 25% of normal risk for new entries after target. The daily-session guard implements the target/giveback state transitions, but adaptive risk is not yet connected to candidate sizing in the trading loop. Never put credentials, OAuth tokens, Telegram tokens or account identifiers in source files or commit them to Git. Use the host's secret/environment-variable manager.
 
 Live trading must remain disabled until OAuth, account selection, symbol metadata, live quotes, order/position reconciliation, broker-confirmed protective stops, daily loss limits, duplicate-order protection, reconnect handling and emergency shutdown are implemented and verified on demo. Live activation also requires your explicit approval.
 
