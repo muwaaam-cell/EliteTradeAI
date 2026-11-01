@@ -16,25 +16,27 @@ Last verified: 2026-11-01 13:08 UTC.
 
 ## Authenticated cTrader instrument metadata mapping (2026-11-01)
 
-- Added `instrument_metadata_from_ctrader()` in `bot/elite_trade/instrument.py`.
-  It joins the authenticated account's light-symbol list entry, full symbol
-  response and asset list, and applies the account's explicit access-rights enum.
-- The mapper checks symbol-ID consistency, explicit protobuf field presence,
-  asset references, trading-mode values, short-selling permission and broker
-  minimum/maximum/step volume values. Missing required sizing fields and
-  unknown enum values fail closed; optional swap/lot/exposure values are not
-  invented.
-- Added mapping regression tests for successful joins, missing volume fields,
-  mismatched symbol IDs, unknown/duplicate assets, disabled symbols, restricted
-  account rights, unknown enum values and absent optional fields.
-- Code commit: `5140ec710011cf31c25a6a8bf2c5ba7b6c4d8e7b`.
-  Test commit: `a5083a843d4424f404286b88c10be3df6a7fe949`.
-- This is a pure mapping layer only. The cTrader transport does not yet request
-  the symbol list, full symbol details and asset list or publish a complete
-  metadata catalogue. It does not calculate tick value, per-volume stop loss,
-  account-currency conversion or risk sizing by itself.
-- CI status for these new commits has not yet been confirmed. Do not count the
-  new tests as passing until the corresponding GitHub Actions run is inspected.
+- The canonical pure mapper is `instrument_from_ctrader()` in
+  `bot/elite_trade/ctrader_instruments.py`; it joins matching full and light
+  symbol messages, authenticated account permissions and asset metadata.
+- `deposit_currency_from_ctrader()` resolves the account deposit currency from
+  the authenticated trader's deposit-asset ID and asset list.
+- The mapper checks symbol-ID consistency, required volume fields, symbol
+  trading mode, account access rights and asset references. Unknown enum values
+  fail closed. Optional lot/swap/exposure values are not invented. Missing
+  short-selling permission is treated as unavailable (short entries disabled).
+- A second experimental mapper was briefly added to `instrument.py`; it was
+  redundant with the canonical protobuf-aware module and has been removed,
+  along with its duplicate tests. The canonical mapper and its existing tests
+  remain the single source of truth.
+- The mapper is not yet wired into transport requests. The transport still
+  needs to request the account's light-symbol catalogue and asset list, fetch
+  full metadata for the symbols, validate the complete response set and publish
+  the resulting catalogue. It does not calculate tick value, per-volume stop
+  loss or deposit-currency conversion by itself.
+- The latest mapper experiment's CI was not verifiable from the available
+  commit-status results; its duplicate code has been removed rather than
+  reported as passing. New cleanup commits also require CI verification.
 
 ## Product direction
 
