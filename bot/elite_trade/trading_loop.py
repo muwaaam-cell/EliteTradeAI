@@ -17,7 +17,7 @@ from elite_trade.adaptive_risk import (
     AdaptiveRiskConfig, AdaptiveRiskEngine, MarketCondition, RiskPlan, TradingMode,
     calculate_volume_units,
 )
-from elite_trade.daily_session import ACTIVE, TARGET_RESUMED, DailySessionGuard
+from elite_trade.daily_session import TARGET_RESUMED, DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.pretrade import PreTradeDecision, authorise_new_entry
@@ -132,6 +132,8 @@ class TradingLoop:
         outcomes: list[CandidateOutcome] = []
         for candidate in candidates:
             symbol = getattr(candidate.intent, "symbol", "<invalid>")
+            plan = None
+            volume = None
             try:
                 # Fresh account data per candidate: missing/stale/unreadable
                 # broker data must be rejected by the pre-trade gate.
@@ -212,8 +214,8 @@ class TradingLoop:
             # prerequisites before an execution path may be added.
             outcomes.append(CandidateOutcome(
                 symbol, decision, submitted=False,
-                risk_plan=locals().get("plan"),
-                sized_volume_units=locals().get("volume"),
+                risk_plan=plan,
+                sized_volume_units=volume,
             ))
 
         return CycleResult(
