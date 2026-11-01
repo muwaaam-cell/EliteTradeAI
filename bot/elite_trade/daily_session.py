@@ -73,8 +73,6 @@ class DailySessionGuard:
         self.database = str(database)
         self._lock = threading.RLock()
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
-        config = AdaptiveRiskConfig(daily_target=self.profit_target, max_giveback=self.max_giveback)
-        self.protection = ProfitProtectionTracker(self.database, config)
         with self._connect() as db:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS daily_sessions (
@@ -83,6 +81,21 @@ class DailySessionGuard:
                     updated_at TEXT NOT NULL
                 )"""
             )
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS daily_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT NOT NULL
+                )"""
+            )
+            saved = db.execute(
+                "SELECT setting_value FROM daily_settings WHERE setting_key='profit_target'"
+            ).fetchone()
+            if saved is not None:
+                self.profit_target = _money(saved[0], "profit_target")
+                if self.max_giveback >= self.profit_target:
+                    raise ValueError("Stored profit target must exceed max_giveback.")
+        config = AdaptiveRiskConfig(daily_target=self.profit_target, max_giveback=self.max_giveback)
+        self.protection = ProfitProtectionTracker(self.database, config)
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
@@ -192,6 +205,35 @@ class DailySessionGuard:
                                    "Daily target reached; profit protection active and qualified entries may continue.", floor)
         return SessionDecision(day, state, True, True,
                                "Daily loss limit not reached; qualified entries may continue.", floor)
+
+    def set_profit_target(self, amount: Decimal | str | int, *, now: datetime | None = None) -> Decimal:
+        """Persist a user-selected USD target before protection activates for the day.
+
+        A target cannot be changed after the session has left ACTIVE or after
+        the tracker has activated, preventing a mid-session target reset.
+        """
+        target = _money(amount, "profit_target")
+        if self.max_giveback >= target:
+            raise ValueError("profit_target must be greater than max_giveback.")
+        day, _ = self._day(now)
+        with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            state = self._read_state(db, day)
+            row = db.execute(
+                "SELECT activated FROM profit_protection WHERE trading_day=?", (day,)
+            ).fetchone()
+            if state != ACTIVE or (row is not None and bool(row[0])):
+                raise ValueError("Daily target cannot be changed after profit protection or a daily lock has activated.")
+            db.execute(
+                """INSERT INTO daily_settings(setting_key,setting_value) VALUES('profit_target',?)
+                   ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value""",
+                (str(target),),
+            )
+            self.profit_target = target
+            self.protection.config = AdaptiveRiskConfig(
+                daily_target=target, max_giveback=self.max_giveback
+            )
+        return target
 
     def resume_after_target(self, *, now: datetime | None = None) -> bool:
         """Target is not a lock; giveback and daily-loss locks cannot be overridden."""
