@@ -33,7 +33,8 @@ class TelegramControl:
 
     def _load_offset(self) -> int:
         """Load the Telegram update cursor; corrupted state must fail closed."""
-        assert self.offset_file is not None
+        if self.offset_file is None:
+            raise RuntimeError("Telegram update cursor path is not configured.")
         try:
             payload = json.loads(self.offset_file.read_text(encoding="utf-8"))
         except FileNotFoundError:
