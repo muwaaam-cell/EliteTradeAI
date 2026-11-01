@@ -33,11 +33,10 @@ GitHub Actions runs on pushes and pull requests to `pepperstone-ctrader-bot`:
 - Python wheel build and installed-package import smoke test.
 
 
-The latest full quality-gate run on 2026-11-01, GitHub Actions run `41307587508`
-(commit `0426c2991c9d779b5b4f35b10fc9399f9669b43e`), passed all four jobs:
-192 unit tests, 80% measured total statement coverage, Ruff lint, Bandit source
-scan, pip-audit dependency vulnerability audit, dependency-consistency checks,
-and wheel build/import smoke tests. pip-audit reported no known vulnerabilities
+The latest configurable-target quality-gate run on 2026-11-01, GitHub Actions run `41309124279`
+(commit `bffbfe57a5324175a2eb4598367d2224b2b909e4`), passed all four jobs:
+196 unit tests, 80% measured total coverage, Ruff lint, Bandit source scan,
+pip-audit dependency vulnerability audit, and wheel build/import smoke tests. pip-audit reported no known vulnerabilities
 in the declared runtime dependencies at scan time. The report is retained as a
 workflow artifact; no minimum coverage threshold is claimed. This verifies the
 tested code only, not broker connectivity, order execution or profitability.
@@ -70,7 +69,7 @@ On Windows, activate with `.venv\\Scripts\\activate`.
 
 ## Safety
 
-The bot starts in analysis-only mode. The $50 daily target is a profit-protection trigger, not an automatic stop: the intended configuration is a $20 maximum giveback, a minimum $30 floor, and 25% of normal risk for new entries after target. The daily-session guard implements the target/giveback state transitions, but adaptive risk is not yet connected to candidate sizing in the trading loop. Never put credentials, OAuth tokens, Telegram tokens or account identifiers in source files or commit them to Git. Use the host's secret/environment-variable manager.
+The bot starts in analysis-only mode. The daily profit target defaults to $50 but can be changed in the private Telegram chat with `/target 500`, `/target 1500`, `/target 5000`, or another valid USD amount. The setting is persisted across restarts and cannot be changed after that day's protection or a daily lock activates. The $20 maximum giveback remains fixed. The target is a profit-protection trigger, not an automatic stop. Adaptive risk is not yet connected to candidate sizing in the trading loop, so post-target risk reduction is not yet enforced on actual order volume. Never put credentials, OAuth tokens, Telegram tokens or account identifiers in source files or commit them to Git. Use the host's secret/environment-variable manager.
 
 Live trading must remain disabled until OAuth, account selection, symbol metadata, live quotes, order/position reconciliation, broker-confirmed protective stops, daily loss limits, duplicate-order protection, reconnect handling and emergency shutdown are implemented and verified on demo. Live activation also requires your explicit approval.
 
