@@ -123,6 +123,7 @@ class DailySessionGuard:
 
         day, local_now = self._day(now)
         with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             state = self._read_or_create(db, day, local_now)
             # Loss lock has priority and is irreversible until the next local day.
             if state == ACTIVE and pnl <= -self.max_daily_loss:
@@ -159,11 +160,12 @@ class DailySessionGuard:
                 return False
             db.execute(
                 "UPDATE daily_sessions SET state=?,updated_at=? WHERE trading_day=?",
-                (ACTIVE, local_now.isoformat(), day),
+                (TARGET_RESUMED, local_now.isoformat(), day),
             )
             return True
 
     def state_for_day(self, *, now: datetime | None = None) -> str:
         day, local_now = self._day(now)
         with self._lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             return self._read_or_create(db, day, local_now)
