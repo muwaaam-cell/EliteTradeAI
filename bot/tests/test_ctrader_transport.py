@@ -229,6 +229,33 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.ERROR)
         self.assertTrue(errors)
 
+    def test_order_error_events_are_forwarded_only_for_authenticated_account(self):
+        received = []
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_order_error=received.append, on_error=errors.append
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+
+        event = ProtoOAOrderErrorEvent(
+            ctidTraderAccountId=77, errorCode="INVALID_STOP_LOSS", orderId=9001
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=event.payloadType, body=event
+        ))
+        self.assertEqual(received, [event])
+        self.assertEqual(transport.state, ConnectionState.AUTHENTICATED)
+
+        wrong_account = ProtoOAOrderErrorEvent(
+            ctidTraderAccountId=88, errorCode="INVALID_STOP_LOSS", orderId=9001
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=wrong_account.payloadType, body=wrong_account
+        ))
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertTrue(errors)
+
     def test_account_snapshot_requests_broker_balance_and_position_pnl(self):
         received = []
         transport, client, _ = self.make_transport(on_account_snapshot=received.append)
