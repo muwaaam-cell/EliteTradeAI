@@ -165,25 +165,38 @@ class TelegramControl:
         # particular, an old "/resume emergency confirm" must never be replayed
         # after a process restart. Commands are accepted only after bootstrap.
         if not self._offset_initialized:
-            payload = self._api("getUpdates", {"offset": self.offset, "timeout": 0,
-                                                "allowed_updates": json.dumps(["message"])})
-            updates = payload.get("result", [])
-            next_offset = self.offset
-            for update in updates:
-                next_offset = max(next_offset, int(update.get("update_id", 0)) + 1)
-            self._save_offset(next_offset)
+            # Telegram returns at most 100 updates per request. Drain every
+            # queued batch so a large old backlog cannot leak into live control.
+            discarded = 0
+            while True:
+                payload = self._api("getUpdates", {
+                    "offset": self.offset, "timeout": 0, "limit": 100,
+                    "allowed_updates": json.dumps(["message"]),
+                })
+                updates = payload.get("result", [])
+                next_offset = self.offset
+                for update in updates:
+                    next_offset = max(next_offset, int(update.get("update_id", 0)) + 1)
+                if next_offset != self.offset:
+                    self._save_offset(next_offset)
+                discarded += len(updates)
+                if len(updates) < 100:
+                    break
             self._offset_initialized = True
-            return len(updates)
+            return discarded
 
         payload = self._api("getUpdates", {"offset": self.offset, "timeout": timeout,
                                             "allowed_updates": json.dumps(["message"])})
         updates = payload.get("result", [])
         for update in updates:
             next_offset = max(self.offset, int(update.get("update_id", 0)) + 1)
+            # Advance the cursor before applying commands. If the process dies
+            # after an emergency resume but before sending its reply, that
+            # confirmation must not be replayed on restart.
+            self._save_offset(next_offset)
             reply = self.handle_update(update)
             if reply:
                 self.send(reply)
-            self._save_offset(next_offset)
         return len(updates)
 
     def run_forever(self) -> None:
