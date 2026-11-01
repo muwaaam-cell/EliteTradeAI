@@ -142,3 +142,76 @@ def apply_execution_update(
             broker_order_id=update.broker_order_id,
         )
     raise ValueError("Unsupported decoded broker order update.")
+
+
+
+@dataclass(frozen=True)
+class BrokerOrderError:
+    """An authenticated order-specific error correlated by broker order ID."""
+
+    account_id: int
+    broker_order_id: str
+    error_code: str
+    description: str | None = None
+
+
+def decode_order_error_event(
+    event: object,
+    *,
+    expected_account_id: int,
+) -> BrokerOrderError:
+    """Decode an order error only when its account and broker order ID are usable.
+
+    cTrader's ProtoOAOrderErrorEvent does not carry clientOrderId. Events with
+    a missing/zero orderId therefore cannot safely be attached to a locally
+    reserved order and are rejected rather than guessed from description text.
+    """
+    if isinstance(expected_account_id, bool) or not isinstance(expected_account_id, int) or expected_account_id <= 0:
+        raise ValueError("Expected account ID must be a positive integer.")
+    account_id = getattr(event, "ctidTraderAccountId", None)
+    if account_id != expected_account_id:
+        raise ValueError("Order-error event belongs to a different trading account.")
+    order_id = getattr(event, "orderId", None)
+    if isinstance(order_id, bool) or not isinstance(order_id, int) or order_id <= 0:
+        raise ValueError("Order-error event has no usable broker order ID for safe correlation.")
+    error_code = getattr(event, "errorCode", None)
+    if not isinstance(error_code, str) or not error_code.strip() or len(error_code) > 128:
+        raise ValueError("Order-error event has an invalid error code.")
+    description = getattr(event, "description", None)
+    if description is not None:
+        if not isinstance(description, str) or len(description) > 800:
+            raise ValueError("Order-error event has an invalid description.")
+        description = description.strip() or None
+    return BrokerOrderError(
+        account_id=account_id,
+        broker_order_id=str(order_id),
+        error_code=error_code.strip(),
+        description=description,
+    )
+
+
+def apply_order_error(
+    ledger: OrderLedger,
+    update: BrokerOrderError,
+    *,
+    now: int,
+) -> bool:
+    """Mark only the ledger order already correlated to this broker order ID rejected.
+
+    An error for an already terminal order, an unknown broker ID, or a position
+    operation does not mutate the ledger. The caller must separately handle
+    position-protection/close errors and reconcile ambiguous outcomes.
+    """
+    record = ledger.get_by_broker_order_id(update.broker_order_id)
+    if record is None:
+        raise ValueError("Order error has no locally correlated broker order.")
+    error = update.error_code
+    if update.description:
+        error = f"{error}: {update.description}"
+    return ledger.mark_terminal(
+        record.client_order_id,
+        REJECTED,
+        now=now,
+        error=error[:1000],
+        broker_order_id=update.broker_order_id,
+    )
