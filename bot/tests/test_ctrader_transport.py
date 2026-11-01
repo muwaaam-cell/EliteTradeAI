@@ -187,6 +187,13 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertFalse(transport._reconcile_in_flight)
         self.assertTrue(errors)
 
+    def test_positions_reconcile_requires_response_handler(self):
+        transport, _, _ = self.make_transport()
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        with self.assertRaises(RuntimeError):
+            transport.request_positions_reconcile()
+
     def test_positions_reconcile_requires_authenticated_account(self):
         transport, _, _ = self.make_transport()
         with self.assertRaises(RuntimeError):
