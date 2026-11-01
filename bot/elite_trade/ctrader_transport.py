@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Callable
 
 from elite_trade.account_snapshot import account_snapshot_from_ctrader
+from elite_trade.ctrader_instruments import instrument_from_ctrader
 
 
 class ConnectionState(str, Enum):
@@ -49,6 +50,7 @@ class CTraderSdkTransport:
         on_spot: Callable[[object], None] | None = None,
         on_account_snapshot: Callable[[object], None] | None = None,
         on_reconcile: Callable[[object], None] | None = None,
+        on_instruments: Callable[[tuple[object, ...]], None] | None = None,
         sdk=None,
         reactor=None,
         client_factory=None,
@@ -71,6 +73,11 @@ class CTraderSdkTransport:
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
         self.on_reconcile = on_reconcile or (lambda response: None)
         self._has_reconcile_handler = on_reconcile is not None
+        self.on_instruments = on_instruments or (lambda instruments: None)
+        self._catalog_in_flight = False
+        self._catalog_symbols = None
+        self._catalog_assets = None
+        self._catalog_trader = None
         self._pending_trader = None
         self._pending_pnl = None
         self._snapshot_in_flight = False
@@ -104,6 +111,12 @@ class CTraderSdkTransport:
                 ProtoOAGetPositionUnrealizedPnLRes,
                 ProtoOAReconcileReq,
                 ProtoOAReconcileRes,
+                ProtoOASymbolsListReq,
+                ProtoOASymbolsListRes,
+                ProtoOAAssetListReq,
+                ProtoOAAssetListRes,
+                ProtoOASymbolByIdReq,
+                ProtoOASymbolByIdRes,
             )
             self._sdk = {
                 "Client": Client,
@@ -126,6 +139,12 @@ class CTraderSdkTransport:
                 "ProtoOAGetPositionUnrealizedPnLRes": ProtoOAGetPositionUnrealizedPnLRes,
                 "ProtoOAReconcileReq": ProtoOAReconcileReq,
                 "ProtoOAReconcileRes": ProtoOAReconcileRes,
+                "ProtoOASymbolsListReq": ProtoOASymbolsListReq,
+                "ProtoOASymbolsListRes": ProtoOASymbolsListRes,
+                "ProtoOAAssetListReq": ProtoOAAssetListReq,
+                "ProtoOAAssetListRes": ProtoOAAssetListRes,
+                "ProtoOASymbolByIdReq": ProtoOASymbolByIdReq,
+                "ProtoOASymbolByIdRes": ProtoOASymbolByIdRes,
             }
         if self._reactor is None:
             from twisted.internet import reactor
@@ -211,8 +230,53 @@ class CTraderSdkTransport:
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
                     self._fail("Received account balance for an unexpected cTrader account.")
                     return
-                self._pending_trader = response.trader
-                self._complete_account_snapshot_if_ready()
+                if self._snapshot_in_flight:
+                    self._pending_trader = response.trader
+                    self._complete_account_snapshot_if_ready()
+                if self._catalog_in_flight:
+                    self._catalog_trader = response.trader
+                    self._maybe_request_full_symbol_metadata()
+            elif payload_type == self._sdk["ProtoOASymbolsListRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id or not self._catalog_in_flight:
+                    self._fail("Unexpected cTrader symbol-list response; catalogue rejected.")
+                    return
+                self._catalog_symbols = tuple(response.symbol)
+                self._maybe_request_full_symbol_metadata()
+            elif payload_type == self._sdk["ProtoOAAssetListRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id or not self._catalog_in_flight:
+                    self._fail("Unexpected cTrader asset-list response; catalogue rejected.")
+                    return
+                self._catalog_assets = tuple(response.asset)
+                self._maybe_request_full_symbol_metadata()
+            elif payload_type == self._sdk["ProtoOASymbolByIdRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id or not self._catalog_in_flight:
+                    self._fail("Unexpected cTrader full-symbol response; catalogue rejected.")
+                    return
+                try:
+                    lights = {int(item.symbolId): item for item in self._catalog_symbols}
+                    full = {int(item.symbolId): item for item in response.symbol}
+                    if len(lights) != len(self._catalog_symbols) or len(full) != len(response.symbol):
+                        raise ValueError("duplicate symbol ID")
+                    if set(lights) != set(full):
+                        raise ValueError("full symbol response does not match light catalogue")
+                    instruments = tuple(
+                        instrument_from_ctrader(
+                            full[symbol_id], lights[symbol_id],
+                            self._catalog_trader, self._catalog_assets
+                        )
+                        for symbol_id in sorted(lights)
+                    )
+                except (KeyError, TypeError, ValueError):
+                    self._fail("cTrader symbol catalogue is incomplete or inconsistent; trading metadata rejected.")
+                    return
+                self._catalog_in_flight = False
+                self._catalog_symbols = None
+                self._catalog_assets = None
+                self._catalog_trader = None
+                self.on_instruments(instruments)
             elif payload_type == self._sdk["ProtoOAGetPositionUnrealizedPnLRes"]().payloadType:
                 response = extract(message)
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
@@ -250,6 +314,63 @@ class CTraderSdkTransport:
                 self._set_state(ConnectionState.AUTHENTICATED)
         except Exception:
             self._fail("Unexpected cTrader protocol response; authentication stopped.")
+
+    def request_instrument_catalog(self) -> None:
+        """Fetch account-scoped symbols, assets and full symbol metadata.
+
+        The resulting callback contains only symbols for which all three
+        authenticated responses can be joined exactly. Any mismatch fails
+        closed; no instrument list is guessed or hardcoded.
+        """
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Instrument discovery requires an authenticated account.")
+        if self._catalog_in_flight or self._snapshot_in_flight:
+            raise RuntimeError("Another account metadata/snapshot request is already in progress.")
+        self._catalog_in_flight = True
+        self._catalog_symbols = None
+        self._catalog_assets = None
+        self._catalog_trader = None
+        account_id = self.authenticated_account_id
+        requests = (
+            ("ProtoOASymbolsListReq", "ctidTraderAccountId"),
+            ("ProtoOAAssetListReq", "ctidTraderAccountId"),
+            ("ProtoOATraderReq", "ctidTraderAccountId"),
+        )
+        try:
+            for name, account_field in requests:
+                request = self._sdk[name]()
+                setattr(request, account_field, account_id)
+                self._send(request)
+        except Exception:
+            self._reset_catalog()
+            raise
+
+    def _maybe_request_full_symbol_metadata(self) -> None:
+        if (
+            not self._catalog_in_flight
+            or self._catalog_symbols is None
+            or self._catalog_assets is None
+            or self._catalog_trader is None
+        ):
+            return
+        symbol_ids = tuple(int(item.symbolId) for item in self._catalog_symbols)
+        if not symbol_ids or any(value <= 0 for value in symbol_ids) or len(set(symbol_ids)) != len(symbol_ids):
+            self._fail("cTrader returned an empty or invalid symbol catalogue.")
+            return
+        request = self._sdk["ProtoOASymbolByIdReq"]()
+        request.ctidTraderAccountId = self.authenticated_account_id
+        request.symbolId.extend(symbol_ids)
+        try:
+            self._send(request)
+        except Exception:
+            self._reset_catalog()
+            raise
+
+    def _reset_catalog(self) -> None:
+        self._catalog_in_flight = False
+        self._catalog_symbols = None
+        self._catalog_assets = None
+        self._catalog_trader = None
 
     def request_account_snapshot(self) -> None:
         """Request broker balance and all open-position net PnL for the authenticated account."""
@@ -346,6 +467,7 @@ class CTraderSdkTransport:
         self._pending_pnl = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
+        self._reset_catalog()
         self._set_state(ConnectionState.DISCONNECTED)
 
     def _cancel_heartbeat(self) -> None:
@@ -361,6 +483,7 @@ class CTraderSdkTransport:
         self._pending_pnl = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
+        self._reset_catalog()
         self._set_state(ConnectionState.ERROR)
         self.on_error(message)
 
@@ -371,6 +494,7 @@ class CTraderSdkTransport:
         self._pending_pnl = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
+        self._reset_catalog()
         if self._client is not None:
             self._client.stopService()
         self._set_state(ConnectionState.DISCONNECTED)
