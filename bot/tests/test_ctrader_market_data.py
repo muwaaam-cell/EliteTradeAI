@@ -1,4 +1,5 @@
 import unittest
+from decimal import Decimal
 from types import SimpleNamespace
 
 from elite_trade.ctrader_market_data import CTraderMarketData
@@ -57,9 +58,6 @@ class MarketDataTests(unittest.TestCase):
         self.feed.update(self.event(bid=108765, ask=108775))
         self.feed.clear()
         self.assertIsNone(self.feed.get(7))
-
-
-from decimal import Decimal
 
 
 if __name__ == "__main__":
