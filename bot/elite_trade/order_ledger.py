@@ -6,6 +6,7 @@ are never eligible for automatic resubmission.
 """
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -50,7 +51,7 @@ class OrderLedger:
         self._account_id = account_id
         self._lock = threading.RLock()
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS orders (
                     client_order_id TEXT PRIMARY KEY,
@@ -180,7 +181,7 @@ class OrderLedger:
             raise ValueError("volume_units must be a positive integer.")
         if isinstance(now, bool) or not isinstance(now, int) or now < 0:
             raise ValueError("now must be a non-negative integer timestamp.")
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             cursor = db.execute(
                 """INSERT OR IGNORE INTO orders
@@ -211,7 +212,7 @@ class OrderLedger:
             broker_order_id, "broker_order_id"
         )
         safe_error = None if error is None else self._text(error, "error", max_length=1000)
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT status, broker_order_id FROM orders WHERE client_order_id=?",
@@ -257,7 +258,7 @@ class OrderLedger:
             raise ValueError("filled_volume_units must be a positive integer.")
         if isinstance(now, bool) or not isinstance(now, int) or now < 0:
             raise ValueError("now must be a non-negative integer timestamp.")
-        with self._lock, self._connect() as db:
+        with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT status,volume_units,filled_volume_units,broker_order_id FROM orders WHERE client_order_id=?",
@@ -323,14 +324,14 @@ class OrderLedger:
 
     def get(self, client_order_id: str) -> OrderRecord | None:
         order_id = self._text(client_order_id, "client_order_id")
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             return self._record(db.execute(
                 "SELECT * FROM orders WHERE client_order_id=?", (order_id,)
             ).fetchone())
 
     def list_in_flight(self) -> list[OrderRecord]:
         """Return PENDING, SUBMITTED and UNKNOWN records for recovery/reconciliation."""
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             rows = db.execute(
                 """SELECT * FROM orders WHERE status IN ('PENDING','SUBMITTED','PARTIALLY_FILLED','UNKNOWN')
                    ORDER BY created_at,client_order_id"""
@@ -341,7 +342,7 @@ class OrderLedger:
     def get_by_broker_order_id(self, broker_order_id: str) -> OrderRecord | None:
         """Find a locally reserved order by its broker-assigned order ID."""
         broker_id = self._text(broker_order_id, "broker_order_id")
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             return self._record(db.execute(
                 "SELECT * FROM orders WHERE broker_order_id=?", (broker_id,)
             ).fetchone())
