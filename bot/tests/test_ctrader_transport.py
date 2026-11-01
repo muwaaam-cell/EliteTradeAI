@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAGetPositionUnrealizedPnLRes
-from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOATrader
+from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAAsset, ProtoOALightSymbol, ProtoOASymbol, ProtoOATrader, ProtoOATradingMode, ProtoOAAccessRights
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 
 
@@ -124,14 +124,14 @@ class CTraderTransportTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             transport.request_instrument_catalog()
 
-        light = SimpleNamespace(symbolId=7, symbolName="EURUSD", enabled=True,
-                                 baseAssetId=1, quoteAssetId=2)
+        light = ProtoOALightSymbol(symbolId=7, symbolName="EURUSD", enabled=True,
+                                   baseAssetId=1, quoteAssetId=2)
         asset_list = SimpleNamespace(
             ctidTraderAccountId=77,
-            asset=[SimpleNamespace(assetId=1, name="EUR"), SimpleNamespace(assetId=2, name="USD")]
+            asset=[ProtoOAAsset(assetId=1, name="EUR"), ProtoOAAsset(assetId=2, name="USD")]
         )
         trader = ProtoOATrader(ctidTraderAccountId=77, balance=10000, depositAssetId=2,
-                               moneyDigits=2, accessRights=0)
+                               moneyDigits=2, accessRights=ProtoOAAccessRights.FULL_ACCESS)
         client.received(client, SimpleNamespace(payloadType=18, body=SimpleNamespace(
             ctidTraderAccountId=77, symbol=[light]
         )))
@@ -139,12 +139,9 @@ class CTraderTransportTests(unittest.TestCase):
         client.received(client, SimpleNamespace(payloadType=12, body=SimpleNamespace(
             ctidTraderAccountId=77, trader=trader
         )))
-        full = SimpleNamespace(symbolId=7, digits=5, pipPosition=4, minVolume=1000,
-                                maxVolume=100000, stepVolume=1000, tradingMode=0,
-                                enableShortSelling=True, HasField=lambda field: field in {
-                                    "minVolume", "maxVolume", "stepVolume", "tradingMode",
-                                    "enableShortSelling"
-                                })
+        full = ProtoOASymbol(symbolId=7, digits=5, pipPosition=4, minVolume=1000,
+            maxVolume=100000, stepVolume=1000, tradingMode=ProtoOATradingMode.ENABLED,
+            enableShortSelling=True)
         client.received(client, SimpleNamespace(payloadType=22, body=SimpleNamespace(
             ctidTraderAccountId=77, symbol=[full]
         )))
