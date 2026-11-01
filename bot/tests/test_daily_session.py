@@ -55,7 +55,8 @@ class DailySessionGuardTests(unittest.TestCase):
         self.assertTrue(self.guard.resume_after_target(now=self.now))
         self.assertEqual(self.evaluate("51").state, TARGET_RESUMED)
         self.assertEqual(self.evaluate("-15").state, LOSS_LOCK)
-\n    def test_daily_loss_lock_cannot_be_resumed(self):
+
+    def test_daily_loss_lock_cannot_be_resumed(self):
         result = self.evaluate("-15")
         self.assertEqual(result.state, LOSS_LOCK)
         self.assertFalse(result.allow_new_entries)
