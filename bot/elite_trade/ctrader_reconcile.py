@@ -70,8 +70,8 @@ def map_ctrader_reconcile_response(
     )
     if response_account != account_id:
         raise ValueError("Reconciliation response belongs to a different account.")
-    if not isinstance(symbol_names, Mapping) or not symbol_names:
-        raise ValueError("A non-empty broker symbol ID mapping is required.")
+    if not isinstance(symbol_names, Mapping):
+        raise ValueError("A broker symbol ID mapping is required.")
 
     raw_positions = getattr(response, "position", None)
     raw_orders = getattr(response, "order", None)
