@@ -14,6 +14,28 @@ Last verified: 2026-11-01 13:08 UTC.
 - Spotware application approval, real OAuth exchange, Pepperstone account authentication, live market data, conversion metadata, broker-aware runtime sizing, order submission, broker-side stop confirmation, reconnect/reconciliation E2E, Telegram deployment and continuous hosting remain unverified or incomplete.
 - Live execution must remain disabled. Do not describe the project as a functioning autonomous trading bot until demo order lifecycle tests pass against a real Pepperstone cTrader demo account.
 
+## Authenticated cTrader instrument metadata mapping (2026-11-01)
+
+- Added `instrument_metadata_from_ctrader()` in `bot/elite_trade/instrument.py`.
+  It joins the authenticated account's light-symbol list entry, full symbol
+  response and asset list, and applies the account's explicit access-rights enum.
+- The mapper checks symbol-ID consistency, explicit protobuf field presence,
+  asset references, trading-mode values, short-selling permission and broker
+  minimum/maximum/step volume values. Missing required sizing fields and
+  unknown enum values fail closed; optional swap/lot/exposure values are not
+  invented.
+- Added mapping regression tests for successful joins, missing volume fields,
+  mismatched symbol IDs, unknown/duplicate assets, disabled symbols, restricted
+  account rights, unknown enum values and absent optional fields.
+- Code commit: `5140ec710011cf31c25a6a8bf2c5ba7b6c4d8e7b`.
+  Test commit: `a5083a843d4424f404286b88c10be3df6a7fe949`.
+- This is a pure mapping layer only. The cTrader transport does not yet request
+  the symbol list, full symbol details and asset list or publish a complete
+  metadata catalogue. It does not calculate tick value, per-volume stop loss,
+  account-currency conversion or risk sizing by itself.
+- CI status for these new commits has not yet been confirmed. Do not count the
+  new tests as passing until the corresponding GitHub Actions run is inspected.
+
 ## Product direction
 
 - Product: unattended trading bot, not an Android trading app.
