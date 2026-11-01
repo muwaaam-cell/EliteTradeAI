@@ -62,6 +62,25 @@ class CTraderOrderRequestTests(unittest.TestCase):
         self.assertEqual(request.stopLoss, 1.30)
         self.assertFalse(hasattr(request, "takeProfit"))
 
+    def test_builds_real_spotware_generated_protobuf_request(self):
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOANewOrderReq
+        from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+            ProtoOAOrderType,
+            ProtoOATradeSide,
+        )
+
+        request = build_market_order_request(self.spec())
+        self.assertIsInstance(request, ProtoOANewOrderReq)
+        self.assertEqual(request.payloadType, ProtoOANewOrderReq().payloadType)
+        self.assertEqual(request.orderType, ProtoOAOrderType.Value("MARKET"))
+        self.assertEqual(request.tradeSide, ProtoOATradeSide.Value("BUY"))
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.symbolId, 456)
+        self.assertEqual(request.volume, 1000)
+        self.assertEqual(request.clientOrderId, "elite-unique-001")
+        self.assertEqual(request.stopLoss, 1.20)
+        self.assertEqual(request.takeProfit, 1.35)
+
     def test_rejects_buy_stop_loss_on_wrong_side(self):
         with self.assertRaises(ValueError):
             self.build(self.spec(stop_loss=1.25))
