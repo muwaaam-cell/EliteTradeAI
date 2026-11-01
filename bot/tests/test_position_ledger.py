@@ -33,6 +33,10 @@ class PositionLedgerTests(unittest.TestCase):
             snapshots, complete=True, observed_at_epoch=observed, now_epoch=now,
         )
 
+    def test_memory_database_is_rejected_for_durable_state(self):
+        with self.assertRaises(ValueError):
+            PositionLedger(":memory:")
+
     def test_local_stop_is_not_broker_confirmed_protection(self):
         self.record_intent()
         row = self.ledger.get("p-1")
@@ -70,6 +74,11 @@ class PositionLedgerTests(unittest.TestCase):
         self.reconcile([self.snapshot()])
         self.reconcile([], observed=103, now=104)
         self.assertEqual(self.ledger.get("p-1").status, PositionStatus.UNKNOWN)
+
+    def test_empty_snapshot_advances_watermark(self):
+        self.reconcile([], observed=105, now=106)
+        with self.assertRaises(ValueError):
+            self.reconcile([], observed=104, now=106)
 
     def test_partial_empty_or_nonempty_snapshot_is_rejected(self):
         with self.assertRaises(ValueError):
