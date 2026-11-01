@@ -111,5 +111,37 @@ class DailySessionGuardTests(unittest.TestCase):
                               max_open_positions=2, max_giveback=10)
 
 
+    def test_user_can_set_and_persist_custom_target(self):
+        self.assertEqual(self.guard.set_profit_target("1500", now=self.now), Decimal("1500"))
+        self.assertEqual(self.guard.profit_target, Decimal("1500"))
+        self.assertEqual(self.evaluate("1499").state, ACTIVE)
+        result = self.evaluate("1500")
+        self.assertEqual(result.state, TARGET_RESUMED)
+        self.assertEqual(result.protection_floor, Decimal("1480"))
+        restarted = DailySessionGuard(
+            Path(self.temp.name) / "sessions.sqlite3", timezone="UTC",
+            profit_target=50, max_daily_loss=15, max_open_positions=2,
+            max_giveback=20,
+        )
+        self.assertEqual(restarted.profit_target, Decimal("1500"))
+
+    def test_target_can_be_set_to_five_thousand_and_ten_thousand(self):
+        for amount in ("5000", "10000"):
+            with self.subTest(amount=amount):
+                self.assertEqual(self.guard.set_profit_target(amount, now=self.now),
+                                 Decimal(amount))
+
+    def test_target_change_rejected_after_protection_activates(self):
+        self.evaluate("50")
+        with self.assertRaises(ValueError):
+            self.guard.set_profit_target("1500", now=self.now)
+
+    def test_target_must_exceed_giveback(self):
+        for amount in ("0", "-1", "NaN", "20"):
+            with self.subTest(amount=amount):
+                with self.assertRaises(ValueError):
+                    self.guard.set_profit_target(amount, now=self.now)
+
+
 if __name__ == "__main__":
     unittest.main()
