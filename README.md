@@ -18,6 +18,7 @@ Implemented foundations in `bot/elite_trade/` include:
 - Position/order reconciliation request forwarding.
 - Daily target and giveback protection, daily loss lock, kill switch and adaptive risk sizing.
 - Durable duplicate-resistant order-intent ledger with restart persistence, uncertain-submission reconciliation and cumulative partial-fill tracking.
+- A validated cTrader MARKET-order request builder that resolves SDK enums by name, requires an attached stop-loss, and checks stop/target placement against the supplied entry reference. It constructs protobuf requests only; it does not submit them.
 - Fail-closed pre-trade checks; the trading loop manages existing positions before evaluating new entries.
 
 ## What is not yet complete
