@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from math import isfinite
 from typing import Callable, Iterable
 
 from elite_trade.daily_session import DailySessionGuard
@@ -24,6 +25,7 @@ class BrokerRiskState:
     daily_net_pnl: Decimal
     equity: Decimal
     open_positions: int
+    observed_at_epoch: float
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,7 @@ class TradingLoop:
         live_approval_present: Callable[[], bool],
         now_epoch: Callable[[], float],
         now: Callable[[], datetime],
+        risk_state_max_age_seconds: float = 5.0,
     ) -> None:
         self.guard = guard
         self.kill_switch = kill_switch
@@ -81,6 +84,12 @@ class TradingLoop:
         self.live_approval_present = live_approval_present
         self.now_epoch = now_epoch
         self.now = now
+        if (isinstance(risk_state_max_age_seconds, bool)
+                or not isinstance(risk_state_max_age_seconds, (int, float))
+                or not isfinite(risk_state_max_age_seconds)
+                or risk_state_max_age_seconds <= 0):
+            raise ValueError("Risk-state freshness limit must be finite and positive.")
+        self.risk_state_max_age_seconds = float(risk_state_max_age_seconds)
 
     def run_cycle(self) -> CycleResult:
         # Position monitoring/management is independent from new-entry locks.
@@ -111,6 +120,17 @@ class TradingLoop:
                 # Fresh account data per candidate: missing/stale/unreadable
                 # broker data must be rejected by the pre-trade gate.
                 risk = self.load_risk_state()
+                cycle_now_epoch = self.now_epoch()
+                observed = risk.observed_at_epoch
+                if (isinstance(observed, bool)
+                        or not isinstance(observed, (int, float))
+                        or not isfinite(observed)
+                        or isinstance(cycle_now_epoch, bool)
+                        or not isinstance(cycle_now_epoch, (int, float))
+                        or not isfinite(cycle_now_epoch)
+                        or cycle_now_epoch < observed
+                        or cycle_now_epoch - observed > self.risk_state_max_age_seconds):
+                    raise ValueError("Broker risk snapshot is stale or has an invalid timestamp.")
                 decision = authorise_new_entry(
                     guard=self.guard,
                     kill_switch=self.kill_switch,
@@ -120,7 +140,7 @@ class TradingLoop:
                     daily_net_pnl=risk.daily_net_pnl,
                     equity=risk.equity,
                     open_positions=risk.open_positions,
-                    now_epoch=self.now_epoch(),
+                    now_epoch=cycle_now_epoch,
                     broker_connected=self.is_broker_connected(),
                     symbol_verified=candidate.symbol_verified,
                     live_approval_present=self.live_approval_present(),
