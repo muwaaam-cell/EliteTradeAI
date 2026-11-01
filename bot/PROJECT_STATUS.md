@@ -1,27 +1,22 @@
 # EliteTrade AI — project handoff and source of truth
 
-Last verified: 2026-11-01 15:20 UTC.
+Last verified: 2026-11-01 17:44 UTC.
 
 ## Current verified status (supersedes older dated entries below)
 
 - Current development branch: `pepperstone-ctrader-bot`.
-- Current branch HEAD at this handoff refresh: `da9985b03af9ba7ede9709629687b3918ec22d8b`.
-- Latest GitHub Actions push run: `41322003370` (run #299), completed successfully on that exact HEAD. All four jobs passed: unit tests and coverage, Ruff lint and Bandit source scan, pip-audit dependency audit, and wheel build/import smoke test.
-- New in this increment: `ctrader_demo_runtime.py` composes the demo-only execution adapter with authenticated execution-event and order-error callbacks before transport startup. All components share the same durable `OrderLedger`; the factory refuses live transports, wrong selected accounts and late composition after transport startup. Tests cover accepted-order correlation, account mismatch, order-error correlation and live/account/startup refusal.
-- This is a tested composition layer only. It does not yet connect the `TradingLoop`, reconcile broker order/position state after restart, implement broker-confirmed modify/close orchestration, or establish a real Pepperstone demo connection.
-- Latest verified push workflow: `41320717754` (run #293), completed successfully on that exact HEAD. All four jobs passed: unit tests and coverage, Ruff lint and Bandit source scan, pip-audit dependency audit, and wheel build/import smoke test. The unit-test job reports 254 tests and 84% measured total coverage.
-- A pull-request workflow on the same exact HEAD, run `41320723130` (#294), also completed successfully with all four jobs passing.
-- This status file is being refreshed after those verified runs; subsequent documentation-only commits must not be represented as having a new test result until their own workflow completes.
-- The test suite uses mocked protocol/client fixtures where applicable. It does not establish live Pepperstone connectivity, a real demo order, profitable trading or live readiness.
-- New in this verified increment: `make_execution_event_handler()` connects authenticated cTrader execution-event callbacks to the durable order ledger. It applies only account-matched events with a matching reserved client order ID and requested volume; malformed or uncorrelated events are surfaced to a required callback and are never guessed onto an order. Unrelated valid event types are ignored.
-- A demo-only `CTraderDemoExecutionAdapter` and guarded `send_demo_order_request()` transport method exist. They reserve an order before one send attempt and treat transport uncertainty as UNKNOWN; broker execution events, not socket writes, determine acceptance/fill. The transport rejects live environment, unauthenticated account and mismatched account ID.
-- Market-order protobuf request construction includes a mandatory stop-loss field and validates side/price direction. Separate request builders exist for amending position protection and closing a position. These request builders are not evidence that modification/closure flows are orchestrated or broker-confirmed.
-- The execution adapter and event-handler helpers are not yet connected to the trading loop. `trading_loop.py` still deliberately does not submit orders (`entry_submission_enabled=False`), and `bot/main.py` remains a safe diagnostic entry point that reports broker/data not connected and execution disabled.
-- Account-authenticated instrument discovery, spot subscriptions, balance/PnL snapshots and position reconciliation request/mapping components exist, but have not been run against the user's real Pepperstone cTrader account. BTC is excluded by user decision; instrument selection must be based on the authenticated account's returned catalogue, not hardcoded assumptions.
-- Spotware application 46574 was last reported by the user as pending. No real OAuth exchange, Pepperstone account authentication, account catalogue, market quote, demo order, broker-side protection confirmation, reconnect recovery, Telegram polling/deployment or always-on hosting has been verified.
-- Daily target is user-configurable via private Telegram `/target <USD amount>` and persisted in SQLite. The initial default remains $50 unless changed; the $20 giveback limit is fixed. Target changes are rejected after protection or a daily lock activates for that day. This configures the guard only; it does not enable execution.
-- Daily target/loss protection, post-target risk reduction, adaptive cash-risk budgeting and pre-trade checks are implemented as software components. Runtime use still requires accurate fresh broker-derived values and a complete execution/reconciliation coordinator.
-- Live execution remains disabled. Do not call this a functioning autonomous bot or enable live orders until the demo order lifecycle, protection, restart/reconnect and reconciliation tests pass against a real Pepperstone cTrader demo account.
+- Current branch HEAD: `f25a1cab48c15c660e3c5232f06182998d3f3f7a`.
+- Latest GitHub Actions push run: [#330](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41332964582), completed successfully on that exact HEAD. All four jobs passed: 274 unit tests (84% measured total coverage), Ruff lint, Bandit source-security scan, dependency vulnerability audit, and wheel build/import.
+- Latest implemented increment: both durable SQLite ledgers can be permanently bound to one cTrader account. Reopening either ledger without its original account ID or with a different account ID is rejected. Existing unbound databases can be bound once.
+- The demo runtime now requires matching account-bound order and position ledgers, an explicit selected demo account and a broker symbol-ID/name mapping. It installs authenticated execution-event, order-error and position-reconciliation callbacks before transport startup.
+- The reconciliation callback validates and persists complete broker position snapshots only into the matching account-bound position ledger. Pending orders are retained in the returned snapshot; they are not silently marked cancelled or discarded, and order-ledger pending-order reconciliation remains a separate unfinished task.
+- Position reconciliation now has a 15-second timeout. A timeout invalidates the authenticated transport session and requires recovery; a valid response cancels the timeout, and a send failure clears it.
+- Added a regression test against the installed Spotware protobuf descriptors confirming position-status values (OPEN=1, CLOSED=2, CREATED=3, ERROR=4) and trade-side values (BUY=1, SELL=2). The official Spotware model reference documents these protocol enums: https://help.ctrader.com/open-api/model-messages/.
+- Earlier intermediate workflow #322 failed because it ran against the runtime-composition commit before the matching test updates had landed. The subsequent final code/test commit `ecd4cf4` passed all four jobs in run #324. The later timeout and enum-contract changes are included in the latest fully green run #330 above.
+- The demo order adapter and authenticated execution-event handlers exist, but they are not connected to the `TradingLoop`. `trading_loop.py` still deliberately never submits an order (`entry_submission_enabled=False`), and `bot/main.py` remains a safe diagnostic entry point reporting broker authentication and market data as not connected and execution disabled.
+- No actual Pepperstone cTrader OAuth exchange, account authentication, live quote, demo order, broker-confirmed protection, restart/reconnect recovery, Telegram polling/deployment or always-on hosting has been verified.
+- Spotware application 46574 was last reported by the user as pending. No approval or real account connection has been confirmed.
+- Live execution remains locked. Do not describe this as a functioning autonomous trading bot or enable live orders until the complete demo lifecycle, broker protection, reconciliation and recovery criteria pass against the user's real Pepperstone cTrader demo account.
 
 ## Product direction
 
