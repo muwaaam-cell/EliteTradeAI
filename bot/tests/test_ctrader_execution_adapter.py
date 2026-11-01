@@ -1,11 +1,15 @@
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOANewOrderReq
 
 from elite_trade.ctrader_order_requests import MarketOrderSpec
-from elite_trade.ctrader_execution_adapter import CTraderDemoExecutionAdapter
+from elite_trade.ctrader_execution_adapter import (
+    CTraderDemoExecutionAdapter, create_demo_execution_adapter,
+)
+from elite_trade.ctrader_transport import ConnectionState
 from elite_trade.order_ledger import PENDING, UNKNOWN, OrderLedger
 
 
@@ -102,6 +106,42 @@ class CTraderDemoExecutionAdapterTests(unittest.TestCase):
             self.adapter.submit_market_order(bad, symbol="EURUSD")
         self.assertIsNone(self.ledger.get("bad-order"))
         self.assertEqual(self.sent, [])
+
+
+    def test_factory_binds_adapter_to_live_transport_authentication_state(self):
+        transport = SimpleNamespace(
+            environment="demo",
+            state=ConnectionState.DISCONNECTED,
+            authenticated_account_id=None,
+            send_demo_order_request=self.sent.append,
+        )
+        adapter = create_demo_execution_adapter(
+            transport=transport, ledger=self.ledger, now_epoch=lambda: 100
+        )
+        with self.assertRaises(RuntimeError):
+            adapter.submit_market_order(self.spec, symbol="EURUSD")
+        self.assertIsNone(self.ledger.get("demo-order-1"))
+
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        result = adapter.submit_market_order(self.spec, symbol="EURUSD")
+        self.assertEqual(result.state, PENDING)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_factory_refuses_live_transport_and_missing_guarded_sender(self):
+        live = SimpleNamespace(
+            environment="live", state=ConnectionState.AUTHENTICATED,
+            authenticated_account_id=77, send_demo_order_request=self.sent.append,
+        )
+        with self.assertRaises(ValueError):
+            create_demo_execution_adapter(
+                transport=live, ledger=self.ledger, now_epoch=lambda: 100
+            )
+        incomplete = SimpleNamespace(environment="demo")
+        with self.assertRaises(TypeError):
+            create_demo_execution_adapter(
+                transport=incomplete, ledger=self.ledger, now_epoch=lambda: 100
+            )
 
 
 if __name__ == "__main__":
