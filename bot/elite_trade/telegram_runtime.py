@@ -25,6 +25,7 @@ def build_controller() -> TelegramControl:
     max_loss = os.getenv("ELITE_MAX_DAILY_LOSS_USD", "50")
     max_positions = int(os.getenv("ELITE_MAX_OPEN_POSITIONS", "1"))
     giveback = os.getenv("ELITE_MAX_GIVEBACK_USD", "20")
+    telegram_offset = Path(os.getenv("ELITE_TELEGRAM_OFFSET_FILE", "state/telegram_offset.json"))
 
     daily_guard = DailySessionGuard(
         database,
@@ -37,6 +38,7 @@ def build_controller() -> TelegramControl:
     return TelegramControl(
         kill_switch=KillSwitch(str(state_file)),
         daily_guard=daily_guard,
+        offset_file=telegram_offset,
     )
 
 
