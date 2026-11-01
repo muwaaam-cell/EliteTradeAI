@@ -342,3 +342,12 @@ No broker connection, order submission, or live execution was added.
 ## Continuation instruction for a future chat
 
 Continue from this file and inspect the live GitHub branch before making claims. Do not repeat discovery work unnecessarily. Do not say the broker is connected, the bot is complete, or live trading works unless supported by a real integration test. Make commits on pepperstone-ctrader-bot, preserve main, run the GitHub Actions tests after code changes, and update this handoff file whenever project status materially changes.
+
+## Small-account risk regression and latest verification (2026-11-01)
+
+- Commit `9b250466bb1b11b3f4888f446228a45117b64378` adds two trading-loop regression tests for a USD 10 account.
+- With the current 0.50% normal-risk setting, the cash-risk budget is USD 0.05. The test verifies that a broker minimum size whose stop-loss exposure exceeds USD 0.05 is rejected; the sizing logic must never round volume upward to force a trade.
+- A second test verifies that a candidate can be sized only when the supplied broker-verified loss per volume unit fits within the USD 0.05 budget. Even then, the trading loop reports the candidate as authorised for pre-trade purposes only: `submitted=False` and `entry_submission_enabled=False`.
+- GitHub Actions pull-request run [#335](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41334130380) completed successfully on this exact commit. All four jobs passed: unit tests and coverage, Ruff lint/Bandit security checks, dependency vulnerability audit, and wheel build/import.
+- These are simulated/unit-level checks using supplied risk and broker metadata. They do not establish that Pepperstone accepts the minimum volume, that the USD 10 account is eligible for a particular instrument, or that any broker order was placed.
+- Small-account support means risk-aware sizing and skipping unaffordable trades. It does not mean the bot can safely guarantee growth from USD 10 to USD 1,000 or more.
