@@ -174,3 +174,53 @@ def apply_ctrader_reconcile_response(
         max_age_seconds=max_age_seconds,
     )
     return snapshot
+
+
+class PositionLedgerReconcileHandler:
+    """Callable transport callback that persists each validated broker snapshot.
+
+    Pass an instance as on_reconcile to CTraderSdkTransport. The transport
+    first verifies the authenticated account and request lifecycle; this
+    handler then validates the account-bound ledger, maps the complete
+    response, and persists the open-position snapshot. Pending orders remain
+    accessible through last_snapshot for a separate order-ledger workflow.
+    """
+
+    def __init__(
+        self,
+        ledger: PositionLedger,
+        *,
+        expected_account_id: int,
+        symbol_names: Mapping[int, str],
+        clock=None,
+        max_age_seconds: float = 5.0,
+    ) -> None:
+        import time
+
+        if not isinstance(ledger, PositionLedger):
+            raise TypeError("A PositionLedger is required.")
+        account_id = _positive_int(expected_account_id, "expected_account_id")
+        if ledger.bound_account_id != account_id:
+            raise ValueError("Position ledger must be bound to the expected broker account.")
+        if not isinstance(symbol_names, Mapping):
+            raise ValueError("A broker symbol ID mapping is required.")
+        self.ledger = ledger
+        self.expected_account_id = account_id
+        self.symbol_names = dict(symbol_names)
+        self.clock = clock or time.time
+        self.max_age_seconds = max_age_seconds
+        self.last_snapshot: CTraderReconcileSnapshot | None = None
+
+    def __call__(self, response: object) -> CTraderReconcileSnapshot:
+        observed_at = self.clock()
+        snapshot = apply_ctrader_reconcile_response(
+            self.ledger,
+            response,
+            expected_account_id=self.expected_account_id,
+            symbol_names=self.symbol_names,
+            observed_at_epoch=observed_at,
+            now_epoch=observed_at,
+            max_age_seconds=self.max_age_seconds,
+        )
+        self.last_snapshot = snapshot
+        return snapshot
