@@ -430,7 +430,7 @@ class CTraderTransportTests(unittest.TestCase):
             transport.send_demo_order_request(request)
 
         with self.assertRaises(TypeError):
-            transport.send_demo_order_request(FakeRequest())
+            transport.send_demo_order_request(object())
 
     def test_demo_order_sender_refuses_live_environment(self):
         transport, client, _ = self.make_transport()
