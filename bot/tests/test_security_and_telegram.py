@@ -37,7 +37,7 @@ class TelegramTests(unittest.TestCase):
             root / "sessions.sqlite3", timezone="UTC",
             profit_target=50, max_daily_loss=15, max_open_positions=2,
         )
-        self.now = datetime(2026, 11, 1, 10, tzinfo=timezone.utc)
+        self.now = datetime.now(timezone.utc)
         self.bot = TelegramControl(
             token="test-token", chat_id="123", kill_switch=self.switch,
             daily_guard=self.guard,
