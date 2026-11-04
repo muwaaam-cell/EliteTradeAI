@@ -7,6 +7,7 @@ The key is the Worker's base64-encoded 32-byte TOKEN_ENCRYPTION_KEY secret.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 from pathlib import Path
@@ -21,8 +22,10 @@ def _decode_base64url(value: Any, field: str) -> bytes:
         raise ValueError(f"Encrypted token envelope has an invalid {field}.")
     try:
         padded = value + "=" * (-len(value) % 4)
-        return base64.urlsafe_b64decode(padded.encode("ascii"))
-    except (ValueError, UnicodeEncodeError):
+        return base64.b64decode(
+            padded.encode("ascii"), altchars=b"-_", validate=True
+        )
+    except (ValueError, binascii.Error, UnicodeEncodeError):
         raise ValueError(f"Encrypted token envelope has an invalid {field}.") from None
 
 
@@ -40,7 +43,7 @@ class WorkerTokenVault:
             raise ValueError("TOKEN_ENCRYPTION_KEY must be set in the local secret store.")
         try:
             raw_key = base64.b64decode(encoded_key, validate=True)
-        except (ValueError, base64.binascii.Error):
+        except (ValueError, binascii.Error):
             raise ValueError("TOKEN_ENCRYPTION_KEY must be base64 for a 32-byte AES key.") from None
         if len(raw_key) != 32:
             raise ValueError("TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes.")
