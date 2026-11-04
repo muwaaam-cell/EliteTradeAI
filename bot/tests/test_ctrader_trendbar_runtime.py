@@ -70,7 +70,7 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
         self.assertIsNotNone(runtime.recorder)
 
     def test_historical_and_live_events_are_persisted_through_composed_callbacks(self):
-        runtime = self.make_runtime()
+        self.make_runtime()
         self.transport.on_instruments(self.instruments)
         trendbar = SimpleNamespace(
             low=108000, deltaOpen=100, deltaClose=250, deltaHigh=400,
