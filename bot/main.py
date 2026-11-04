@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,7 +21,6 @@ def main() -> None:
 
     print("EliteTrade AI — Pepperstone cTrader demo market-data runtime")
     print("Order execution: HARD DISABLED (no trading loop or order adapter is created)")
-    print("Live environment: REFUSED")
     if settings.ctrader_env != "demo":
         raise SystemExit("Refusing to start: this runtime supports demo accounts only.")
     if not settings.ctrader_client_id or not settings.ctrader_client_secret:
@@ -98,7 +98,7 @@ def main() -> None:
     # Compose quote cache first, then candle recorder; both preserve callbacks.
     market_runtime = CTraderMarketDataRuntime(
         transport=transport,
-        now_epoch=__import__("time").time,
+        now_epoch=time.time,
     )
     market_ref["market"] = market_runtime
     trendbar_runtime = CTraderTrendbarRuntime(
@@ -106,7 +106,7 @@ def main() -> None:
         memory=memory,
         symbols=symbols,
         timeframe=timeframe,
-        now_epoch=__import__("time").time,
+        now_epoch=time.time,
         history_days=int(os.getenv("CTRADER_HISTORY_DAYS", "30")),
         history_count=int(os.getenv("CTRADER_HISTORY_COUNT", "500")),
     )
