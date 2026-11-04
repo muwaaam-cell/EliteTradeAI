@@ -102,7 +102,8 @@ class MarketMemory:
             connection = sqlite3.connect(self.database)
             connection.row_factory = sqlite3.Row
         try:
-            yield connection
+            with connection:
+                yield connection
         finally:
             if owned:
                 connection.close()
