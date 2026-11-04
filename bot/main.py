@@ -102,7 +102,7 @@ def main() -> None:
         now_epoch=time.time,
     )
     market_ref["market"] = market_runtime
-    trendbar_runtime = CTraderTrendbarRuntime(
+    _trendbar_runtime = CTraderTrendbarRuntime(
         transport=transport,
         memory=memory,
         symbols=symbols,
