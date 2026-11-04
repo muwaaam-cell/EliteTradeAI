@@ -67,7 +67,13 @@ class MarketMemory:
 
     def __init__(self, database: str | Path) -> None:
         self.database = str(database)
-        if self.database != ":memory:":
+        # A SQLite :memory: database belongs to one connection. Keep that
+        # connection alive so each method sees the same schema and data.
+        self._memory_connection: sqlite3.Connection | None = None
+        if self.database == ":memory:":
+            self._memory_connection = sqlite3.connect(":memory:")
+            self._memory_connection.row_factory = sqlite3.Row
+        else:
             Path(self.database).parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript("""
@@ -88,6 +94,8 @@ class MarketMemory:
             """)
 
     def _connect(self) -> sqlite3.Connection:
+        if self._memory_connection is not None:
+            return self._memory_connection
         connection = sqlite3.connect(self.database)
         connection.row_factory = sqlite3.Row
         return connection
