@@ -364,3 +364,40 @@ Continue from this file and inspect the live GitHub branch before making claims.
 - Tests cover missing authorization, explicit denial, successful explicit authorization, and propagation of the callback through the demo runtime factory.
 - GitHub Actions run [#346](https://github.com/muwaaam-cell/EliteTradeAI/actions/runs/41334419514) completed successfully on this exact HEAD. All four jobs passed: 278 unit tests, Ruff lint, Bandit source-security scan, dependency vulnerability audit, and wheel build/import.
 - Important limitation: the callback is a required safety interface, not yet the actual `TradingLoop` integration. No production trading-loop callback is wired, no real Pepperstone demo order has been sent, and live execution remains locked. Do not pass a permissive callback in a deployed runtime.
+
+
+## Demo market-data startup composition (2026-11-04)
+
+- Added `elite_trade/worker_token_vault.py` to decrypt the exact Cloudflare
+  OAuth Worker's D1 envelope format: AES-256-GCM ciphertext plus 12-byte IV,
+  base64url encoded, with the base64-encoded 32-byte Worker encryption key.
+  Token fields in camelCase or snake_case are validated and normalized.
+  Authentication/tag failures, malformed payloads and missing tokens fail closed.
+- Added unit tests for successful AES-GCM decryption, tampering/wrong-key rejection,
+  invalid key length, incomplete token payload and missing envelope.
+- Added optional `CTRADER_ACCOUNT_ID` configuration. If unset, the runner
+  auto-selects only when the OAuth grant exposes exactly one demo account;
+  multiple accounts require an explicit ID. Live accounts are refused.
+- Replaced the placeholder `bot/main.py` status-only entry point with a real
+  **demo-only market-data startup composition**: Worker token decryption,
+  Spotware SDK TCP transport, application/account authentication, broker
+  catalogue discovery, quote subscription/cache, historical M15 trendbar
+  requests, live trendbar subscriptions, and SQLite candle memory.
+- The entry point deliberately does not instantiate the strategy/trading loop,
+  any order adapter, or order sender. `LIVE_TRADING_ENABLED` cannot change this.
+  The transport remains configured as demo and the startup explicitly refuses
+  a live environment.
+- Fixed SQLite connection ownership in `MarketMemory`: file-backed connections
+  now close after each operation and the retained in-memory connection has an
+  explicit `close()` lifecycle.
+- Updated `.env.example` and README with the encrypted-envelope import process.
+  Cloudflare Worker source/D1 route cannot be modified from the connected GitHub
+  integration; the D1 ciphertext and IV must be exported by the owner through
+  the Cloudflare dashboard. No plaintext token needs to be copied or shared.
+- **Not yet verified:** no real D1 envelope has been copied to Termux; the Worker
+  key has not been proven available locally; no real Pepperstone demo
+  authentication, account selection, instrument catalogue, quote or candle
+  event has yet been received. The new runner is code, not a live-connection claim.
+- Next test: run the full local suite and GitHub Actions. Then import the encrypted
+  D1 envelope locally and run the demo market-data process. Keep all order
+  execution disabled.
