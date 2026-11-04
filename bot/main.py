@@ -56,8 +56,9 @@ def main() -> None:
         demo_accounts = tuple(item for item in accounts if not item.is_live)
         selected_id = settings.ctrader_account_id
         if selected_id is not None:
-            transport_ref["transport"].select_account(selected_id)
-            print(f"Selected configured Pepperstone demo account ID {selected_id}.")
+            # The transport performs configured-account selection immediately
+            # after this callback returns; selecting here would send twice.
+            print(f"Using configured Pepperstone demo account ID {selected_id}.")
             return
         if len(demo_accounts) != 1:
             raise RuntimeError(
@@ -79,7 +80,7 @@ def main() -> None:
     def on_instruments(instruments: tuple[object, ...]) -> None:
         names = [getattr(item, "symbol", "?") for item in instruments]
         print("Broker catalogue received. Symbols: " + ", ".join(names))
-        print("Historical M15 candle requests and live candle subscriptions have been issued.")
+        print(f"Historical {timeframe} candle requests and live candle subscriptions have been issued.")
         print(f"Analysis-only market memory: {memory_path}")
 
     transport = CTraderSdkTransport(
