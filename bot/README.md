@@ -133,3 +133,45 @@ The Spotware Python SDK source is maintained locally in `ctrader_open_api/` unde
 Verify the SDK transport and market-data composition against the approved application and a Pepperstone demo account. Then wire verified quotes and fresh broker account snapshots into the trading-cycle candidate provider and pre-trade gate. Demo order execution remains blocked until that end-to-end risk path and broker-side protection/reconciliation are complete.
 
 Official documentation: https://help.ctrader.com/open-api/
+
+
+## Demo market-data runner and existing Cloudflare OAuth token format
+
+The current `main.py` entry point now composes the authenticated cTrader TCP
+transport, broker-verified quote cache, and historical/live trendbar recorder.
+It is **demo-only and analysis-only**: it does not instantiate a trading loop,
+demo order adapter, or order sender. It refuses `CTRADER_ENV=live`.
+
+The OAuth Worker stores token data in D1 as AES-256-GCM `ciphertext` and
+`iv` fields. Python now has `elite_trade/worker_token_vault.py`, which
+authenticates and decrypts that exact envelope using the same base64-encoded
+32-byte `TOKEN_ENCRYPTION_KEY` Worker secret. It supports the Worker's
+camelCase token fields and normalizes them for the cTrader transport. The
+older Fernet vault remains for the separate Python OAuth callback flow.
+
+To prepare the local encrypted envelope without exposing plaintext tokens:
+
+1. In Cloudflare Dashboard, open the D1 database bound to `elitetrade-oauth`
+   and run:
+   `SELECT ciphertext, iv FROM oauth_tokens WHERE id = 1;`
+2. In Termux, create `bot/state/ctrader_tokens.worker.json` containing exactly
+   the returned encrypted values, as JSON:
+   `{"ciphertext":"...","iv":"..."}`
+3. Put the exact existing Worker `TOKEN_ENCRYPTION_KEY` value into the local,
+   untracked `bot/.env` file. Do not send it in chat or commit it. Cloudflare
+   does not reveal a stored secret again; if the original key was not saved,
+   rotate the Worker key and reauthorize so the D1 row is encrypted with the
+   new key before trying to start the Python runtime.
+4. Set the local cTrader client ID and client secret in `.env`. The optional
+   `CTRADER_ACCOUNT_ID` can be left blank only when the OAuth authorization
+   returns exactly one demo account.
+
+The runner defaults to `XAUUSD,EURUSD` on M15. Exact instrument names are
+checked against the authenticated Pepperstone catalogue; unavailable names
+cause a safe failure rather than symbol guessing. Candle history is stored in
+`state/market_memory.sqlite3`. It requires a continuously running Python
+process and does not run inside the Cloudflare cron Worker.
+
+This is code integration only. The actual token envelope has not yet been
+imported/decrypted on the user's Termux device, and the real Pepperstone demo
+connection, account authentication, quote feed and candles are not yet verified.
