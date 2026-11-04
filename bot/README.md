@@ -122,7 +122,7 @@ The Spotware Python SDK source is maintained locally in `ctrader_open_api/` unde
 
 
 
-`elite_trade/ctrader_transport.py` wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, access-token account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It intentionally contains no order-placement API. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
+`elite_trade/ctrader_transport.py` wraps Spotware's asynchronous Python SDK lifecycle for TCP connection, application authentication, access-token account discovery, explicit account selection, account authentication, heartbeat scheduling and shutdown. It also contains a demo-only low-level order sender, but the current `main.py` does not construct or call it; no strategy/trading loop or order adapter is wired into the entry point. Its tests use mocked SDK/client objects; this is not a live Spotware integration test.
 
 ## Market-data runtime composition
 
@@ -162,7 +162,7 @@ To prepare the local encrypted envelope without exposing plaintext tokens:
    does not reveal a stored secret again; if the original key was not saved,
    rotate the Worker key and reauthorize so the D1 row is encrypted with the
    new key before trying to start the Python runtime.
-4. Set the local cTrader client ID and client secret in `.env`. The optional
+4. Set the local cTrader client ID and client secret in `.env`, then run `chmod 600 .env`. The optional
    `CTRADER_ACCOUNT_ID` can be left blank only when the OAuth authorization
    returns exactly one demo account.
 
@@ -172,6 +172,6 @@ cause a safe failure rather than symbol guessing. Candle history is stored in
 `state/market_memory.sqlite3`. It requires a continuously running Python
 process and does not run inside the Cloudflare cron Worker.
 
-This is code integration only. The actual token envelope has not yet been
+Run the market-data process from `bot/` with `PYTHONPATH=. python main.py`. This is code integration only. The actual token envelope has not yet been
 imported/decrypted on the user's Termux device, and the real Pepperstone demo
 connection, account authentication, quote feed and candles are not yet verified.
