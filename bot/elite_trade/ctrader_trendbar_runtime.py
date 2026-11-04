@@ -5,7 +5,6 @@ broker-discovered demo instruments and never creates or submits orders.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Callable
 
 from elite_trade.ctrader_transport import ConnectionState
