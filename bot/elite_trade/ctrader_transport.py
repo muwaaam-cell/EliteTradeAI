@@ -340,7 +340,8 @@ class CTraderSdkTransport:
                 self._cancel_reconcile_timeout()
                 self._reconcile_in_flight = False
                 self.on_reconcile(response)
-            elif payload_type == self._sdk["ProtoOAGetTrendbarsRes"]().payloadType:
+            elif ("ProtoOAGetTrendbarsRes" in self._sdk
+                  and payload_type == self._sdk["ProtoOAGetTrendbarsRes"]().payloadType):
                 response = extract(message)
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
                     self._fail("Received historical candles for an unexpected cTrader account.")
