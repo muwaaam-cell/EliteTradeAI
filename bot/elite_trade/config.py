@@ -13,6 +13,19 @@ def _bool(name: str, default: bool = False) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _optional_account_id() -> int | None:
+    value = os.getenv("CTRADER_ACCOUNT_ID", "").strip()
+    if not value:
+        return None
+    try:
+        account_id = int(value)
+    except ValueError:
+        raise ValueError("CTRADER_ACCOUNT_ID must be a positive integer.") from None
+    if account_id <= 0:
+        raise ValueError("CTRADER_ACCOUNT_ID must be a positive integer.")
+    return account_id
+
+
 @dataclass(frozen=True)
 class Settings:
     ctrader_client_id: str
@@ -27,6 +40,7 @@ class Settings:
     max_consecutive_losses: int
     telegram_bot_token: str
     telegram_chat_id: str
+    ctrader_account_id: int | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,6 +61,7 @@ class Settings:
             max_consecutive_losses=int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3")),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
+            ctrader_account_id=_optional_account_id(),
         )
         if not 0 < settings.risk_per_trade_pct <= 1:
             raise ValueError("RISK_PER_TRADE_PCT must be > 0 and <= 1.")
