@@ -50,6 +50,7 @@ class CTraderSdkTransport:
         on_state: Callable[[ConnectionState], None] | None = None,
         on_error: Callable[[str], None] | None = None,
         on_spot: Callable[[object], None] | None = None,
+        on_trendbar_response: Callable[[object], None] | None = None,
         on_execution_event: Callable[[object], None] | None = None,
         on_order_error: Callable[[object], None] | None = None,
         on_account_snapshot: Callable[[object], None] | None = None,
@@ -74,6 +75,7 @@ class CTraderSdkTransport:
         self.on_state = on_state or (lambda state: None)
         self.on_error = on_error or (lambda message: None)
         self.on_spot = on_spot or (lambda event: None)
+        self.on_trendbar_response = on_trendbar_response or (lambda response: None)
         self.on_execution_event = on_execution_event or (lambda event: None)
         self.on_order_error = on_order_error or (lambda event: None)
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
@@ -113,6 +115,9 @@ class CTraderSdkTransport:
                 ProtoOAGetAccountListByAccessTokenRes,
                 ProtoOASubscribeSpotsReq,
                 ProtoOASpotEvent,
+                ProtoOAGetTrendbarsReq,
+                ProtoOAGetTrendbarsRes,
+                ProtoOASubscribeLiveTrendbarReq,
                 ProtoOAExecutionEvent,
                 ProtoOAOrderErrorEvent,
                 ProtoOAErrorRes,
@@ -144,6 +149,9 @@ class CTraderSdkTransport:
                 "ProtoOAGetAccountListByAccessTokenRes": ProtoOAGetAccountListByAccessTokenRes,
                 "ProtoOASubscribeSpotsReq": ProtoOASubscribeSpotsReq,
                 "ProtoOASpotEvent": ProtoOASpotEvent,
+                "ProtoOAGetTrendbarsReq": ProtoOAGetTrendbarsReq,
+                "ProtoOAGetTrendbarsRes": ProtoOAGetTrendbarsRes,
+                "ProtoOASubscribeLiveTrendbarReq": ProtoOASubscribeLiveTrendbarReq,
                 "ProtoOAExecutionEvent": ProtoOAExecutionEvent,
                 "ProtoOAOrderErrorEvent": ProtoOAOrderErrorEvent,
                 "ProtoOAErrorRes": ProtoOAErrorRes,
@@ -332,6 +340,12 @@ class CTraderSdkTransport:
                 self._cancel_reconcile_timeout()
                 self._reconcile_in_flight = False
                 self.on_reconcile(response)
+            elif payload_type == self._sdk["ProtoOAGetTrendbarsRes"]().payloadType:
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received historical candles for an unexpected cTrader account.")
+                    return
+                self.on_trendbar_response(response)
             elif payload_type == self._sdk["ProtoOASpotEvent"]().payloadType:
                 event = extract(message)
                 if int(event.ctidTraderAccountId) != self.authenticated_account_id:
@@ -514,6 +528,48 @@ class CTraderSdkTransport:
         request.ctidTraderAccountId = self.authenticated_account_id
         request.symbolId.extend(normalized)
         request.subscribeToSpotTimestamp = True
+        self._send(request)
+
+    def request_historical_trendbars(
+        self, *, symbol_id: int, period: str,
+        from_timestamp_ms: int, to_timestamp_ms: int, count: int = 500,
+    ) -> None:
+        """Request broker history for one verified symbol on the authenticated account."""
+        if self.environment != "demo" or self.state != ConnectionState.AUTHENTICATED:
+            raise RuntimeError("Historical candles require an authenticated demo account.")
+        if isinstance(symbol_id, bool) or not isinstance(symbol_id, int) or symbol_id <= 0:
+            raise ValueError("A positive broker symbol ID is required.")
+        if period not in {"M1","M2","M3","M4","M5","M10","M15","M30","H1","H4","H12","D1","W1","MN1"}:
+            raise ValueError("Unsupported cTrader trendbar period.")
+        if (isinstance(from_timestamp_ms, bool) or not isinstance(from_timestamp_ms, int)
+                or isinstance(to_timestamp_ms, bool) or not isinstance(to_timestamp_ms, int)
+                or from_timestamp_ms < 0 or to_timestamp_ms <= from_timestamp_ms):
+            raise ValueError("Historical candle time range is invalid.")
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 5000:
+            raise ValueError("Historical candle count must be between 1 and 5000.")
+        request = self._sdk["ProtoOAGetTrendbarsReq"]()
+        request.ctidTraderAccountId = self.authenticated_account_id
+        request.symbolId = symbol_id
+        request.fromTimestamp = from_timestamp_ms
+        request.toTimestamp = to_timestamp_ms
+        request.count = count
+        period_field = request.DESCRIPTOR.fields_by_name["period"]
+        request.period = period_field.enum_type.values_by_name[period].number
+        self._send(request)
+
+    def subscribe_live_trendbar(self, *, symbol_id: int, period: str) -> None:
+        """Subscribe to completed trendbar events for a broker-verified symbol."""
+        if self.environment != "demo" or self.state != ConnectionState.AUTHENTICATED:
+            raise RuntimeError("Live candles require an authenticated demo account.")
+        if isinstance(symbol_id, bool) or not isinstance(symbol_id, int) or symbol_id <= 0:
+            raise ValueError("A positive broker symbol ID is required.")
+        if period not in {"M1","M2","M3","M4","M5","M10","M15","M30","H1","H4","H12","D1","W1","MN1"}:
+            raise ValueError("Unsupported cTrader trendbar period.")
+        request = self._sdk["ProtoOASubscribeLiveTrendbarReq"]()
+        request.ctidTraderAccountId = self.authenticated_account_id
+        request.symbolId = symbol_id
+        period_field = request.DESCRIPTOR.fields_by_name["period"]
+        request.period = period_field.enum_type.values_by_name[period].number
         self._send(request)
 
     def select_account(self, account_id: int) -> None:
