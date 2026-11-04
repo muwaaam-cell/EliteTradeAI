@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import fmean
-from typing import Iterable
+from typing import Iterable, Iterator
 
 
 @dataclass(frozen=True)
@@ -93,12 +94,24 @@ class MarketMemory:
                 );
             """)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        connection = self._memory_connection
+        owned = connection is None
+        if owned:
+            connection = sqlite3.connect(self.database)
+            connection.row_factory = sqlite3.Row
+        try:
+            yield connection
+        finally:
+            if owned:
+                connection.close()
+
+    def close(self) -> None:
+        """Close the retained in-memory connection; file connections are scoped per operation."""
         if self._memory_connection is not None:
-            return self._memory_connection
-        connection = sqlite3.connect(self.database)
-        connection.row_factory = sqlite3.Row
-        return connection
+            self._memory_connection.close()
+            self._memory_connection = None
 
     def store_bars(self, symbol: str, timeframe: str, bars: Iterable[MarketBar]) -> int:
         if not symbol.strip() or not timeframe.strip():
