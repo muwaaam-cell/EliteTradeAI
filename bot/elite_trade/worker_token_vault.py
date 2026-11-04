@@ -53,6 +53,12 @@ class WorkerTokenVault:
     def load(self) -> dict[str, str]:
         """Read and authenticate an encrypted Worker envelope; never return partial tokens."""
         try:
+            self.path.chmod(0o600)
+        except FileNotFoundError:
+            raise
+        except OSError:
+            raise RuntimeError("Cannot restrict local token-envelope permissions; refusing broker login.") from None
+        try:
             raw = self.path.read_bytes()
             if len(raw) > 65536:
                 raise ValueError("Encrypted token envelope is too large.")
