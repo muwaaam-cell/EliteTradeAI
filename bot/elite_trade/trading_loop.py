@@ -82,7 +82,7 @@ class TradingLoop:
         load_risk_state: Callable[[], BrokerRiskState],
         get_candidates: Callable[[], Iterable[EntryCandidate]],
         is_broker_connected: Callable[[], bool],
-        live_approval_present: Callable[[], bool],
+        demo_execution_authorized: Callable[[], bool],
         now_epoch: Callable[[], float],
         now: Callable[[], datetime],
         risk_state_max_age_seconds: float = 5.0,
@@ -94,7 +94,7 @@ class TradingLoop:
         self.load_risk_state = load_risk_state
         self.get_candidates = get_candidates
         self.is_broker_connected = is_broker_connected
-        self.live_approval_present = live_approval_present
+        self.demo_execution_authorized = demo_execution_authorized
         self.now_epoch = now_epoch
         self.now = now
         if (isinstance(risk_state_max_age_seconds, bool)
@@ -209,7 +209,7 @@ class TradingLoop:
                     now_epoch=cycle_now_epoch,
                     broker_connected=self.is_broker_connected(),
                     symbol_verified=candidate.symbol_verified,
-                    live_approval_present=self.live_approval_present(),
+                    demo_execution_authorized=self.demo_execution_authorized(),
                     now=self.now(),
                 )
             except Exception:
