@@ -54,8 +54,10 @@ class CTraderOrderRequestTests(unittest.TestCase):
         self.assertEqual(request.tradeSide, 1)
         self.assertEqual(request.volume, 1000)
         self.assertEqual(request.clientOrderId, "elite-unique-001")
-        self.assertEqual(request.stopLoss, 1.20)
-        self.assertEqual(request.takeProfit, 1.35)
+        self.assertEqual(request.relativeStopLoss, 5000)
+        self.assertEqual(request.relativeTakeProfit, 10000)
+        self.assertFalse(hasattr(request, "stopLoss"))
+        self.assertFalse(hasattr(request, "takeProfit"))
 
     def test_builds_sell_and_allows_no_take_profit(self):
         request = self.build(self.spec(
@@ -63,7 +65,9 @@ class CTraderOrderRequestTests(unittest.TestCase):
             stop_loss=1.30, take_profit=None,
         ))
         self.assertEqual(request.tradeSide, 2)
-        self.assertEqual(request.stopLoss, 1.30)
+        self.assertEqual(request.relativeStopLoss, 5000)
+        self.assertFalse(hasattr(request, "relativeTakeProfit"))
+        self.assertFalse(hasattr(request, "stopLoss"))
         self.assertFalse(hasattr(request, "takeProfit"))
 
     def test_builds_real_spotware_generated_protobuf_request(self):
@@ -82,8 +86,10 @@ class CTraderOrderRequestTests(unittest.TestCase):
         self.assertEqual(request.symbolId, 456)
         self.assertEqual(request.volume, 1000)
         self.assertEqual(request.clientOrderId, "elite-unique-001")
-        self.assertEqual(request.stopLoss, 1.20)
-        self.assertEqual(request.takeProfit, 1.35)
+        self.assertEqual(request.relativeStopLoss, 5000)
+        self.assertEqual(request.relativeTakeProfit, 10000)
+        self.assertFalse(request.HasField("stopLoss"))
+        self.assertFalse(request.HasField("takeProfit"))
 
 
     def test_builds_real_position_protection_amendment(self):
@@ -163,6 +169,10 @@ class CTraderOrderRequestTests(unittest.TestCase):
         for price in (float("nan"), float("inf"), 0, -1):
             with self.subTest(price=price), self.assertRaises(ValueError):
                 self.build(self.spec(stop_loss=price))
+
+    def test_rejects_relative_protection_distance_not_exactly_representable(self):
+        with self.assertRaisesRegex(ValueError, "cannot be represented exactly"):
+            self.build(self.spec(stop_loss=1.200001))
 
 
 if __name__ == "__main__":
