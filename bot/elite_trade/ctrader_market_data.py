@@ -1,9 +1,10 @@
 """Validated, freshness-aware cTrader spot quote cache.
 
-Spot prices are decoded using the authenticated instrument's price precision.
-A quote is usable only after both bid and ask have been observed. The cache
-uses local receive time for freshness; broker timestamps are retained only as
-source metadata and are never treated as local clock time.
+Spot bid/ask values use cTrader's fixed 1/100000 relative-price wire scale.
+Instrument digits describe display precision and must not be used as the
+wire divisor. A quote is usable only after both bid and ask have been observed.
+The cache uses local receive time for freshness; broker timestamps are retained
+only as source metadata and are never treated as local clock time.
 """
 from __future__ import annotations
 
@@ -13,6 +14,9 @@ from math import isfinite
 from typing import Callable, Iterable
 
 from elite_trade.execution_policy import Quote
+
+
+_CTRADER_RELATIVE_PRICE_SCALE = Decimal("100000")
 
 
 @dataclass(frozen=True)
@@ -78,20 +82,18 @@ class CTraderMarketData:
             event_account = getattr(event, "ctidTraderAccountId", None)
             if event_account != self.account_id:
                 raise ValueError("Spot event account does not match the authenticated account.")
-        instrument = self._instruments[symbol_id]
-        scale = Decimal(10) ** int(instrument.digits)
         previous = self._partial.get(symbol_id, (None, None))
         bid, ask = previous
         if self._has(event, "bid"):
             raw_bid = getattr(event, "bid")
             if isinstance(raw_bid, bool) or not isinstance(raw_bid, int) or raw_bid <= 0:
                 raise ValueError("Spot bid must be a positive integer price.")
-            bid = Decimal(raw_bid) / scale
+            bid = Decimal(raw_bid) / _CTRADER_RELATIVE_PRICE_SCALE
         if self._has(event, "ask"):
             raw_ask = getattr(event, "ask")
             if isinstance(raw_ask, bool) or not isinstance(raw_ask, int) or raw_ask <= 0:
                 raise ValueError("Spot ask must be a positive integer price.")
-            ask = Decimal(raw_ask) / scale
+            ask = Decimal(raw_ask) / _CTRADER_RELATIVE_PRICE_SCALE
         self._partial[symbol_id] = (bid, ask)
         if bid is None or ask is None:
             return None
@@ -104,7 +106,7 @@ class CTraderMarketData:
         if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
             timestamp = None
         quote = Quote(bid=bid, ask=ask, received_at_epoch=float(received))
-        result = MarketQuote(instrument.symbol, symbol_id, quote, timestamp)
+        result = MarketQuote(self._instruments[symbol_id].symbol, symbol_id, quote, timestamp)
         self._quotes[symbol_id] = result
         return result
 
