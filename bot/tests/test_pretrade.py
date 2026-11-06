@@ -36,7 +36,7 @@ class PreTradeTests(unittest.TestCase):
             daily_net_pnl=Decimal("0"), equity=Decimal("1000"),
             open_positions=0, now_epoch=101.0,
             broker_connected=True, symbol_verified=True,
-            live_approval_present=True, now=self.now,
+            demo_execution_authorized=True, now=self.now,
         )
 
     def tearDown(self):
@@ -111,8 +111,8 @@ class PreTradeTests(unittest.TestCase):
         self.assertFalse(result.allow_new_entry)
         self.assertFalse(result.policy.allowed)
 
-    def test_policy_rejects_unverified_broker_or_symbol_or_approval(self):
-        for field in ("broker_connected", "symbol_verified", "live_approval_present"):
+    def test_policy_rejects_unverified_broker_symbol_or_demo_authorization(self):
+        for field in ("broker_connected", "symbol_verified", "demo_execution_authorized"):
             with self.subTest(field=field):
                 result = self.decide(**{field: False})
                 self.assertFalse(result.allow_new_entry)
