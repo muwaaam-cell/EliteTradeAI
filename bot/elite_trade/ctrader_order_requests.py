@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 
@@ -45,7 +46,13 @@ def build_market_order_request(
     order_type_enum: Any | None = None,
     trade_side_enum: Any | None = None,
 ) -> Any:
-    """Build a MARKET request with mandatory broker-side stop loss.
+    """Build a MARKET request with broker-side protection using relative offsets.
+
+    Spotware's Open API does not support absolute stopLoss/takeProfit fields
+    on MARKET orders. The protocol provides relativeStopLoss and
+    relativeTakeProfit in 1/100000 of a price unit; these offsets are applied
+    from the actual fill price. The input spec retains absolute protection
+    prices, which are converted here without rounding or guessing.
 
     The generated Spotware SDK types are imported lazily by default. Enum
     values are resolved by their symbolic names, never by guessed integers.
@@ -104,10 +111,25 @@ def build_market_order_request(
     request.orderType = market_order
     request.tradeSide = trade_side
     request.volume = volume
+    # MARKET orders reject absolute stopLoss/takeProfit fields. Convert the
+    # requested absolute levels into the protocol's 1e-5 price-unit offsets.
+    # Refuse values that cannot be represented exactly; never round risk wider.
+    def relative_distance(level: float, field: str) -> int:
+        distance = abs(Decimal(str(reference)) - Decimal(str(level)))
+        protocol_units = distance * Decimal(100000)
+        if protocol_units <= 0 or protocol_units != protocol_units.to_integral_value():
+            raise ValueError(
+                f"{field} distance cannot be represented exactly by cTrader's relative-price field."
+            )
+        result = int(protocol_units)
+        if result > 2**63 - 1:
+            raise ValueError(f"{field} distance exceeds the cTrader protocol integer range.")
+        return result
+
     request.clientOrderId = client_order_id
-    request.stopLoss = stop_loss
+    request.relativeStopLoss = relative_distance(stop_loss, "stop_loss")
     if take_profit is not None:
-        request.takeProfit = take_profit
+        request.relativeTakeProfit = relative_distance(take_profit, "take_profit")
     return request
 
 @dataclass(frozen=True)
