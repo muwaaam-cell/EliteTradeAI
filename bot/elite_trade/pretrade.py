@@ -40,7 +40,7 @@ def authorise_new_entry(
     now_epoch: float,
     broker_connected: bool,
     symbol_verified: bool,
-    live_approval_present: bool,
+    demo_execution_authorized: bool,
     now: datetime | None = None,
 ) -> PreTradeDecision:
     """Return permission for one new entry; never place or modify an order.
@@ -103,7 +103,7 @@ def authorise_new_entry(
             kill_switch_active=emergency_stop_active,
             broker_connected=broker_connected,
             symbol_verified=symbol_verified,
-            live_approval_present=live_approval_present,
+            demo_execution_authorized=demo_execution_authorized,
         )
     except Exception:
         return PreTradeDecision(
@@ -116,7 +116,7 @@ def authorise_new_entry(
 
     return PreTradeDecision(
         True,
-        "Daily guard, emergency stop and execution policy passed; broker submission remains separate.",
+        "Daily guard, emergency stop and demo execution policy passed; broker submission remains separate.",
         session=session,
         policy=policy,
     )

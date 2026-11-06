@@ -57,7 +57,7 @@ def validate_order_intent(
     kill_switch_active: bool,
     broker_connected: bool,
     symbol_verified: bool,
-    live_approval_present: bool,
+    demo_execution_authorized: bool,
 ) -> PolicyResult:
     """Validate an intent only; it never submits or modifies an order."""
     if kill_switch_active:
@@ -66,8 +66,8 @@ def validate_order_intent(
         return PolicyResult(False, "Broker connection is not verified.")
     if not symbol_verified:
         return PolicyResult(False, "Instrument metadata is not verified.")
-    if not live_approval_present:
-        return PolicyResult(False, "Explicit live-trading approval is absent.")
+    if demo_execution_authorized is not True:
+        return PolicyResult(False, "Explicit demo-execution authorization is absent.")
     if not isinstance(intent.symbol, str) or not intent.symbol.strip():
         return PolicyResult(False, "Instrument symbol is empty or invalid.")
     if not isinstance(intent.side, Side):
@@ -116,4 +116,4 @@ def validate_order_intent(
         stop_distance = intent.stop_loss - entry
     if stop_distance < limits.min_stop_distance:
         return PolicyResult(False, "Stop distance is below the configured minimum.")
-    return PolicyResult(True, "Pre-trade policy passed; broker submission is a separate, unimplemented step.")
+    return PolicyResult(True, "Pre-trade policy passed for an explicitly authorized demo entry; submission remains a separate step.")

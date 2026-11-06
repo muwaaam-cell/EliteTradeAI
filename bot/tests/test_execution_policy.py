@@ -25,7 +25,7 @@ class ExecutionPolicyTests(unittest.TestCase):
             intent=self.intent, quote=self.quote, limits=self.limits,
             now_epoch=101.0, kill_switch_active=False,
             broker_connected=True, symbol_verified=True,
-            live_approval_present=True,
+            demo_execution_authorized=True,
         )
 
     def test_valid_intent_passes_policy_only(self):
@@ -33,8 +33,8 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertTrue(result.allowed)
         self.assertIn("separate", result.reason)
 
-    def test_missing_live_approval_fails_closed(self):
-        args = dict(self.base, live_approval_present=False)
+    def test_missing_demo_execution_authorization_fails_closed(self):
+        args = dict(self.base, demo_execution_authorized=False)
         self.assertFalse(validate_order_intent(**args).allowed)
 
     def test_stale_quote_fails_closed(self):

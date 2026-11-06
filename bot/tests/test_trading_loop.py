@@ -56,7 +56,7 @@ class TradingLoopTests(unittest.TestCase):
             load_risk_state=lambda: self.risk,
             get_candidates=lambda: [self.candidate],
             is_broker_connected=lambda: True,
-            live_approval_present=lambda: True,
+            demo_execution_authorized=lambda: True,
             now_epoch=lambda: 101.0,
             now=lambda: self.now,
         )
