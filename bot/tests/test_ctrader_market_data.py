@@ -32,6 +32,19 @@ class MarketDataTests(unittest.TestCase):
         self.assertEqual(quote.quote.ask, Decimal("1.08775"))
         self.assertEqual(quote.quote.received_at_epoch, 100.0)
 
+    def test_gold_relative_prices_use_fixed_wire_scale_not_symbol_digits(self):
+        gold = CTraderMarketData(
+            [SimpleNamespace(symbol_id=9, symbol="XAUUSD", digits=2)],
+            now_epoch=self.clock, account_id=77,
+        )
+        event = SimpleNamespace(
+            symbolId=9, ctidTraderAccountId=77,
+            bid=406518000, ask=406519000, timestamp=123456,
+        )
+        quote = gold.update(event)
+        self.assertEqual(quote.quote.bid, Decimal("4065.18"))
+        self.assertEqual(quote.quote.ask, Decimal("4065.19"))
+
     def test_partial_updates_retain_other_side(self):
         self.feed.update(self.event(bid=108765, ask=108775))
         quote = self.feed.update(self.event(bid=108766))
