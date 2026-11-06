@@ -15,7 +15,7 @@ dependencies = [
   "inputimeout>=1.0.4",
   "service-identity>=24.2.0",
   "python-dotenv",
-  "cryptography>=49.0.0",
+  "cryptography>=48.0.1",
 ]
 
 [tool.setuptools.packages.find]
