@@ -206,7 +206,10 @@ class PositionLedgerReconcileHandler:
             raise ValueError("A broker symbol ID mapping is required.")
         self.ledger = ledger
         self.expected_account_id = account_id
-        self.symbol_names = dict(symbol_names)
+        # Keep caller-owned dicts live: the broker symbol catalogue arrives only
+        # after authentication, while this handler must be installed before start.
+        # Other Mapping implementations are copied to avoid retaining mutable views.
+        self.symbol_names = symbol_names if isinstance(symbol_names, dict) else dict(symbol_names)
         self.clock = clock or time.time
         self.max_age_seconds = max_age_seconds
         self.last_snapshot: CTraderReconcileSnapshot | None = None
