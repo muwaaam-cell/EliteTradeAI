@@ -24,6 +24,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             authenticated_account_id=None,
             state=ConnectionState.DISCONNECTED,
             send_demo_order_request=self.sent.append,
+            _has_reconcile_handler=False,
         )
         self.runtime = compose_demo_execution_runtime(
             transport=self.transport,
@@ -107,6 +108,9 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
                     position_ledger=self.position_ledger,
                     symbol_names={10: "EURUSD"},
                 )
+
+    def test_runtime_enables_transport_reconciliation_request_guard(self):
+        self.assertTrue(self.transport._has_reconcile_handler)
 
     def test_runtime_wires_reconciliation_callback_to_position_ledger(self):
         position = SimpleNamespace(
