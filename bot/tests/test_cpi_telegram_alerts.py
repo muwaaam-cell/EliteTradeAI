@@ -1,4 +1,3 @@
-import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -16,7 +15,9 @@ class CPIAlertDispatcherTests(unittest.TestCase):
         self.now = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
         self.release = self.now + timedelta(minutes=50)
         self.messages = []
-        self.dispatcher = CPIAlertDispatcher(self.messages.append, self.path)
+        self.dispatcher = CPIAlertDispatcher(
+            self.messages.append, self.path
+        )
         self.snapshot = CalendarSnapshot(
             events=(CPIEvent(scheduled_at=self.release, source="BLS"),),
             updated_at=self.now,
