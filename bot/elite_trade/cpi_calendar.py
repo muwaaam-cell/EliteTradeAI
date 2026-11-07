@@ -97,7 +97,10 @@ def parse_calendar_payload(
         if not isinstance(record, dict):
             raise CalendarFeedError("Calendar contains a malformed event record.")
         title = record.get("title")
-        if not isinstance(title, str) or "cpi" not in title.casefold():
+        if not isinstance(title, str) or not (
+            "cpi" in title.casefold()
+            or "consumer price index" in title.casefold()
+        ):
             continue
         if str(record.get("currency", "")).upper() != "USD":
             continue
