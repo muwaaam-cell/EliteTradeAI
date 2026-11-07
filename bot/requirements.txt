@@ -1,0 +1,12 @@
+# Runtime dependencies for the vendored Spotware OpenApiPy source.
+Twisted>=26.10.0
+pyOpenSSL>=26.0.0
+protobuf>=5.29.6,<6
+requests>=2.33.0
+inputimeout>=1.0.4
+service-identity>=24.2.0
+python-dotenv
+# Termux currently packages cryptography 48.x; WorkerTokenVault only needs AESGCM.
+cryptography>=48.0.1
+# Provides IANA timezone data on Android/Termux Python builds.
+tzdata>=2025.2

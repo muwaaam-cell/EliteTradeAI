@@ -1,0 +1,157 @@
+"""Broker-independent risk guardrails. No order sizing until symbol metadata is known."""
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from math import isfinite
+
+from elite_trade.account_snapshot import AccountRiskSnapshot
+
+
+@dataclass(frozen=True)
+class RiskSnapshot:
+    equity: float
+    daily_realised_pnl: float
+    open_positions: int
+    consecutive_losses: int
+    trading_halted: bool = False
+
+
+@dataclass(frozen=True)
+class RiskDecision:
+    allowed: bool
+    reason: str
+
+
+def _finite_number(value: object) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and isfinite(value)
+    )
+
+
+def check_trade_allowed(snapshot: RiskSnapshot, *, max_daily_loss_pct: float,
+                        max_open_positions: int, max_consecutive_losses: int) -> RiskDecision:
+    if not isinstance(snapshot, RiskSnapshot):
+        return RiskDecision(False, "Risk snapshot is missing or invalid.")
+    if snapshot.trading_halted:
+        return RiskDecision(False, "Emergency kill switch is active.")
+    if (
+        not _finite_number(snapshot.equity)
+        or snapshot.equity <= 0
+        or not _finite_number(snapshot.daily_realised_pnl)
+        or isinstance(snapshot.open_positions, bool)
+        or not isinstance(snapshot.open_positions, int)
+        or snapshot.open_positions < 0
+        or isinstance(snapshot.consecutive_losses, bool)
+        or not isinstance(snapshot.consecutive_losses, int)
+        or snapshot.consecutive_losses < 0
+    ):
+        return RiskDecision(False, "Account risk snapshot is invalid.")
+    if (
+        not _finite_number(max_daily_loss_pct)
+        or not 0 < max_daily_loss_pct <= 100
+        or isinstance(max_open_positions, bool)
+        or not isinstance(max_open_positions, int)
+        or max_open_positions < 1
+        or isinstance(max_consecutive_losses, bool)
+        or not isinstance(max_consecutive_losses, int)
+        or max_consecutive_losses < 1
+    ):
+        return RiskDecision(False, "Risk limits are invalid or unset.")
+    daily_loss_pct = max(0.0, -snapshot.daily_realised_pnl / snapshot.equity * 100.0)
+    if daily_loss_pct >= max_daily_loss_pct:
+        return RiskDecision(False, "Daily loss limit reached.")
+    if snapshot.open_positions >= max_open_positions:
+        return RiskDecision(False, "Maximum open-position count reached.")
+    if snapshot.consecutive_losses >= max_consecutive_losses:
+        return RiskDecision(False, "Consecutive-loss limit reached.")
+    return RiskDecision(True, "Risk checks passed; execution still requires a separately enabled broker adapter.")
+
+
+def calculate_risk_budget(equity: float, risk_per_trade_pct: float) -> float:
+    """Return the cash risk budget, not a volume/lot size.
+
+    A valid order volume requires broker symbol metadata (tick size/value,
+    volume step/min/max, conversion rates) and a concrete stop distance.
+    """
+    if (
+        not _finite_number(equity)
+        or not _finite_number(risk_per_trade_pct)
+        or equity <= 0
+        or not 0 < risk_per_trade_pct <= 1
+    ):
+        raise ValueError("Invalid equity or risk percentage.")
+    return equity * risk_per_trade_pct / 100.0
+
+
+def calculate_compounding_risk_budget(
+    settled_balance: float,
+    equity: float,
+    risk_per_trade_pct: float,
+    *,
+    max_risk_cash: float | None = None,
+) -> float:
+    """Calculate a compounding cash-risk budget with a floating-profit guard.
+
+    Uses the lower of settled balance and current equity. Realised account
+    growth can therefore increase the budget gradually, while floating profit
+    alone cannot. Floating losses reduce the budget immediately. An optional
+    absolute cash-risk ceiling provides a second, independent cap.
+
+    This returns cash risk only, not lots or order volume. The caller must
+    still pass the result through broker-aware sizing with verified instrument
+    loss factors, conversion rates, stop distance and broker volume limits.
+    """
+    if (
+        not _finite_number(settled_balance)
+        or not _finite_number(equity)
+        or settled_balance <= 0
+        or equity <= 0
+    ):
+        raise ValueError("Settled balance and equity must be finite and positive.")
+    if max_risk_cash is not None and (
+        not _finite_number(max_risk_cash) or max_risk_cash <= 0
+    ):
+        raise ValueError("Maximum cash risk must be finite and positive.")
+
+    sizing_equity = min(settled_balance, equity)
+    budget = calculate_risk_budget(sizing_equity, risk_per_trade_pct)
+    if max_risk_cash is not None:
+        budget = min(budget, max_risk_cash)
+    return budget
+
+
+
+def calculate_snapshot_risk_budget(
+    account_snapshot: AccountRiskSnapshot,
+    risk_per_trade_pct: Decimal | str | int,
+    *,
+    max_risk_cash: Decimal | str | int | None = None,
+) -> Decimal:
+    """Return an exact deposit-currency risk budget from a validated cTrader snapshot.
+
+    This bridges the account snapshot to the sizing layer without converting
+    monetary values through binary floats. It still does not calculate volume
+    or place orders; the caller must pass this budget to broker-aware sizing.
+    """
+    if not isinstance(account_snapshot, AccountRiskSnapshot):
+        raise ValueError("A validated cTrader account snapshot is required.")
+    try:
+        settled = Decimal(account_snapshot.settled_balance)
+        equity = Decimal(account_snapshot.equity)
+        risk_pct = Decimal(str(risk_per_trade_pct))
+        cap = None if max_risk_cash is None else Decimal(str(max_risk_cash))
+    except (AttributeError, InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("A valid account snapshot and risk percentage are required.") from exc
+
+    if (
+        not settled.is_finite() or not equity.is_finite()
+        or settled <= 0 or equity <= 0
+        or not risk_pct.is_finite() or not Decimal("0") < risk_pct <= Decimal("1")
+    ):
+        raise ValueError("Account snapshot or risk percentage is outside safe limits.")
+    if cap is not None and (not cap.is_finite() or cap <= 0):
+        raise ValueError("Maximum cash risk must be finite and positive.")
+
+    budget = min(settled, equity) * risk_pct / Decimal("100")
+    return min(budget, cap) if cap is not None else budget

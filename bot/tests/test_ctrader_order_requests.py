@@ -1,0 +1,179 @@
+import unittest
+
+from elite_trade.ctrader_order_requests import (
+    MarketOrderSpec,
+    PositionCloseSpec,
+    PositionProtectionSpec,
+    build_close_position_request,
+    build_market_order_request,
+    build_position_protection_request,
+)
+
+
+class FakeEnum:
+    VALUES = {"MARKET": 1, "BUY": 1, "SELL": 2}
+
+    @classmethod
+    def Value(cls, name):
+        return cls.VALUES[name]
+
+
+class FakeRequest:
+    def __init__(self):
+        pass
+
+
+class CTraderOrderRequestTests(unittest.TestCase):
+    def spec(self, **overrides):
+        values = {
+            "account_id": 123,
+            "symbol_id": 456,
+            "side": "BUY",
+            "volume_units": 1000,
+            "client_order_id": "elite-unique-001",
+            "entry_reference_price": 1.25,
+            "stop_loss": 1.20,
+            "take_profit": 1.35,
+        }
+        values.update(overrides)
+        return MarketOrderSpec(**values)
+
+    def build(self, spec):
+        return build_market_order_request(
+            spec,
+            request_type=FakeRequest,
+            order_type_enum=FakeEnum,
+            trade_side_enum=FakeEnum,
+        )
+
+    def test_builds_market_buy_with_mandatory_stop_and_optional_target(self):
+        request = self.build(self.spec())
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.symbolId, 456)
+        self.assertEqual(request.orderType, 1)
+        self.assertEqual(request.tradeSide, 1)
+        self.assertEqual(request.volume, 1000)
+        self.assertEqual(request.clientOrderId, "elite-unique-001")
+        self.assertEqual(request.relativeStopLoss, 5000)
+        self.assertEqual(request.relativeTakeProfit, 10000)
+        self.assertFalse(hasattr(request, "stopLoss"))
+        self.assertFalse(hasattr(request, "takeProfit"))
+
+    def test_builds_sell_and_allows_no_take_profit(self):
+        request = self.build(self.spec(
+            side="SELL", entry_reference_price=1.25,
+            stop_loss=1.30, take_profit=None,
+        ))
+        self.assertEqual(request.tradeSide, 2)
+        self.assertEqual(request.relativeStopLoss, 5000)
+        self.assertFalse(hasattr(request, "relativeTakeProfit"))
+        self.assertFalse(hasattr(request, "stopLoss"))
+        self.assertFalse(hasattr(request, "takeProfit"))
+
+    def test_builds_real_spotware_generated_protobuf_request(self):
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOANewOrderReq
+        from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+            ProtoOAOrderType,
+            ProtoOATradeSide,
+        )
+
+        request = build_market_order_request(self.spec())
+        self.assertIsInstance(request, ProtoOANewOrderReq)
+        self.assertEqual(request.payloadType, ProtoOANewOrderReq().payloadType)
+        self.assertEqual(request.orderType, ProtoOAOrderType.Value("MARKET"))
+        self.assertEqual(request.tradeSide, ProtoOATradeSide.Value("BUY"))
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.symbolId, 456)
+        self.assertEqual(request.volume, 1000)
+        self.assertEqual(request.clientOrderId, "elite-unique-001")
+        self.assertEqual(request.relativeStopLoss, 5000)
+        self.assertEqual(request.relativeTakeProfit, 10000)
+        self.assertFalse(request.HasField("stopLoss"))
+        self.assertFalse(request.HasField("takeProfit"))
+
+
+    def test_builds_real_position_protection_amendment(self):
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAAmendPositionSLTPReq
+
+        request = build_position_protection_request(
+            PositionProtectionSpec(
+                account_id=123, position_id=987, stop_loss=1.20, take_profit=1.35
+            )
+        )
+        self.assertIsInstance(request, ProtoOAAmendPositionSLTPReq)
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.positionId, 987)
+        self.assertEqual(request.stopLoss, 1.20)
+        self.assertEqual(request.takeProfit, 1.35)
+
+    def test_position_protection_allows_one_level_and_rejects_empty_or_invalid(self):
+        request = build_position_protection_request(
+            PositionProtectionSpec(account_id=123, position_id=987, stop_loss=1.20)
+        )
+        self.assertTrue(request.HasField("stopLoss"))
+        self.assertFalse(request.HasField("takeProfit"))
+        for spec in (
+            PositionProtectionSpec(account_id=123, position_id=987),
+            PositionProtectionSpec(account_id=123, position_id=987, stop_loss=float("nan")),
+            PositionProtectionSpec(account_id=0, position_id=987, stop_loss=1.2),
+        ):
+            with self.subTest(spec=spec), self.assertRaises(ValueError):
+                build_position_protection_request(spec)
+
+    def test_builds_real_position_close_request(self):
+        from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAClosePositionReq
+
+        request = build_close_position_request(
+            PositionCloseSpec(account_id=123, position_id=987, volume_units=1000)
+        )
+        self.assertIsInstance(request, ProtoOAClosePositionReq)
+        self.assertEqual(request.ctidTraderAccountId, 123)
+        self.assertEqual(request.positionId, 987)
+        self.assertEqual(request.volume, 1000)
+
+    def test_position_close_rejects_invalid_account_position_and_volume(self):
+        for spec in (
+            PositionCloseSpec(account_id=0, position_id=987, volume_units=1000),
+            PositionCloseSpec(account_id=123, position_id=0, volume_units=1000),
+            PositionCloseSpec(account_id=123, position_id=987, volume_units=0),
+        ):
+            with self.subTest(spec=spec), self.assertRaises(ValueError):
+                build_close_position_request(spec)
+
+    def test_rejects_buy_stop_loss_on_wrong_side(self):
+        with self.assertRaises(ValueError):
+            self.build(self.spec(stop_loss=1.25))
+
+    def test_rejects_sell_stop_loss_on_wrong_side(self):
+        with self.assertRaises(ValueError):
+            self.build(self.spec(
+                side="SELL", stop_loss=1.20,
+            ))
+
+    def test_rejects_take_profit_on_wrong_side(self):
+        with self.assertRaises(ValueError):
+            self.build(self.spec(take_profit=1.10))
+
+    def test_rejects_invalid_volume_and_ids(self):
+        for changes in (
+            {"volume_units": 0},
+            {"account_id": -1},
+            {"symbol_id": 0},
+            {"client_order_id": ""},
+            {"client_order_id": "x" * 51},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.build(self.spec(**changes))
+
+    def test_rejects_non_finite_prices(self):
+        for price in (float("nan"), float("inf"), 0, -1):
+            with self.subTest(price=price), self.assertRaises(ValueError):
+                self.build(self.spec(stop_loss=price))
+
+    def test_rejects_relative_protection_distance_not_exactly_representable(self):
+        with self.assertRaisesRegex(ValueError, "cannot be represented exactly"):
+            self.build(self.spec(stop_loss=1.200001))
+
+
+if __name__ == "__main__":
+    unittest.main()
