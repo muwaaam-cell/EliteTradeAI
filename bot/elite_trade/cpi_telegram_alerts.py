@@ -1,7 +1,4 @@
-"""Deduplicated Telegram alerts for the next high-impact US CPI release.
-
-This module only sends informational alerts. It never authorises entries or places orders.
-"""
+"""Deduplicated informational Telegram alerts for US CPI releases."""
 from __future__ import annotations
 
 import json
@@ -21,11 +18,8 @@ class CPIAlertDispatcher:
 
     WINDOWS = ((1440, "24-hour"), (60, "1-hour"), (15, "15-minute"))
 
-    def __init__(
-        self,
-        sender: Callable[[str], None],
-        state_path: str | Path = "state/cpi_telegram_alerts.json",
-    ) -> None:
+    def __init__(self, sender: Callable[[str], None],
+                 state_path: str | Path = "state/cpi_telegram_alerts.json") -> None:
         self.sender = sender
         self.state_path = Path(state_path)
 
@@ -35,9 +29,9 @@ class CPIAlertDispatcher:
         except FileNotFoundError:
             return set()
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            raise CPIAlertStateError("CPI alert state is unreadable; refusing to send duplicate-prone alerts.") from None
+            raise CPIAlertStateError("CPI alert state is unreadable; refusing duplicate-prone alerts.") from None
         if not isinstance(payload, dict) or not isinstance(payload.get("sent"), list):
-            raise CPIAlertStateError("CPI alert state is invalid; refusing to send duplicate-prone alerts.")
+            raise CPIAlertStateError("CPI alert state is invalid; refusing duplicate-prone alerts.")
         if not all(isinstance(item, str) for item in payload["sent"]):
             raise CPIAlertStateError("CPI alert state entries are invalid.")
         return set(payload["sent"])
@@ -55,7 +49,6 @@ class CPIAlertDispatcher:
             raise CPIAlertStateError("CPI alert state could not be saved.") from None
 
     def dispatch(self, snapshot: CalendarSnapshot, *, now: datetime | None = None) -> int:
-        """Send any newly due alert windows; returns the number successfully sent."""
         current = now or datetime.now(timezone.utc)
         if current.tzinfo is None or current.utcoffset() is None:
             raise ValueError("now must be timezone-aware.")
@@ -67,33 +60,31 @@ class CPIAlertDispatcher:
         minutes = (release - current).total_seconds() / 60
         if minutes < 0:
             return 0
-
         sent = self._load()
-        release_key = release.isoformat()
         due = [(window, label) for window, label in self.WINDOWS if minutes <= window]
-        # Catch up missed windows with one latest-relevant alert, not a burst.
         if not due:
             return 0
         window, label = min(due, key=lambda item: item[0])
-        key = f"{release_key}:{window}"
+        key = f"{release.isoformat()}:{window}"
         if key in sent:
             return 0
 
-        matching = [event for event in snapshot.events if event.scheduled_at.astimezone(timezone.utc) == release]
-        actual_values = sorted({str(event.actual) for event in matching if event.actual is not None})
-        previous_values = sorted({str(event.previous) for event in matching if event.previous is not None})
-        actual_text = ", ".join(actual_values) if actual_values else "not yet published"
-        previous_text = ", ".join(previous_values) if previous_values else "not available"
+        matching = [e for e in snapshot.events if e.scheduled_at.astimezone(timezone.utc) == release]
+        lines = []
+        for event in matching:
+            title = event.source.split(" / ", 1)[-1] if " / " in event.source else "US CPI"
+            actual = str(event.actual) + "%" if event.actual is not None else "pending"
+            forecast = str(event.forecast) + "%" if event.forecast is not None else "not supplied"
+            previous = str(event.previous) + "%" if event.previous is not None else "not supplied"
+            lines.append(f"{title}: forecast {forecast}; previous {previous}; actual {actual}")
+        details = "\n".join(lines) if lines else "CPI details not available in this snapshot."
         message = (
             f"EliteTrade AI — US CPI {label} alert\n"
             f"Scheduled: {release.isoformat()} UTC\n"
-            f"Actual: {actual_text}\n"
-            "Consensus forecast: unavailable from this calendar source (not guessed).\n"
-            f"Previous: {previous_text}\n"
-            f"Calendar source: {snapshot.source}.\n"
-            "Informational alert only. CPI alone does not determine BUY/SELL; "
-            "the CPI entry guard and normal strategy/risk checks remain required. "
-            "No order has been placed."
+            f"{details}\n"
+            f"Calendar source: {snapshot.source} ({snapshot.attribution}).\n"
+            "Informational only. Missing figures are not guessed. CPI alone is not a BUY/SELL signal. "
+            "Normal strategy and risk checks remain required. No order has been placed."
         )
         self.sender(message)
         sent.add(key)
