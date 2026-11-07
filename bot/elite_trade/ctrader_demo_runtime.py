@@ -107,6 +107,12 @@ def compose_demo_execution_runtime(
     transport.on_execution_event = execution_handler
     transport.on_order_error = order_error_handler
     transport.on_reconcile = reconcile_handler
+    # The transport tracks whether a reconciliation callback was supplied at
+    # construction time. Runtime composition happens later, before start(), so
+    # update that guard as well or request_positions_reconcile() will reject
+    # the now-installed handler.
+    if hasattr(transport, "_has_reconcile_handler"):
+        transport._has_reconcile_handler = True
 
     return CTraderDemoExecutionRuntime(
         transport=transport,
