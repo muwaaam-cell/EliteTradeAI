@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from decimal import Decimal
 
 from elite_trade.cpi_calendar import CalendarSnapshot
 from elite_trade.cpi_guard import CPIEvent
@@ -15,26 +16,35 @@ class CPIAlertDispatcherTests(unittest.TestCase):
         self.now = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
         self.release = self.now + timedelta(minutes=50)
         self.messages = []
-        self.dispatcher = CPIAlertDispatcher(
-            self.messages.append, self.path
-        )
+        self.dispatcher = CPIAlertDispatcher(self.messages.append, self.path)
         self.snapshot = CalendarSnapshot(
-            events=(CPIEvent(scheduled_at=self.release, source="BLS"),),
-            updated_at=self.now,
-            source="Test calendar",
-            attribution="BLS",
+            events=(CPIEvent(
+                scheduled_at=self.release, actual=None, forecast=Decimal("0.3"),
+                previous=Decimal("0.6"), source="ShowMyTrades / Consumer Price Index MoM"
+            ),),
+            updated_at=self.now, source="ShowMyTrades",
+            attribution="Economic calendar by ShowMyTrades",
             next_release_at=self.release,
         )
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_sends_one_hour_notice_once(self):
+    def test_sends_one_hour_notice_once_with_cpi_details(self):
         self.assertEqual(self.dispatcher.dispatch(self.snapshot, now=self.now), 1)
         self.assertEqual(self.dispatcher.dispatch(self.snapshot, now=self.now), 0)
         self.assertEqual(len(self.messages), 1)
-        self.assertIn("Consensus forecast: unavailable", self.messages[0])
+        self.assertIn("Consumer Price Index MoM", self.messages[0])
+        self.assertIn("forecast 0.3%", self.messages[0])
+        self.assertIn("previous 0.6%", self.messages[0])
+        self.assertIn("actual pending", self.messages[0])
         self.assertIn("No order has been placed", self.messages[0])
+
+    def test_missing_forecast_is_explicitly_not_supplied(self):
+        event = CPIEvent(scheduled_at=self.release, source="ShowMyTrades / CPI YoY")
+        snapshot = CalendarSnapshot((event,), self.now, "ShowMyTrades", "SMT", self.release)
+        self.dispatcher.dispatch(snapshot, now=self.now)
+        self.assertIn("forecast not supplied", self.messages[0])
 
     def test_sends_later_fifteen_minute_notice(self):
         self.dispatcher.dispatch(self.snapshot, now=self.now)
