@@ -1,9 +1,4 @@
-"""Free US CPI calendar adapter using the publisher-sourced XOOMAR JSON feed.
-
-The feed supplies official-agency release schedules and actual/previous values,
-but deliberately has no consensus forecast. Missing forecasts therefore remain
-UNKNOWN in cpi_guard; they are never fabricated. This adapter does not trade.
-"""
+"""Fail-closed adapter for the public ShowMyTrades US economic calendar."""
 from __future__ import annotations
 
 import json
@@ -17,8 +12,8 @@ from urllib.request import Request, urlopen
 
 from elite_trade.cpi_guard import CPIEvent
 
-CALENDAR_URL = "https://xoomar.com/api/markets/calendar?importance=high"
-CALENDAR_ATTRIBUTION_URL = "https://xoomar.com/markets/api/calendar"
+CALENDAR_URL = "https://showmytrades.com/api/public/calendar/v1?currency=USD&impact=high&days=7"
+CALENDAR_ATTRIBUTION_URL = "https://showmytrades.com/tools/economic-calendar"
 _NUMBER = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
 
 
@@ -48,7 +43,6 @@ def _parse_datetime(value: Any, field: str) -> datetime:
 
 
 def _optional_decimal(value: Any) -> Decimal | None:
-    """Parse only a single unambiguous numeric value; never guess units/components."""
     if value is None:
         return None
     candidate = str(value).strip()
@@ -67,81 +61,98 @@ def parse_calendar_payload(
     payload: dict[str, Any],
     *,
     now: datetime | None = None,
-    max_age: timedelta = timedelta(hours=6),
+    max_age: timedelta = timedelta(minutes=20),
 ) -> CalendarSnapshot:
-    """Validate the publisher envelope and return only high-impact US CPI events."""
+    """Validate live server clock and cached body; accept only trusted USD CPI events."""
     if not isinstance(payload, dict):
         raise CalendarFeedError("Calendar response must be a JSON object.")
-    updated_at = _parse_datetime(payload.get("updatedAt"), "updatedAt")
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None or current.utcoffset() is None:
         raise ValueError("now must be timezone-aware.")
-    age = current.astimezone(timezone.utc) - updated_at
-    if age < timedelta(minutes=-5) or age > max_age:
-        raise CalendarFeedError("Calendar snapshot is stale or has an invalid future timestamp.")
-    records = payload.get("data")
+    current = current.astimezone(timezone.utc)
+
+    server_raw = payload.get("server_time_iso")
+    if not isinstance(server_raw, str):
+        server_raw = payload.get("server_time")
+        if isinstance(server_raw, (int, float)) and not isinstance(server_raw, bool):
+            server_at = datetime.fromtimestamp(server_raw, tz=timezone.utc)
+        else:
+            raise CalendarFeedError("Calendar server clock is missing.")
+    else:
+        server_at = _parse_datetime(server_raw, "server_time_iso")
+    if abs((current - server_at).total_seconds()) > 120:
+        raise CalendarFeedError("Device clock differs from calendar server by more than 120 seconds.")
+
+    generated_at = _parse_datetime(payload.get("generated_at"), "generated_at")
+    age = server_at - generated_at
+    if age < timedelta(minutes=-2) or age > max_age:
+        raise CalendarFeedError("Calendar body is stale or has an invalid future timestamp.")
+
+    records = payload.get("events")
     if not isinstance(records, list):
-        raise CalendarFeedError("Calendar response data must be an array.")
+        raise CalendarFeedError("Calendar response events must be an array.")
 
     events: list[CPIEvent] = []
     for record in records:
         if not isinstance(record, dict):
             raise CalendarFeedError("Calendar contains a malformed event record.")
-        name = record.get("eventName")
-        if not isinstance(name, str) or "cpi" not in name.casefold():
+        title = record.get("title")
+        if not isinstance(title, str) or "cpi" not in title.casefold():
             continue
-        if str(record.get("importance", "")).casefold() != "high":
+        if str(record.get("currency", "")).upper() != "USD":
             continue
-        scheduled_at = _parse_datetime(record.get("scheduledAt"), "scheduledAt")
-        events.append(
-            CPIEvent(
-                scheduled_at=scheduled_at,
-                currency="USD",
-                impact="high",
-                actual=_optional_decimal(record.get("actual")),
-                # XOOMAR explicitly does not publish a consensus forecast.
-                forecast=None,
-                previous=_optional_decimal(record.get("previous")),
-                source="XOOMAR / " + str(record.get("source", "agency schedule")),
-            )
-        )
+        if str(record.get("impact", "")).lower() != "high":
+            continue
+        if str(record.get("status", "")).lower() not in {"scheduled", "moved"}:
+            continue
+        if str(record.get("confidence", "")).lower() not in {"official", "sources_agree"}:
+            continue
 
-    next_release_raw = payload.get("nextReleaseAt")
-    next_release = (
-        _parse_datetime(next_release_raw, "nextReleaseAt")
-        if next_release_raw is not None
-        else None
-    )
-    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
-    attribution = meta.get("sourceAttribution")
-    if not isinstance(attribution, str) or not attribution.strip():
-        attribution = "Data: XOOMAR; official agency sources as identified by the publisher."
-    source = payload.get("source")
-    if not isinstance(source, str) or not source.strip():
-        source = "XOOMAR"
+        scheduled_at = _parse_datetime(record.get("time"), "event.time")
+        timestamp = record.get("ts")
+        if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)):
+            raise CalendarFeedError("CPI event Unix timestamp is missing or invalid.")
+        unix_at = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        if abs((scheduled_at - unix_at).total_seconds()) > 1:
+            raise CalendarFeedError("CPI event time and Unix timestamp disagree.")
+
+        events.append(CPIEvent(
+            scheduled_at=scheduled_at,
+            currency="USD",
+            impact="high",
+            actual=_optional_decimal(record.get("actual")),
+            forecast=_optional_decimal(record.get("forecast")),
+            previous=_optional_decimal(record.get("previous")),
+            source=f"ShowMyTrades / {title.strip()}",
+        ))
+
     events.sort(key=lambda item: item.scheduled_at)
-    return CalendarSnapshot(tuple(events), updated_at, source, attribution, next_release)
+    future = [event.scheduled_at for event in events if event.scheduled_at >= current]
+    attribution = payload.get("attribution")
+    if not isinstance(attribution, str) or not attribution.strip():
+        attribution = "Economic calendar by ShowMyTrades"
+    return CalendarSnapshot(
+        tuple(events), generated_at, "ShowMyTrades", attribution,
+        min(future) if future else None,
+    )
 
 
 def fetch_us_cpi_calendar(
     *,
     timeout_seconds: float = 8.0,
-    max_age: timedelta = timedelta(hours=6),
+    max_age: timedelta = timedelta(minutes=20),
     api_key: str | None = None,
     now: datetime | None = None,
 ) -> CalendarSnapshot:
-    """Fetch the no-key high-impact US calendar; an optional key is header-only."""
+    """Fetch public high-impact USD calendar; no API key is required."""
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive.")
     headers = {"Accept": "application/json", "User-Agent": "EliteTradeAI/0.1"}
-    if api_key and api_key.strip():
-        headers["X-API-Key"] = api_key.strip()
     request = Request(CALENDAR_URL, headers=headers, method="GET")
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
-            status = getattr(response, "status", 200)
-            if status != 200:
-                raise CalendarFeedError(f"Calendar server returned HTTP {status}.")
+            if getattr(response, "status", 200) != 200:
+                raise CalendarFeedError("Calendar server returned a non-200 response.")
             raw = response.read(1_000_001)
     except HTTPError as exc:
         raise CalendarFeedError(f"Calendar server returned HTTP {exc.code}.") from None
