@@ -7,86 +7,73 @@ from elite_trade.cpi_calendar import CalendarFeedError, parse_calendar_payload
 
 class CPICalendarAdapterTests(unittest.TestCase):
     def setUp(self):
-        self.now = datetime(2026, 11, 7, 4, 0, tzinfo=timezone.utc)
+        self.now = datetime(2026, 11, 7, 4, 34, tzinfo=timezone.utc)
         self.payload = {
-            "updatedAt": "2026-11-07T03:55:00Z",
-            "source": "XOOMAR",
-            "nextReleaseAt": "2026-11-10T13:30:00Z",
-            "meta": {"sourceAttribution": "BLS and other US agencies"},
-            "data": [
-                {
-                    "source": "bls",
-                    "eventName": "CPI (Consumer Price Index)",
-                    "importance": "high",
-                    "scheduledAt": "2026-11-10T13:30:00Z",
-                    "actual": None,
-                    "forecast": None,
-                    "previous": "3.0",
-                },
-                {
-                    "source": "bls",
-                    "eventName": "Core CPI",
-                    "importance": "high",
-                    "scheduledAt": "2026-11-10T13:30:00Z",
-                    "actual": "2.8%",
-                    "previous": "2.9%",
-                },
-                {
-                    "source": "dol",
-                    "eventName": "Initial Jobless Claims",
-                    "importance": "high",
-                    "scheduledAt": "2026-11-12T13:30:00Z",
-                },
-                {
-                    "source": "bls",
-                    "eventName": "CPI",
-                    "importance": "low",
-                    "scheduledAt": "2026-11-10T13:30:00Z",
-                },
+            "server_time_iso": "2026-11-07T04:34:00Z",
+            "generated_at": "2026-11-07T04:30:00Z",
+            "attribution": "Economic calendar by ShowMyTrades",
+            "events": [
+                {"id": "cpi-yoy", "title": "Consumer Price Index YoY", "currency": "USD",
+                 "impact": "high", "status": "scheduled", "confidence": "sources_agree",
+                 "time": "2026-11-10T13:30:00Z", "ts": 1794317400,
+                 "actual": "", "forecast": "", "previous": "3.7%"},
+                {"id": "cpi-mom", "title": "Consumer Price Index MoM", "currency": "USD",
+                 "impact": "high", "status": "scheduled", "confidence": "official",
+                 "time": "2026-11-10T13:30:00Z", "ts": 1794317400,
+                 "actual": "", "forecast": "0.3%", "previous": "0.6%"},
+                {"title": "Initial Jobless Claims", "currency": "USD", "impact": "high",
+                 "status": "scheduled", "confidence": "official",
+                 "time": "2026-11-12T13:30:00Z", "ts": 1794490200},
+                {"title": "Core CPI", "currency": "USD", "impact": "high",
+                 "status": "tentative", "confidence": "sources_disagree",
+                 "time": "2026-11-10T13:30:00Z", "ts": 1794317400},
+                {"title": "CPI EUR", "currency": "EUR", "impact": "high",
+                 "status": "scheduled", "confidence": "official",
+                 "time": "2026-11-10T13:30:00Z", "ts": 1794317400},
             ],
         }
 
-    def test_filters_only_high_impact_cpi(self):
+    def test_filters_to_trusted_high_impact_us_cpi(self):
         result = parse_calendar_payload(self.payload, now=self.now)
         self.assertEqual(len(result.events), 2)
-        self.assertEqual(result.events[0].scheduled_at.isoformat(), "2026-11-10T13:30:00+00:00")
+        self.assertEqual(result.source, "ShowMyTrades")
+        self.assertEqual(result.next_release_at, datetime(2026, 11, 10, 13, 30, tzinfo=timezone.utc))
 
-    def test_forecast_remains_unknown_when_provider_does_not_publish_it(self):
+    def test_forecast_previous_are_parsed_without_invention(self):
         result = parse_calendar_payload(self.payload, now=self.now)
         self.assertIsNone(result.events[0].forecast)
-
-    def test_actual_and_previous_are_decimal_when_unambiguous(self):
-        result = parse_calendar_payload(self.payload, now=self.now)
-        core = result.events[1]
-        self.assertEqual(core.actual, Decimal("2.8"))
-        self.assertEqual(core.previous, Decimal("2.9"))
-
-    def test_ambiguous_actual_is_not_guessed(self):
-        payload = {**self.payload, "data": [{
-            "eventName": "CPI",
-            "importance": "high",
-            "scheduledAt": "2026-11-10T13:30:00Z",
-            "actual": "+0.1% MoM, 3.4% YoY",
-        }]}
-        result = parse_calendar_payload(payload, now=self.now)
+        self.assertEqual(result.events[0].previous, Decimal("3.7"))
+        self.assertEqual(result.events[1].forecast, Decimal("0.3"))
+        self.assertEqual(result.events[1].previous, Decimal("0.6"))
         self.assertIsNone(result.events[0].actual)
 
-    def test_stale_feed_fails_closed(self):
-        payload = {**self.payload, "updatedAt": "2026-11-06T20:00:00Z"}
+    def test_body_cache_window_is_limited_to_twenty_minutes(self):
+        payload = {**self.payload, "generated_at": "2026-11-07T04:10:00Z"}
         with self.assertRaises(CalendarFeedError):
             parse_calendar_payload(payload, now=self.now)
 
-    def test_missing_timestamp_fails_closed(self):
-        payload = {**self.payload, "updatedAt": None}
+    def test_device_clock_skew_fails_closed(self):
+        payload = {**self.payload, "server_time_iso": "2026-11-07T04:30:00Z"}
+        with self.assertRaises(CalendarFeedError):
+            parse_calendar_payload(payload, now=self.now)
+
+    def test_event_timestamp_mismatch_fails_closed(self):
+        payload = {**self.payload, "events": [dict(self.payload["events"][0], ts=1)]}
+        with self.assertRaises(CalendarFeedError):
+            parse_calendar_payload(payload, now=self.now)
+
+    def test_missing_server_clock_fails_closed(self):
+        payload = dict(self.payload)
+        payload.pop("server_time_iso")
         with self.assertRaises(CalendarFeedError):
             parse_calendar_payload(payload, now=self.now)
 
     def test_naive_now_is_rejected(self):
         with self.assertRaises(ValueError):
-            parse_calendar_payload(self.payload, now=datetime(2026, 11, 7, 4, 0))
+            parse_calendar_payload(self.payload, now=datetime(2026, 11, 7, 4, 34))
 
-    def test_bad_record_fails_closed(self):
-        payload = {**self.payload, "data": ["not-an-event"]}
+    def test_bad_event_record_fails_closed(self):
+        payload = {**self.payload, "events": ["bad"]}
         with self.assertRaises(CalendarFeedError):
             parse_calendar_payload(payload, now=self.now)
 
