@@ -105,7 +105,7 @@ def evaluate_cpi_entry(
     if minutes < immediate_cooldown.total_seconds() / 60.0:
         return CPIEntryDecision(False, "CPI just released; wait at least 5 minutes and let volatility settle.", surprise, difference, minutes)
     if minutes <= confirmation_window.total_seconds() / 60.0:
-        if not event.actual:
+        if event.actual is None:
             return CPIEntryDecision(False, "CPI actual is not recorded; fail-closed.", surprise, difference, minutes)
         if not post_release_confirmation_passed:
             return CPIEntryDecision(False, "Wait for post-release breakout/retest confirmation; CPI surprise alone is not a trade signal.", surprise, difference, minutes)
