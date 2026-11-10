@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+from math import isfinite
 import threading
 from contextlib import closing
 from decimal import Decimal
@@ -139,7 +140,7 @@ class CTraderPositionManager:
         ):
             raise PositionManagementError("Authenticated demo account is unavailable.")
         now = float(self.now_epoch())
-        if not now >= 0:
+        if not isfinite(now) or now < 0:
             raise PositionManagementError("Local position-management clock is invalid.")
         amended = 0
         for position in self.position_ledger.list_open():
@@ -177,7 +178,7 @@ class CTraderPositionManager:
             if quote is None:
                 raise PositionManagementError("Fresh executable quote is unavailable.")
             age = now - float(quote.received_at_epoch)
-            if age < 0 or age > self.max_quote_age_seconds:
+            if not isfinite(age) or age < 0 or age > self.max_quote_age_seconds:
                 raise PositionManagementError("Position-management quote is stale.")
 
             initial_risk = abs(position.entry_price - position.broker_stop_loss)
@@ -193,7 +194,14 @@ class CTraderPositionManager:
                     # A send is never repeated while broker confirmation is uncertain.
                     request_reconcile = getattr(self.transport, "request_positions_reconcile", None)
                     if callable(request_reconcile):
-                        request_reconcile()
+                        try:
+                            if not getattr(self.transport, "position_reconciliation_in_flight", False):
+                                request_reconcile()
+                        except Exception as exc:
+                            self.on_issue(
+                                "Position reconciliation request failed: "
+                                + " ".join(str(exc).split())[:160]
+                            )
                     self.on_issue(
                         f"Position {position.broker_position_id} has an unconfirmed stop amendment; awaiting reconciliation."
                     )
