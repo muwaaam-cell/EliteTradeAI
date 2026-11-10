@@ -123,7 +123,6 @@ class VerifiedClosedPositionTests(unittest.TestCase):
         self.assertEqual(result.trade_id, "ctrader:49351677:7007")
 
     def test_builder_rejects_wrong_account_bound_order_ledger(self):
-        from types import SimpleNamespace
         class DealStore:
             pass
         class Ledger:
