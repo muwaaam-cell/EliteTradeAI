@@ -22,6 +22,7 @@ class BrokerOrderUpdate:
     status: str
     requested_volume_units: int
     executed_volume_units: int
+    broker_position_id: str | None = None
 
 
 def _enum_name(value: int, names: Mapping[int, str]) -> str:
@@ -95,6 +96,14 @@ def decode_execution_event(
             status = FILLED
     if status == FILLED and executed != requested:
         raise ValueError("Filled event does not confirm the full requested volume.")
+    position = getattr(event, "position", None)
+    raw_position_id = getattr(position, "positionId", None) if position is not None else None
+    if raw_position_id is not None:
+        if isinstance(raw_position_id, bool) or not isinstance(raw_position_id, int) or raw_position_id <= 0:
+            raise ValueError("Execution event has an invalid broker position ID.")
+        broker_position_id = str(raw_position_id)
+    else:
+        broker_position_id = None
     return BrokerOrderUpdate(
         account_id=account_id,
         client_order_id=client_order_id.strip(),
@@ -102,6 +111,7 @@ def decode_execution_event(
         status=status,
         requested_volume_units=requested,
         executed_volume_units=executed,
+        broker_position_id=broker_position_id,
     )
 
 
@@ -128,6 +138,7 @@ def apply_execution_update(
                 update.executed_volume_units,
                 update.broker_order_id,
                 now=now,
+                broker_position_id=update.broker_position_id,
             )
         if update.status in {"SUBMITTED", FILLED, REJECTED, CANCELLED}:
             return ledger.resolve_unknown(
@@ -150,6 +161,7 @@ def apply_execution_update(
             update.executed_volume_units,
             update.broker_order_id,
             now=now,
+            broker_position_id=update.broker_position_id,
         )
     if update.status == FILLED:
         if update.broker_order_id is None:
