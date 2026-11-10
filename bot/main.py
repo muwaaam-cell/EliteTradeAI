@@ -31,6 +31,8 @@ from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
 from elite_trade.order_ledger import OrderLedger
 from elite_trade.ctrader_trading_loop_bridge import compose_demo_trading_loop_runtime
 from elite_trade.ctrader_position_manager import CTraderPositionManager
+from elite_trade.kill_switch import KillSwitch
+from elite_trade.telegram_control import TelegramControl
 from elite_trade.market_memory import MarketMemory
 from elite_trade.worker_token_vault import WorkerTokenVault
 
@@ -543,6 +545,7 @@ def main() -> None:
     def on_candidate_spot(event: object) -> None:
         if callable(previous_spot_handler):
             previous_spot_handler(event)
+        process_close_all_request()
         try:
             position_manager.manage_positions()
         except Exception as exc:
@@ -572,11 +575,112 @@ def main() -> None:
 
     transport.on_spot = on_candidate_spot
 
+    close_all_request_path = Path(
+        os.getenv("ELITE_CLOSE_ALL_REQUEST_FILE", "state/CLOSE_ALL_BOT_POSITIONS.request")
+    )
+
+    def telegram_status() -> str:
+        state = getattr(transport.state, "value", str(transport.state))
+        account_id = transport.authenticated_account_id
+        open_positions = position_ledger.list_open()
+        bot_positions = []
+        for position in open_positions:
+            if position.symbol.upper() not in {"XAUUSD", "EURUSD"}:
+                continue
+            if any(
+                getattr(item, "symbol", "").upper() == position.symbol.upper()
+                and getattr(item, "strategy_mode", None) in {"SCALPING", "INTRADAY"}
+                for item in order_ledger.list_by_broker_position_id(
+                    position.broker_position_id
+                )
+            ):
+                bot_positions.append(position)
+        runtime = execution_runtime_ref.get("runtime")
+        protection_ok = bool(
+            runtime is not None and runtime.protection_monitor.allow_new_entries
+        )
+        paused = KillSwitch(
+            os.getenv("ELITE_KILL_SWITCH_FILE", "state/KILL_SWITCH")
+        ).is_active()
+        return (
+            f"broker={state}; account={account_id or 'not authenticated'}; "
+            f"broker_open_positions={len(open_positions)}; "
+            f"bot_managed_positions={len(bot_positions)}; "
+            f"protection_snapshot_fresh={protection_ok}; "
+            f"emergency_pause={paused}; trading_loop=NOT_SCHEDULED; "
+            "new_entries=BLOCKED_PENDING_DAILY_RISK_AND_DEMO_VALIDATION"
+        )
+
+    def start_telegram_runtime() -> None:
+        token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+        if not token or not chat_id:
+            print("Telegram runtime not started: credentials are not configured.")
+            return
+        try:
+            controller = TelegramControl(
+                token=token,
+                chat_id=chat_id,
+                kill_switch=KillSwitch(
+                    os.getenv("ELITE_KILL_SWITCH_FILE", "state/KILL_SWITCH")
+                ),
+                offset_file=os.getenv(
+                    "ELITE_TELEGRAM_OFFSET_FILE", "state/telegram_offset.json"
+                ),
+                status_provider=telegram_status,
+                close_all_request_path=close_all_request_path,
+            )
+        except Exception as exc:
+            print("Telegram runtime configuration failed: " + " ".join(str(exc).split())[:200])
+            return
+        from twisted.internet.threads import deferToThread
+        from twisted.internet.task import LoopingCall
+
+        def boot() -> None:
+            controller.poll_once(timeout=0)
+            controller.send(
+                "EliteTrade AI connected to the Pepperstone cTrader demo monitor. "
+                "Status is broker-derived. New entries remain blocked until daily-risk "
+                "and end-to-end demo validation are complete. /closeall affects only "
+                "bot-owned XAUUSD/EURUSD positions."
+            )
+
+        def start_polling(_result):
+            loop = LoopingCall(
+                lambda: deferToThread(controller.poll_once, timeout=0)
+            )
+            loop.start(3.0, now=False)
+            print("Telegram controls connected to broker status and close-all request queue.")
+            return loop
+
+        def report_failure(failure):
+            print("Telegram bootstrap failed: " + str(getattr(failure, "value", failure))[:200])
+            return None
+
+        deferToThread(boot).addCallbacks(start_polling, report_failure)
+
+    def process_close_all_request() -> None:
+        if not close_all_request_path.exists():
+            return
+        try:
+            sent = position_manager.close_all_bot_positions()
+            close_all_request_path.unlink(missing_ok=True)
+            print(
+                "Telegram close-all request processed: "
+                f"close_requests_sent={sent}; only bot-owned XAUUSD/EURUSD positions considered."
+            )
+        except Exception as exc:
+            print(
+                "Telegram close-all request remains queued; broker state is not safe: "
+                + " ".join(str(exc).split())[:200]
+            )
+
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
     print("Starting cTrader demo connection. Market analysis is active; no TradingLoop is scheduled.")
     from twisted.internet import reactor
 
     reactor.callWhenRunning(transport.start)
+    reactor.callWhenRunning(start_telegram_runtime)
     try:
         reactor.run()
     except KeyboardInterrupt:
