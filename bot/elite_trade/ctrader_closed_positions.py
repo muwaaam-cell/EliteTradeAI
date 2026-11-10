@@ -27,6 +27,20 @@ class VerifiedPositionOutcome:
     close_deal_ids: tuple[str, ...]
     trade_id: str
 
+    def to_calibration_trade(self):
+        """Create the calibration input only from this verified aggregate."""
+        from elite_trade.ctrader_empirical_calibration import VerifiedClosedTrade
+
+        return VerifiedClosedTrade(
+            trade_id=self.trade_id,
+            symbol=self.symbol,
+            mode=self.strategy_mode,
+            closed=True,
+            broker_confirmed=True,
+            net_pnl_after_costs=self.net_pnl_after_costs,
+            initial_cash_risk=self.initial_cash_risk,
+        )
+
 
 def _decimal(value: object, field: str) -> Decimal:
     try:
