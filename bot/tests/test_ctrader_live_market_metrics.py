@@ -12,9 +12,8 @@ def sample_bars():
     for index in range(120):
         close = 100.0 + 0.05 * index + 0.5 * math.sin(index * 0.5)
         result.append(MarketBar(
-            symbol="XAUUSD", timeframe="m15", timestamp_ms=index * 900000,
-            open=close, high=close + 0.2, low=close - 0.2, close=close,
-            volume=1.0,
+            timestamp=index * 900000, open=close, high=close + 0.2,
+            low=close - 0.2, close=close, volume=1.0,
         ))
     return tuple(result)
 
