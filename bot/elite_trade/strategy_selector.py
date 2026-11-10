@@ -1,4 +1,4 @@
-"""Evidence-gated automatic selection between scalping and intraday modes.
+"""Evidence-gated SCALPING-only strategy selection.
 
 The selector is pure decision logic. It requires fresh, independently computed
 signal quality, liquidity, volatility, spread and post-cost edge inputs. Missing
@@ -35,7 +35,6 @@ class StrategySelectionConfig:
     max_intraday_volatility_percentile: Decimal = Decimal("0.95")
     min_intraday_trend_strength: Decimal = Decimal("0.60")
     min_scalping_net_edge_r: Decimal = Decimal("0.10")
-    min_intraday_net_edge_r: Decimal = Decimal("0.10")
 
     def __post_init__(self) -> None:
         for name in (
@@ -49,7 +48,7 @@ class StrategySelectionConfig:
             if value < 0 or value > 1:
                 raise ValueError(f"{name} must be between zero and one.")
             object.__setattr__(self, name, value)
-        for name in ("min_scalping_net_edge_r", "min_intraday_net_edge_r"):
+        for name in ("min_scalping_net_edge_r",):
             value = _metric(getattr(self, name), name)
             if value < 0:
                 raise ValueError(f"{name} cannot be negative.")
@@ -115,8 +114,7 @@ class AdaptiveStrategySelector:
 
         names = (
             "signal_quality", "liquidity_score", "spread_to_atr",
-            "volatility_percentile", "trend_strength",
-            "scalping_net_edge_r", "intraday_net_edge_r",
+            "volatility_percentile", "scalping_net_edge_r",
         )
         try:
             values = {name: _metric(getattr(opportunity, name), name) for name in names}
@@ -126,12 +124,9 @@ class AdaptiveStrategySelector:
         liquidity = values["liquidity_score"]
         spread = values["spread_to_atr"]
         volatility = values["volatility_percentile"]
-        trend = values["trend_strength"]
         scalp_edge = values["scalping_net_edge_r"]
-        intraday_edge = values["intraday_net_edge_r"]
         if not (0 <= quality <= 1 and 0 <= liquidity <= 1
-                and 0 <= volatility <= 1 and 0 <= trend <= 1
-                and spread >= 0):
+                and 0 <= volatility <= 1 and spread >= 0):
             return self._wait("A market metric is outside its valid range.")
         if quality < self.config.min_signal_quality:
             return self._wait("Signal quality is below the configured threshold.")
@@ -140,33 +135,16 @@ class AdaptiveStrategySelector:
         if opportunity.regime in {MarketRegime.UNKNOWN, MarketRegime.HIGH_VOLATILITY}:
             return self._wait("Market regime is unsuitable or not sufficiently understood.")
 
-        eligible: list[tuple[StrategyMode, Decimal]] = []
         if (
-            spread <= self.config.max_scalping_spread_to_atr
-            and volatility <= self.config.max_scalping_volatility_percentile
-            and scalp_edge >= self.config.min_scalping_net_edge_r
-            and opportunity.regime in {MarketRegime.RANGING, MarketRegime.TRENDING}
+            spread > self.config.max_scalping_spread_to_atr
+            or volatility > self.config.max_scalping_volatility_percentile
+            or scalp_edge < self.config.min_scalping_net_edge_r
         ):
-            eligible.append((StrategyMode.SCALPING, scalp_edge))
-        if (
-            opportunity.regime is MarketRegime.TRENDING
-            and trend >= self.config.min_intraday_trend_strength
-            and spread <= self.config.max_intraday_spread_to_atr
-            and volatility <= self.config.max_intraday_volatility_percentile
-            and intraday_edge >= self.config.min_intraday_net_edge_r
-        ):
-            eligible.append((StrategyMode.INTRADAY, intraday_edge))
-        if not eligible:
-            return self._wait("No strategy has sufficient post-cost edge within spread, liquidity and volatility limits.")
-
-        # Net edge is already expressed in R after estimated trading costs.
-        # Prefer the strongest eligible edge; ties prefer intraday to avoid
-        # selecting the faster mode without a measurable advantage.
-        mode, edge = max(
-            eligible,
-            key=lambda item: (item[1], item[0] is StrategyMode.INTRADAY),
-        )
+            return self._wait(
+                "SCALPING-only mode: scalping edge, spread or volatility gate is not satisfied."
+            )
+        mode, edge = StrategyMode.SCALPING, scalp_edge
         return StrategySelection(
             mode, opportunity.direction, edge,
-            f"{mode.value} selected from fresh market evidence and positive post-cost edge.",
+            "SCALPING selected from fresh market evidence and positive post-cost edge.",
         )
