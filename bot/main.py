@@ -636,9 +636,6 @@ def main() -> None:
         from twisted.internet.threads import deferToThread
         from twisted.internet.task import LoopingCall
 
-        from twisted.internet.threads import deferToThread
-        from twisted.internet.task import LoopingCall
-
         startup_notice = {"sent": False}
         startup_message = (
             "EliteTrade AI connected to the Pepperstone cTrader demo monitor. "
@@ -652,8 +649,11 @@ def main() -> None:
 
             def after_poll(_result):
                 if not startup_notice["sent"]:
-                    startup_notice["sent"] = True
-                    return deferToThread(controller.send, startup_message)
+                    notice = deferToThread(controller.send, startup_message)
+                    notice.addCallback(
+                        lambda result: startup_notice.__setitem__("sent", True) or result
+                    )
+                    return notice
                 return _result
 
             def recover(failure):
