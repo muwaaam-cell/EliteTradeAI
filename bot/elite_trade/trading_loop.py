@@ -75,6 +75,7 @@ class CandidateOutcome:
     sized_volume_units: int | None = None
     sized_intent: OrderIntent | None = None
     broker_risk_inputs: BrokerRiskSizingInputs | None = None
+    submission_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,8 @@ class TradingLoop:
     manage_positions is invoked before checking entry permissions, so daily
     target/loss locks and emergency pauses do not disable position management.
     Risk-state and candidate providers are called afresh for each candidate.
-    There is intentionally no order-submission callback in this class.
+    Submission is optional and injected by the host only after it composes a
+    durable, account-bound broker adapter. The loop never constructs requests.
     """
 
     def __init__(
@@ -111,6 +113,7 @@ class TradingLoop:
         adaptive_risk_config: AdaptiveRiskConfig | None = None,
         allow_legacy_sizing: bool = False,
         allow_unselected_strategy: bool = False,
+        submit_order: Callable[[EntryCandidate, OrderIntent, RiskPlan], object] | None = None,
     ) -> None:
         self.guard = guard
         self.kill_switch = kill_switch
@@ -119,6 +122,9 @@ class TradingLoop:
         self.get_candidates = get_candidates
         self.is_broker_connected = is_broker_connected
         self.demo_execution_authorized = demo_execution_authorized
+        if submit_order is not None and not callable(submit_order):
+            raise TypeError("submit_order must be callable when supplied.")
+        self.submit_order = submit_order
         self.now_epoch = now_epoch
         self.now = now
         if not isinstance(allow_legacy_sizing, bool):
@@ -302,17 +308,33 @@ class TradingLoop:
                     False,
                     "Trading-cycle input unavailable or invalid; entry rejected.",
                 )
-            # No broker order can be submitted from this module. The durable
-            # order ledger and verified execution/reconciliation adapter are
-            # prerequisites before an execution path may be added.
+            submitted = False
+            submission_error = None
+            if decision.allow_new_entry and self.submit_order is not None:
+                try:
+                    if sized_intent is None or plan is None:
+                        raise RuntimeError("A fully sized, risk-approved intent is required.")
+                    result = self.submit_order(candidate, sized_intent, plan)
+                    # A socket write or arbitrary truthy return is not broker
+                    # acceptance. Only the adapter's explicit request_sent flag
+                    # records that one durable-reserved request was transmitted.
+                    submitted = getattr(result, "request_sent", False) is True
+                    if not submitted:
+                        submission_error = "Execution adapter did not confirm that a request was sent."
+                except Exception as exc:
+                    submission_error = (
+                        "Execution adapter rejected or failed the request: "
+                        + " ".join(str(exc).split())[:240]
+                    )
             outcomes.append(CandidateOutcome(
-                symbol, decision, submitted=False,
+                symbol, decision, submitted=submitted,
                 risk_plan=plan,
                 sized_volume_units=volume,
                 sized_intent=sized_intent if decision.allow_new_entry else None,
                 broker_risk_inputs=(
                     candidate.broker_risk_inputs if decision.allow_new_entry else None
                 ),
+                submission_error=submission_error,
             ))
 
         return CycleResult(
@@ -320,5 +342,5 @@ class TradingLoop:
             management_error=None,
             candidates_seen=len(candidates),
             outcomes=tuple(outcomes),
-            entry_submission_enabled=False,
+            entry_submission_enabled=self.submit_order is not None,
         )
