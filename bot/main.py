@@ -1,4 +1,4 @@
-"""Demo-only cTrader market-data runner. No strategy or order sender is wired."""
+"""Demo-only cTrader market-data runner with authenticated Level II depth."""
 from __future__ import annotations
 
 import os
@@ -235,8 +235,8 @@ def main() -> None:
         history_end_utc=os.getenv("CTRADER_HISTORY_END_UTC") or None,
     )
 
-    # Level II is opt-in to preserve the Android low-data default.
-    depth_enabled = os.getenv("CTRADER_ENABLE_DEPTH", "0").strip().lower() in {
+    # Level II is enabled by default per the user-approved higher-data setting.
+    depth_enabled = os.getenv("CTRADER_ENABLE_DEPTH", "1").strip().lower() in {
         "1", "true", "yes",
     }
     _depth_runtime = None
@@ -248,7 +248,7 @@ def main() -> None:
         )
     else:
         print(
-            "Level II depth is disabled for low-data operation; "
+            "Level II depth is disabled by CTRADER_ENABLE_DEPTH=0; "
             "liquidity-dependent strategy selection remains unavailable."
         )
 
