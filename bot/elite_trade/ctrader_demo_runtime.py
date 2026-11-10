@@ -87,6 +87,17 @@ def compose_demo_execution_runtime(
     )
 
     def protected_authorizer(spec: object, symbol: str) -> bool:
+        if protection_monitor.is_stale:
+            if not getattr(transport, "position_reconciliation_in_flight", False):
+                try:
+                    transport.request_positions_reconcile()
+                except Exception as exc:
+                    on_unmatched(
+                        "Fresh protection reconciliation could not be requested: "
+                        + str(exc)[:240],
+                        spec,
+                    )
+            return False
         if not protection_monitor.allow_new_entries:
             return False
         if ledger.list_in_flight():
