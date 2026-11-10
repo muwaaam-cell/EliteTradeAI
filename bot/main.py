@@ -46,6 +46,7 @@ def main() -> None:
     settings = Settings.from_env()
 
     print("EliteTrade AI — Pepperstone cTrader guarded demo runtime")
+    print("Strategy policy: SCALPING ONLY; no INTRADAY fallback. All existing evidence, broker, protection and risk gates remain mandatory.")
     print("Order execution: demo-only; the TradingLoop starts only after fresh broker reconciliation and all evidence, risk and protection gates pass. Live execution is disabled.")
     if settings.ctrader_env != "demo":
         raise SystemExit("Refusing to start: this runtime supports demo accounts only.")
