@@ -149,5 +149,38 @@ class CTraderCloseCashNormalizationTests(unittest.TestCase):
             store.close()
 
 
+    def test_authenticated_position_status_is_account_scoped_and_lists_closed_only(self):
+        import tempfile
+        from pathlib import Path
+        from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = CTraderDealHistoryStore(Path(directory) / "deals.sqlite3")
+            store.record_position_status(
+                account_id=77, position_id="9001",
+                position_status=1, observed_epoch=100,
+            )
+            store.record_position_status(
+                account_id=77, position_id="9002",
+                position_status=2, observed_epoch=101,
+            )
+            store.record_position_status(
+                account_id=88, position_id="9003",
+                position_status=2, observed_epoch=102,
+            )
+            self.assertEqual(
+                store.get_position_status(account_id=77, position_id="9002"), 2
+            )
+            self.assertEqual(
+                store.closed_position_ids(account_id=77), ("9002",)
+            )
+            with self.assertRaises(DealHistoryError):
+                store.record_position_status(
+                    account_id=77, position_id="9004",
+                    position_status=99, observed_epoch=103,
+                )
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main()
