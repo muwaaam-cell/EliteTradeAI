@@ -15,9 +15,12 @@ class ShadowScalpingCalibrationTests(unittest.TestCase):
         result = []
         for index in range(count):
             high = 103.0 if target_on_entry and index == 61 else 101.0
+            # Keep the entry candle clear of the stop; the following candle
+            # controls whether the target or both barriers are reached.
+            low = 99.5 if index in {60, 61} else 99.0
             result.append(MarketBar(
                 timestamp=1000 + index * 900,
-                open=100.0, high=high, low=99.0, close=100.0,
+                open=100.0, high=high, low=low, close=100.0,
             ))
         return result
 
