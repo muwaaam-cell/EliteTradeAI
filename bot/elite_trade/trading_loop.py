@@ -23,6 +23,7 @@ from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.pretrade import PreTradeDecision, authorise_new_entry
 from elite_trade.instrument import InstrumentMetadata
+from elite_trade.strategy_selector import StrategyMode, StrategySelection
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class EntryCandidate:
     max_volume_units: int | None = None
     volume_step_units: int | None = None
     broker_risk_inputs: BrokerRiskSizingInputs | None = None
+    strategy_selection: StrategySelection | None = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,7 @@ class TradingLoop:
         risk_state_max_age_seconds: float = 5.0,
         adaptive_risk_config: AdaptiveRiskConfig | None = None,
         allow_legacy_sizing: bool = False,
+        allow_unselected_strategy: bool = False,
     ) -> None:
         self.guard = guard
         self.kill_switch = kill_switch
@@ -120,7 +123,10 @@ class TradingLoop:
         self.now = now
         if not isinstance(allow_legacy_sizing, bool):
             raise ValueError("allow_legacy_sizing must be boolean.")
+        if not isinstance(allow_unselected_strategy, bool):
+            raise ValueError("allow_unselected_strategy must be boolean.")
         self.allow_legacy_sizing = allow_legacy_sizing
+        self.allow_unselected_strategy = allow_unselected_strategy
         if (isinstance(risk_state_max_age_seconds, bool)
                 or not isinstance(risk_state_max_age_seconds, (int, float))
                 or not isfinite(risk_state_max_age_seconds)
@@ -160,6 +166,19 @@ class TradingLoop:
             volume = None
             sized_intent = None
             try:
+                if not self.allow_unselected_strategy:
+                    selection = candidate.strategy_selection
+                    if (
+                        not isinstance(selection, StrategySelection)
+                        or selection.mode is StrategyMode.WAIT
+                        or selection.direction != getattr(candidate.intent.side, "value", candidate.intent.side)
+                        or selection.expected_net_edge_r is None
+                        or not selection.expected_net_edge_r.is_finite()
+                        or selection.expected_net_edge_r <= 0
+                    ):
+                        raise ValueError(
+                            "A matching evidence-based SCALPING or INTRADAY selection is required."
+                        )
                 # Fresh account data per candidate: missing/stale/unreadable
                 # broker data must be rejected by the pre-trade gate.
                 risk = self.load_risk_state()
