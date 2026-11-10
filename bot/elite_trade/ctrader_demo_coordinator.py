@@ -72,6 +72,7 @@ class DemoTradingCoordinator:
         transport: object,
         authorization_gate: CycleAuthorizationGate,
         client_order_id_factory: Callable[[], str] | None = None,
+        enabled: bool = False,
     ) -> None:
         if not isinstance(trading_loop, TradingLoop):
             raise TypeError("A validated TradingLoop is required.")
@@ -83,6 +84,9 @@ class DemoTradingCoordinator:
             raise TypeError("A one-shot cycle authorization gate is required.")
         if not callable(client_order_id_factory) and client_order_id_factory is not None:
             raise TypeError("client_order_id_factory must be callable.")
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be boolean.")
+        self.enabled = enabled
         self.trading_loop = trading_loop
         self.execution_runtime = execution_runtime
         self.transport = transport
@@ -93,6 +97,8 @@ class DemoTradingCoordinator:
 
     def run_once(self) -> DemoCycleResult:
         cycle = self.trading_loop.run_cycle()
+        if not self.enabled:
+            return DemoCycleResult(cycle, None, "Demo trading coordinator is disabled.")
         if not cycle.positions_managed or cycle.management_error:
             return DemoCycleResult(
                 cycle, None, "Existing-position management failed; demo submission blocked."
