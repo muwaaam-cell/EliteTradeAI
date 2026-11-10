@@ -114,6 +114,15 @@ class CTraderPositionManager:
                 Decimal(row["pending_stop"]) if row["pending_stop"] is not None else None
             )
 
+    def _close_pending(self, position_id: str) -> bool:
+        with self._lock:
+            row = self._db.execute(
+                """SELECT 1 FROM position_close_requests
+                   WHERE account_id=? AND position_id=?""",
+                (str(self.account_id), position_id),
+            ).fetchone()
+        return row is not None
+
     def _set_pending(self, position_id: str, stop: Decimal) -> None:
         with self._lock, self._db:
             self._db.execute(
@@ -167,7 +176,7 @@ class CTraderPositionManager:
                 and getattr(item, "initial_cash_risk", None) is not None
                 for item in records
             )
-            if not owned:
+            if not owned or self._close_pending(position.broker_position_id):
                 continue
             if (
                 position.last_snapshot_epoch is None
