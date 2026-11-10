@@ -24,6 +24,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             authenticated_account_id=None,
             state=ConnectionState.DISCONNECTED,
             send_demo_order_request=self.sent.append,
+            set_reconcile_handler=lambda handler: setattr(self.transport, 'on_reconcile', handler),
         )
         self.runtime = compose_demo_execution_runtime(
             transport=self.transport,

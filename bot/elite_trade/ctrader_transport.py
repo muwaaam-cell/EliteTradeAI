@@ -13,6 +13,7 @@ from typing import Callable
 
 from elite_trade.account_snapshot import account_snapshot_from_ctrader
 from elite_trade.ctrader_instruments import instrument_from_ctrader
+from elite_trade.ctrader_deal_history import build_deal_list_request
 
 
 class ConnectionState(str, Enum):
@@ -37,6 +38,7 @@ class CTraderSdkTransport:
 
     HEARTBEAT_SECONDS = 10
     RECONCILE_TIMEOUT_SECONDS = 15
+    REQUEST_TIMEOUT_SECONDS = 20
 
     def __init__(
         self,
@@ -46,6 +48,7 @@ class CTraderSdkTransport:
         client_secret: str,
         access_token: str,
         account_id: int | None = None,
+        requested_symbols: tuple[str, ...] | None = None,
         on_accounts: Callable[[tuple[TradingAccount, ...]], None] | None = None,
         on_state: Callable[[ConnectionState], None] | None = None,
         on_error: Callable[[str], None] | None = None,
@@ -54,6 +57,7 @@ class CTraderSdkTransport:
         on_execution_event: Callable[[object], None] | None = None,
         on_order_error: Callable[[object], None] | None = None,
         on_account_snapshot: Callable[[object], None] | None = None,
+        on_deal_history: Callable[[object, int, int], None] | None = None,
         on_reconcile: Callable[[object], None] | None = None,
         on_instruments: Callable[[tuple[object, ...]], None] | None = None,
         sdk=None,
@@ -71,6 +75,18 @@ class CTraderSdkTransport:
         self.client_secret = client_secret
         self.access_token = access_token
         self.requested_account_id = int(account_id) if account_id is not None else None
+        if requested_symbols is None:
+            self.requested_symbols = None
+        else:
+            if isinstance(requested_symbols, str):
+                raise ValueError("Requested symbols must be a collection of symbol names.")
+            try:
+                normalized = tuple(str(value).strip().upper() for value in requested_symbols)
+            except TypeError as exc:
+                raise ValueError("Requested symbols must be a collection of symbol names.") from exc
+            if not normalized or any(not value for value in normalized) or len(set(normalized)) != len(normalized):
+                raise ValueError("Requested symbols must be non-empty and unique.")
+            self.requested_symbols = normalized
         self.on_accounts = on_accounts or (lambda accounts: None)
         self.on_state = on_state or (lambda state: None)
         self.on_error = on_error or (lambda message: None)
@@ -79,11 +95,15 @@ class CTraderSdkTransport:
         self.on_execution_event = on_execution_event or (lambda event: None)
         self.on_order_error = on_order_error or (lambda event: None)
         self.on_account_snapshot = on_account_snapshot or (lambda snapshot: None)
+        self.on_deal_history = on_deal_history or (lambda response, start, end: None)
+        self._deal_history_in_flight = False
+        self._deal_history_range = None
         self.on_reconcile = on_reconcile or (lambda response: None)
         self._has_reconcile_handler = on_reconcile is not None
         self.on_instruments = on_instruments or (lambda instruments: None)
         self._catalog_in_flight = False
         self._catalog_symbols = None
+        self._broker_symbol_names: dict[int, str] = {}
         self._catalog_assets = None
         self._catalog_trader = None
         self._catalog_full_request_sent = False
@@ -100,6 +120,11 @@ class CTraderSdkTransport:
         self._accounts: dict[int, TradingAccount] = {}
         self.state = ConnectionState.DISCONNECTED
         self.authenticated_account_id: int | None = None
+
+    @property
+    def broker_symbol_names(self) -> dict[int, str]:
+        """Return the complete authenticated account symbol-name catalogue."""
+        return dict(self._broker_symbol_names)
 
     def _load_sdk(self):
         if self._sdk is None:
@@ -125,6 +150,7 @@ class CTraderSdkTransport:
                 ProtoOATraderRes,
                 ProtoOAGetPositionUnrealizedPnLReq,
                 ProtoOAGetPositionUnrealizedPnLRes,
+                ProtoOADealListReq, ProtoOADealListRes,
                 ProtoOAReconcileReq,
                 ProtoOAReconcileRes,
                 ProtoOASymbolsListReq,
@@ -159,6 +185,8 @@ class CTraderSdkTransport:
                 "ProtoOATraderRes": ProtoOATraderRes,
                 "ProtoOAGetPositionUnrealizedPnLReq": ProtoOAGetPositionUnrealizedPnLReq,
                 "ProtoOAGetPositionUnrealizedPnLRes": ProtoOAGetPositionUnrealizedPnLRes,
+                "ProtoOADealListReq": ProtoOADealListReq,
+                "ProtoOADealListRes": ProtoOADealListRes,
                 "ProtoOAReconcileReq": ProtoOAReconcileReq,
                 "ProtoOAReconcileRes": ProtoOAReconcileRes,
                 "ProtoOASymbolsListReq": ProtoOASymbolsListReq,
@@ -193,12 +221,22 @@ class CTraderSdkTransport:
         self._client.startService()
 
     def _send(self, request):
-        """Send a protocol request and preserve its Deferred for lifecycle owners."""
+        """Send a request and ignore stale Deferred timeouts after progress."""
         if self._client is None:
             raise RuntimeError("cTrader transport is not connected.")
-        deferred = self._client.send(request)
+
+        sent_state = self.state
+        request_name = type(request).__name__
+        deferred = self._client.send(
+            request,
+            responseTimeoutInSeconds=self.REQUEST_TIMEOUT_SECONDS,
+        )
         if hasattr(deferred, "addErrback"):
-            deferred.addErrback(self._send_failed)
+            deferred.addErrback(
+                lambda failure: self._send_failed(
+                    failure, sent_state, request_name
+                )
+            )
         return deferred
 
     def send_demo_order_request(self, request):
@@ -220,9 +258,35 @@ class CTraderSdkTransport:
             raise TypeError("Only cTrader market-order protobuf requests may use this sender.")
         return self._send(request)
 
-    def _send_failed(self, failure):
-        self._fail("cTrader request failed; inspect protected runtime diagnostics.")
-        return failure
+    def _send_failed(self, failure, sent_state=None, request_name=""):
+        error = getattr(failure, "value", failure)
+
+        # Heartbeats are handled by the connection lifecycle, not account auth.
+        if request_name == "ProtoHeartbeatEvent":
+            return None
+
+        # A previous request may time out after its response callback has
+        # already advanced the state machine.
+        if self.state == ConnectionState.ERROR:
+            return None
+        if (
+            type(error).__name__ == "TimeoutError"
+            and sent_state is not None
+            and self.state != sent_state
+        ):
+            return None
+
+        detail = " ".join(str(error).split())[:240]
+        for secret in (self.client_secret, self.access_token, self.client_id):
+            if secret:
+                detail = detail.replace(secret, "[REDACTED]")
+        if not detail:
+            detail = "No additional error details supplied."
+
+        self._fail(
+            f"cTrader request {request_name or chr(63)} failed ({type(error).__name__}: {detail})"
+        )
+        return None
 
     def _connected(self, client) -> None:
         self._set_state(ConnectionState.APPLICATION_AUTHENTICATING)
@@ -266,10 +330,11 @@ class CTraderSdkTransport:
                     self._fail("No cTrader accounts were returned for this authorization.")
                     return
                 self._accounts = {item.account_id: item for item in accounts}
+                configured_account_id = self.requested_account_id
                 self._set_state(ConnectionState.AWAITING_ACCOUNT_SELECTION)
                 self.on_accounts(accounts)
-                if self.requested_account_id is not None:
-                    self.select_account(self.requested_account_id)
+                if configured_account_id is not None:
+                    self.select_account(configured_account_id)
             elif payload_type == self._sdk["ProtoOATraderRes"]().payloadType:
                 response = extract(message)
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
@@ -329,6 +394,18 @@ class CTraderSdkTransport:
                     return
                 self._pending_pnl = response
                 self._complete_account_snapshot_if_ready()
+            elif ("ProtoOADealListRes" in self._sdk and payload_type == self._sdk["ProtoOADealListRes"]().payloadType):
+                response = extract(message)
+                if int(response.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received deal history for an unexpected cTrader account.")
+                    return
+                if not self._deal_history_in_flight or self._deal_history_range is None:
+                    self._fail("Received an unsolicited cTrader deal-history response.")
+                    return
+                start_ms, end_ms = self._deal_history_range
+                self._deal_history_in_flight = False
+                self._deal_history_range = None
+                self.on_deal_history(response, start_ms, end_ms)
             elif payload_type == self._sdk["ProtoOAReconcileRes"]().payloadType:
                 response = extract(message)
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
@@ -368,7 +445,16 @@ class CTraderSdkTransport:
             elif payload_type == self._sdk["ProtoOAErrorRes"]().payloadType:
                 error = extract(message)
                 code = str(getattr(error, "errorCode", "unknown"))
-                self._fail(f"cTrader rejected a request ({code}); authentication/data flow stopped.")
+                description = str(getattr(error, "description", "") or "").strip()
+                for secret in (self.client_secret, self.access_token):
+                    if secret:
+                        description = description.replace(secret, "[REDACTED]")
+                description = description[:240]
+                detail = f": {description}" if description else ""
+                self._fail(
+                    f"cTrader rejected a request ({code}){detail}; "
+                    "authentication/data flow stopped."
+                )
             elif payload_type == self._sdk["ProtoOAAccountAuthRes"]().payloadType:
                 response = extract(message)
                 account_id = int(response.ctidTraderAccountId)
@@ -377,8 +463,13 @@ class CTraderSdkTransport:
                     return
                 self.authenticated_account_id = account_id
                 self._set_state(ConnectionState.AUTHENTICATED)
-        except Exception:
-            self._fail("Unexpected cTrader protocol response; authentication stopped.")
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            for secret in (self.client_secret, self.access_token):
+                if secret:
+                    detail = detail.replace(secret, "[REDACTED]")
+            detail = detail[:240]
+            self._fail(f"cTrader response processing failed ({detail}); authentication stopped.")
 
     def request_instrument_catalog(self) -> None:
         """Fetch account-scoped symbols, assets and full symbol metadata.
@@ -420,15 +511,62 @@ class CTraderSdkTransport:
             or self._catalog_trader is None
         ):
             return
-        symbol_ids = tuple(int(item.symbolId) for item in self._catalog_symbols)
-        if not symbol_ids or any(value <= 0 for value in symbol_ids) or len(set(symbol_ids)) != len(symbol_ids):
+
+        catalogue = tuple(self._catalog_symbols)
+        all_ids = tuple(int(item.symbolId) for item in catalogue)
+        if not all_ids or any(value <= 0 for value in all_ids) or len(set(all_ids)) != len(all_ids):
             self._fail("cTrader returned an empty or invalid symbol catalogue.")
             return
+
+        all_names = {
+            int(item.symbolId): str(getattr(item, "symbolName", "")).strip()
+            for item in catalogue
+        }
+        if len(all_names) != len(catalogue) or any(not name for name in all_names.values()):
+            self._fail("cTrader light symbol catalogue has missing or invalid names.")
+            return
+        self._broker_symbol_names = all_names
+
+        selected_symbols = catalogue
+        if self.requested_symbols is not None:
+            by_name = {}
+            duplicate_names = set()
+            for item in catalogue:
+                name = str(getattr(item, "symbolName", "")).strip().upper()
+                if not name:
+                    continue
+                if name in by_name:
+                    duplicate_names.add(name)
+                else:
+                    by_name[name] = item
+
+            ambiguous = [name for name in self.requested_symbols if name in duplicate_names]
+            missing = [name for name in self.requested_symbols if name not in by_name]
+            if ambiguous or missing:
+                details = []
+                if missing:
+                    details.append("missing: " + ", ".join(missing))
+                if ambiguous:
+                    details.append("ambiguous: " + ", ".join(ambiguous))
+                self._fail(
+                    "Requested cTrader instruments could not be selected ("
+                    + "; ".join(details) + ")."
+                )
+                return
+
+            selected_symbols = tuple(by_name[name] for name in self.requested_symbols)
+
+        selected_ids = tuple(int(item.symbolId) for item in selected_symbols)
+        if not selected_ids or any(value <= 0 for value in selected_ids) or len(set(selected_ids)) != len(selected_ids):
+            self._fail("Selected cTrader instruments have invalid symbol IDs.")
+            return
+
+        # Response validation now compares against exactly the selected subset.
+        self._catalog_symbols = selected_symbols
         request = self._sdk["ProtoOASymbolByIdReq"]()
         request.ctidTraderAccountId = self.authenticated_account_id
-        request.symbolId.extend(symbol_ids)
-        # Set before sending: duplicate/out-of-order prerequisite responses must
-        # never cause a second full-symbol request for the same catalogue cycle.
+        request.symbolId.extend(selected_ids)
+
         self._catalog_full_request_sent = True
         try:
             self._send(request)
@@ -437,11 +575,38 @@ class CTraderSdkTransport:
             raise
 
     def _reset_catalog(self) -> None:
+        self._broker_symbol_names = {}
         self._catalog_in_flight = False
         self._catalog_symbols = None
         self._catalog_assets = None
         self._catalog_trader = None
         self._catalog_full_request_sent = False
+
+    def request_deal_history(
+        self, from_timestamp_ms: int, to_timestamp_ms: int, *, max_rows: int = 1000
+    ):
+        """Request one bounded deal-history page for the authenticated account."""
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Deal history requires an authenticated account.")
+        if self._deal_history_in_flight:
+            raise RuntimeError("A deal-history request is already outstanding.")
+        if not 1 <= int(max_rows) <= 1000:
+            raise ValueError("Deal-history page size must be between 1 and 1000.")
+        request = build_deal_list_request(
+            sdk=self._sdk,
+            account_id=self.authenticated_account_id,
+            from_timestamp_ms=from_timestamp_ms,
+            to_timestamp_ms=to_timestamp_ms,
+            max_rows=max_rows,
+        )
+        self._deal_history_range = (int(from_timestamp_ms), int(to_timestamp_ms))
+        self._deal_history_in_flight = True
+        try:
+            return self._send(request)
+        except Exception:
+            self._deal_history_in_flight = False
+            self._deal_history_range = None
+            raise
 
     def request_account_snapshot(self) -> None:
         """Request broker balance and all open-position net PnL for the authenticated account."""
@@ -472,6 +637,18 @@ class CTraderSdkTransport:
             self._fail("cTrader account snapshot is incomplete or inconsistent; risk sizing stopped.")
             return
         self.on_account_snapshot(snapshot)
+
+    def set_reconcile_handler(self, handler: Callable[[object], None]) -> None:
+        """Install the reconciliation callback before transport startup."""
+        if not callable(handler):
+            raise TypeError("Reconciliation handler must be callable.")
+        state = getattr(self.state, "value", self.state)
+        if state != "disconnected":
+            raise RuntimeError(
+                "Reconciliation handler must be installed before transport startup."
+            )
+        self.on_reconcile = handler
+        self._has_reconcile_handler = True
 
     def request_positions_reconcile(self) -> None:
         """Request cTrader's authoritative open positions and pending orders snapshot.
@@ -606,6 +783,8 @@ class CTraderSdkTransport:
         self._heartbeat_call = None
 
     def _fail(self, message: str) -> None:
+        if self.state == ConnectionState.ERROR:
+            return
         self._cancel_heartbeat()
         self._cancel_reconcile_timeout()
         self.authenticated_account_id = None
@@ -613,6 +792,8 @@ class CTraderSdkTransport:
         self._pending_pnl = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
+        self._deal_history_in_flight = False
+        self._deal_history_range = None
         self._reset_catalog()
         self._set_state(ConnectionState.ERROR)
         self.on_error(message)
@@ -625,6 +806,8 @@ class CTraderSdkTransport:
         self._pending_pnl = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
+        self._deal_history_in_flight = False
+        self._deal_history_range = None
         self._reset_catalog()
         if self._client is not None:
             self._client.stopService()

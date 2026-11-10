@@ -32,8 +32,9 @@ class FakeClient:
     def setMessageReceivedCallback(self, callback): self.received = callback
     def startService(self): self.started = True
     def stopService(self): self.stopped = True
-    def send(self, request):
+    def send(self, request, **kwargs):
         self.sent.append(request)
+        self.last_send_kwargs = kwargs
         self.last_deferred = FakeDeferred()
         return self.last_deferred
 
@@ -94,6 +95,55 @@ class CTraderTransportTests(unittest.TestCase):
         transport._client = client
         client.received = transport._message_received
         return transport, client, reactor
+
+    def test_account_callback_selects_only_once(self):
+        holder = {}
+
+        def choose_account(accounts):
+            holder["transport"].select_account(accounts[0].account_id)
+
+        transport, client, _ = self.make_transport(on_accounts=choose_account)
+        holder["transport"] = transport
+        transport.start()
+        client.connected(client)
+        client.received(client, SimpleNamespace(payloadType=2))
+        client.received(client, SimpleNamespace(
+            payloadType=4,
+            body=SimpleNamespace(ctidTraderAccount=[
+                SimpleNamespace(ctidTraderAccountId=77, isLive=False)
+            ])
+        ))
+
+        auth_requests = [r for r in client.sent if r.payloadType == 5]
+        self.assertEqual(len(auth_requests), 1)
+        self.assertEqual(transport.state, ConnectionState.ACCOUNT_AUTHENTICATING)
+
+    def test_configured_account_is_selected_only_once(self):
+        transport, client, _ = self.make_transport(account_id=77)
+        transport.start()
+        client.connected(client)
+        client.received(client, SimpleNamespace(payloadType=2))
+        client.received(client, SimpleNamespace(
+            payloadType=4,
+            body=SimpleNamespace(ctidTraderAccount=[
+                SimpleNamespace(ctidTraderAccountId=77, isLive=False)
+            ])
+        ))
+
+        auth_requests = [r for r in client.sent if r.payloadType == 5]
+        self.assertEqual(len(auth_requests), 1)
+        self.assertEqual(transport.state, ConnectionState.ACCOUNT_AUTHENTICATING)
+
+    def test_stale_request_timeout_does_not_undo_connection_progress(self):
+        transport, client, _ = self.make_transport()
+        transport.state = ConnectionState.APPLICATION_AUTHENTICATING
+        transport._send(transport._sdk["ProtoOAApplicationAuthReq"]())
+
+        transport.state = ConnectionState.AWAITING_ACCOUNT_SELECTION
+        client.last_deferred.errback(
+            SimpleNamespace(value=TimeoutError(20, "Deferred"))
+        )
+        self.assertEqual(transport.state, ConnectionState.AWAITING_ACCOUNT_SELECTION)
 
     def test_app_auth_then_account_discovery_and_explicit_selection(self):
         discovered = []
@@ -358,7 +408,7 @@ class CTraderTransportTests(unittest.TestCase):
         transport, client, reactor = self.make_transport(on_reconcile=lambda response: None)
         transport.state = ConnectionState.AUTHENTICATED
         transport.authenticated_account_id = 77
-        def fail_send(request):
+        def fail_send(request, **kwargs):
             raise OSError("socket unavailable")
         client.send = fail_send
         with self.assertRaises(OSError):

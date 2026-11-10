@@ -41,13 +41,16 @@ class MarketMemoryTests(unittest.TestCase):
 
     def test_rejects_invalid_signal_and_bar(self):
         memory = MarketMemory(":memory:")
+        self.addCleanup(memory.close)
         with self.assertRaises(ValueError):
             memory.record_signal("bad", "EURUSD", "M5", "HOLD", 1.0, 1)
         with self.assertRaises(ValueError):
             memory.store_bars("EURUSD", "M5", [MarketBar(1, 1, 0.9, 0.8, 1)])
 
     def test_empty_summary_has_no_fake_win_rate(self):
-        summary = MarketMemory(":memory:").outcome_summary()
+        memory = MarketMemory(":memory:")
+        self.addCleanup(memory.close)
+        summary = memory.outcome_summary()
         self.assertIsNone(summary.win_rate_pct)
         self.assertEqual(summary.evaluated, 0)
 

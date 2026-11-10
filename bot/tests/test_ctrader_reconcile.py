@@ -68,6 +68,14 @@ class CTraderReconcileMappingTests(unittest.TestCase):
                 response(account_id=88), expected_account_id=77, symbol_names={}
             )
 
+    def test_maps_position_in_symbol_outside_requested_market_pair(self):
+        mapped = map_ctrader_reconcile_response(
+            response(positions=[position(symbol_id=999)]),
+            expected_account_id=77,
+            symbol_names={7: "XAUUSD", 999: "GBPUSD"},
+        )
+        self.assertEqual(mapped.positions[0].symbol, "GBPUSD")
+
     def test_rejects_unknown_symbol(self):
         with self.assertRaises(ValueError):
             map_ctrader_reconcile_response(

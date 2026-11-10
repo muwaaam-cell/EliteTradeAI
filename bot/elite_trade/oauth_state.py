@@ -1,6 +1,8 @@
 """One-time, expiring OAuth state storage backed by SQLite."""
 from __future__ import annotations
 
+from contextlib import closing
+
 import hashlib
 import secrets
 import sqlite3
@@ -15,7 +17,7 @@ class OAuthStateStore:
         self.path = Path(path)
         self.ttl_seconds = ttl_seconds
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute("""CREATE TABLE IF NOT EXISTS oauth_states (
                 digest TEXT PRIMARY KEY,
                 expires_at INTEGER NOT NULL,
@@ -42,7 +44,7 @@ class OAuthStateStore:
         state = secrets.token_urlsafe(32)
         digest = self._digest(state)
         expiry = (int(time.time()) if now is None else int(now)) + self.ttl_seconds
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute("INSERT INTO oauth_states(digest, expires_at) VALUES (?, ?)",
                        (digest, expiry))
             db.execute("DELETE FROM oauth_states WHERE expires_at < ? OR consumed = 1",
@@ -52,7 +54,7 @@ class OAuthStateStore:
     def consume(self, state: str, *, now: int | None = None) -> bool:
         digest = self._digest(state)
         current = int(time.time()) if now is None else int(now)
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT expires_at, consumed FROM oauth_states WHERE digest = ?",

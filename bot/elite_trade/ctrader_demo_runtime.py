@@ -106,7 +106,7 @@ def compose_demo_execution_runtime(
     # Install all broker-event callbacks before the transport is allowed to start.
     transport.on_execution_event = execution_handler
     transport.on_order_error = order_error_handler
-    transport.on_reconcile = reconcile_handler
+    transport.set_reconcile_handler(reconcile_handler)
 
     return CTraderDemoExecutionRuntime(
         transport=transport,
