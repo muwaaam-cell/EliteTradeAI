@@ -621,6 +621,28 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertFalse(errors)
 
 
+    def test_deal_history_pagination_stops_when_page_persistence_fails(self):
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_deal_history=lambda response, start, end: False,
+            on_error=errors.append,
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_deal_history(100, 900, max_rows=500)
+        client.received(client, SimpleNamespace(
+            payloadType=28,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, hasMore=True, deal=[]
+            ),
+        ))
+        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertFalse(transport._deal_history_in_flight)
+        self.assertTrue(errors)
+        self.assertIn("not durably accepted", errors[0])
+
+
     def test_demo_position_amend_and_close_senders_are_account_scoped(self):
         transport, client, _ = self.make_transport()
         transport.state = ConnectionState.AUTHENTICATED
