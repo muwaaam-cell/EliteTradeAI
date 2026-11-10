@@ -677,7 +677,10 @@ def main() -> None:
         from twisted.internet.task import LoopingCall
 
         last_history_refresh = {"epoch": 0.0}
-        refresh_errors = {"snapshot": False, "history": False}
+        last_reconcile_refresh = {"epoch": 0.0}
+        refresh_errors = {
+            "snapshot": False, "history": False, "reconcile": False
+        }
 
         def refresh() -> None:
             if transport.state is not ConnectionState.AUTHENTICATED:
@@ -694,6 +697,27 @@ def main() -> None:
                         )
                     refresh_errors["snapshot"] = True
             now = time.time()
+            # Keep the protection audit recoverable after a manual position is
+            # protected/closed in the broker UI. The initial reconciliation may
+            # correctly block entries; repeat it until the monitor sees a fresh
+            # broker snapshot. Never send amendments or closes from this path.
+            if (
+                now - last_reconcile_refresh["epoch"] >= 10.0
+                and not getattr(
+                    transport, "position_reconciliation_in_flight", False
+                )
+            ):
+                try:
+                    transport.request_positions_reconcile()
+                    last_reconcile_refresh["epoch"] = now
+                    refresh_errors["reconcile"] = False
+                except Exception as exc:
+                    if not refresh_errors["reconcile"]:
+                        print(
+                            "Periodic position reconciliation failed: "
+                            + " ".join(str(exc).split())[:160]
+                        )
+                    refresh_errors["reconcile"] = True
             if (
                 now - last_history_refresh["epoch"] >= 30.0
                 and not getattr(transport, "_deal_history_in_flight", False)
