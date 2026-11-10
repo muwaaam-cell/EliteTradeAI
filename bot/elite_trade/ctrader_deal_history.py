@@ -89,6 +89,15 @@ def _canonical_close_detail(close_detail: object) -> dict | None:
             if candidate in raw:
                 raw[canonical] = raw[candidate]
                 break
+            value = _value(close_detail, candidate)
+            if value is not None:
+                raw[canonical] = value
+                break
+    for field in ("balance", "swap", "commission"):
+        if field not in raw:
+            value = _value(close_detail, field)
+            if value is not None:
+                raw[field] = value
     return raw
 
 
