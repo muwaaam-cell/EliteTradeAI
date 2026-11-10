@@ -62,6 +62,7 @@ class TradingLoopTests(unittest.TestCase):
             now_epoch=lambda: 101.0,
             now=lambda: self.now,
             allow_legacy_sizing=True,
+            allow_unselected_strategy=True,
         )
         args.update(overrides)
         return TradingLoop(**args)
@@ -76,6 +77,11 @@ class TradingLoopTests(unittest.TestCase):
         self.assertFalse(result.entry_submission_enabled)
         self.assertEqual(result.outcomes[0].sized_volume_units, 500)
         self.assertEqual(result.outcomes[0].risk_plan.risk_cash, Decimal('5.000'))
+
+    def test_default_cycle_rejects_missing_or_wait_strategy_selection(self):
+        missing = self.make_loop(allow_unselected_strategy=False).run_cycle()
+        self.assertFalse(missing.outcomes[0].decision.allow_new_entry)
+        self.assertIsNone(missing.outcomes[0].sized_volume_units)
 
     def test_default_cycle_rejects_legacy_unverified_sizing_inputs(self):
         result = self.make_loop(allow_legacy_sizing=False).run_cycle()
