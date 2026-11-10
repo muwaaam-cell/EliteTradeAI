@@ -38,6 +38,7 @@ class OrderRecord:
     updated_at: int
     broker_order_id: str | None = None
     last_error: str | None = None
+    broker_position_id: str | None = None
     strategy_mode: str | None = None
     initial_cash_risk: Decimal | None = None
 
@@ -68,6 +69,7 @@ class OrderLedger:
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     broker_order_id TEXT UNIQUE,
+                    broker_position_id TEXT,
                     last_error TEXT,
                     strategy_mode TEXT,
                     initial_cash_risk TEXT
@@ -91,6 +93,7 @@ class OrderLedger:
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL,
                         broker_order_id TEXT UNIQUE,
+                        broker_position_id TEXT,
                         last_error TEXT,
                         strategy_mode TEXT,
                         initial_cash_risk TEXT
@@ -109,6 +112,8 @@ class OrderLedger:
             columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()
             }
+            if "broker_position_id" not in columns:
+                db.execute("ALTER TABLE orders ADD COLUMN broker_position_id TEXT")
             if "strategy_mode" not in columns:
                 db.execute("ALTER TABLE orders ADD COLUMN strategy_mode TEXT")
             if "initial_cash_risk" not in columns:
@@ -176,6 +181,7 @@ class OrderLedger:
             updated_at=row["updated_at"],
             broker_order_id=row["broker_order_id"],
             last_error=row["last_error"],
+            broker_position_id=row["broker_position_id"],
             strategy_mode=row["strategy_mode"],
             initial_cash_risk=(
                 Decimal(row["initial_cash_risk"])
@@ -285,8 +291,9 @@ class OrderLedger:
         broker_order_id: str,
         *,
         now: int,
+        broker_position_id: str | None = None,
     ) -> bool:
-        """Record broker-confirmed cumulative filled volume without losing the remainder."""
+        """Record broker-confirmed cumulative fill and its position correlation."""
         order_id = self._text(client_order_id, "client_order_id")
         broker_id = self._text(broker_order_id, "broker_order_id")
         if isinstance(filled_volume_units, bool) or not isinstance(filled_volume_units, int) or filled_volume_units <= 0:
@@ -309,10 +316,16 @@ class OrderLedger:
                 db.execute("ROLLBACK")
                 raise ValueError("Cumulative filled volume is decreasing or exceeds requested volume.")
             status = FILLED if filled_volume_units == row["volume_units"] else PARTIALLY_FILLED
+            position_id = (
+                self._text(broker_position_id, "broker_position_id")
+                if broker_position_id is not None else None
+            )
             db.execute(
                 """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
-                   broker_order_id=COALESCE(broker_order_id,?) WHERE client_order_id=?""",
-                (status, filled_volume_units, now, broker_id, order_id),
+                   broker_order_id=COALESCE(broker_order_id,?),
+                   broker_position_id=COALESCE(broker_position_id,?)
+                   WHERE client_order_id=?""",
+                (status, filled_volume_units, now, broker_id, position_id, order_id),
             )
             db.execute("COMMIT")
             return True
@@ -324,6 +337,7 @@ class OrderLedger:
         broker_order_id: str,
         *,
         now: int,
+        broker_position_id: str | None = None,
     ) -> bool:
         """Resolve an uncertain send from an authenticated cumulative fill event."""
         order_id = self._text(client_order_id, "client_order_id")
@@ -348,11 +362,16 @@ class OrderLedger:
                 db.execute("ROLLBACK")
                 raise ValueError("Recovered fill exceeds the requested volume.")
             status = FILLED if filled_volume_units == row["volume_units"] else PARTIALLY_FILLED
+            position_id = (
+                self._text(broker_position_id, "broker_position_id")
+                if broker_position_id is not None else None
+            )
             db.execute(
                 """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
-                   broker_order_id=COALESCE(broker_order_id,?),last_error=NULL
+                   broker_order_id=COALESCE(broker_order_id,?),
+                   broker_position_id=COALESCE(broker_position_id,?),last_error=NULL
                    WHERE client_order_id=?""",
-                (status, filled_volume_units, now, broker_id, order_id),
+                (status, filled_volume_units, now, broker_id, position_id, order_id),
             )
             db.execute("COMMIT")
             return True
