@@ -768,19 +768,25 @@ def main() -> None:
             ):
                 bot_positions.append(position)
         runtime = execution_runtime_ref.get("runtime")
-        protection_ok = bool(
+        protection_gate_open = bool(
             runtime is not None and runtime.protection_monitor.allow_new_entries
         )
+        loop_active = bool(trading_loop_ref.get("enabled"))
         paused = KillSwitch(
             os.getenv("ELITE_KILL_SWITCH_FILE", "state/KILL_SWITCH")
         ).is_active()
+        entry_state = (
+            "EVIDENCE_AND_RISK_GATED" if loop_active and protection_gate_open
+            else "BLOCKED"
+        )
+        loop_state = "RUNNING" if loop_active else "NOT_SCHEDULED"
         return (
             f"broker={state}; account={account_id or 'not authenticated'}; "
             f"broker_open_positions={len(open_positions)}; "
             f"bot_managed_positions={len(bot_positions)}; "
-            f"protection_snapshot_fresh={protection_ok}; "
-            f"emergency_pause={paused}; trading_loop=NOT_SCHEDULED; "
-            "new_entries=BLOCKED_PENDING_DAILY_RISK_AND_DEMO_VALIDATION"
+            f"protection_gate_open={protection_gate_open}; "
+            f"emergency_pause={paused}; trading_loop={loop_state}; "
+            f"new_entries={entry_state}"
         )
 
     def start_telegram_runtime() -> None:
