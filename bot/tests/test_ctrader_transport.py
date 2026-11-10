@@ -13,7 +13,7 @@ from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 class FakeRequest:
     def __init__(self):
         self.payloadType = type(self).payload_type
-        if type(self).__name__ in {"ProtoOASubscribeSpotsReq", "ProtoOASymbolByIdReq"}:
+        if type(self).__name__ in {"ProtoOASubscribeSpotsReq", "ProtoOASymbolByIdReq", "ProtoOASubscribeDepthQuotesReq"}:
             self.symbolId = []
 
 
@@ -69,6 +69,7 @@ def fake_sdk():
         ("ProtoOAAssetListReq", 19), ("ProtoOAAssetListRes", 20),
         ("ProtoOASymbolByIdReq", 21), ("ProtoOASymbolByIdRes", 22),
         ("ProtoOAExecutionEvent", 23),
+        ("ProtoOADepthEvent", 25), ("ProtoOASubscribeDepthQuotesReq", 26),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -95,6 +96,31 @@ class CTraderTransportTests(unittest.TestCase):
         transport._client = client
         client.received = transport._message_received
         return transport, client, reactor
+
+    def test_depth_subscription_and_account_scoped_depth_events(self):
+        received = []
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_depth_event=received.append, on_error=errors.append
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.subscribe_depth_quotes((7, 9))
+        request = client.sent[-1]
+        self.assertEqual(request.payloadType, 26)
+        self.assertEqual(request.ctidTraderAccountId, 77)
+        self.assertEqual(request.symbolId, [7, 9])
+        with self.assertRaises(ValueError):
+            transport.subscribe_depth_quotes((7, 7))
+        client.received(client, SimpleNamespace(
+            payloadType=25,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, symbolId=7,
+                newQuotes=(), deletedQuotes=(),
+            ),
+        ))
+        self.assertEqual(len(received), 1)
+        self.assertFalse(errors)
 
     def test_account_callback_selects_only_once(self):
         holder = {}
