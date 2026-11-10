@@ -22,6 +22,8 @@ from elite_trade.ctrader_fx_conversion import conversion_rate
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
+from elite_trade.order_ledger import OrderLedger
+from elite_trade.ctrader_trading_loop_bridge import compose_demo_trading_loop_runtime
 from elite_trade.market_memory import MarketMemory
 from elite_trade.worker_token_vault import WorkerTokenVault
 
@@ -31,7 +33,7 @@ def main() -> None:
     settings = Settings.from_env()
 
     print("EliteTrade AI — Pepperstone cTrader demo market-data runtime")
-    print("Order execution: HARD DISABLED (candidate analysis is connected; no order adapter is created)")
+    print("Order execution: no trading loop is scheduled; demo adapter remains behind the evidence and risk gates.")
     if settings.ctrader_env != "demo":
         raise SystemExit("Refusing to start: this runtime supports demo accounts only.")
     if settings.ctrader_account_id is None:
@@ -82,10 +84,12 @@ def main() -> None:
     transport_ref: dict[str, CTraderSdkTransport] = {}
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
     account_risk_ref: dict[str, object] = {}
+    execution_runtime_ref: dict[str, object] = {}
 
     def on_reconcile(response: object) -> object:
         """Persist and report the complete broker snapshot without managing positions."""
-        snapshot = reconcile_handler(response)
+        runtime = execution_runtime_ref.get("runtime")
+        snapshot = runtime.on_reconcile(response) if runtime is not None else reconcile_handler(response)
         protected = sum(
             position.stop_loss is not None and position.take_profit is not None
             for position in snapshot.positions
@@ -224,7 +228,50 @@ def main() -> None:
         on_account_snapshot=on_account_snapshot,
     )
     transport_ref["transport"] = transport
-    transport.set_reconcile_handler(on_reconcile)
+
+    # Compose the account-bound demo order/event lifecycle before transport startup.
+    # The one-shot bridge can only authorize requests invoked by TradingLoop's
+    # post-sizing submit_order callback. No TradingLoop is scheduled in this
+    # market-analysis process while calibrated evidence and daily broker P&L
+    # accounting are unavailable.
+    order_ledger = OrderLedger(
+        os.getenv("CTRADER_ORDER_LEDGER_DB", "state/ctrader_orders.sqlite3"),
+        account_id=settings.ctrader_account_id,
+    )
+    try:
+        transport._load_sdk()
+        execution_enum = transport._sdk.get("ProtoOAExecutionType")
+        if execution_enum is None or not callable(getattr(execution_enum, "items", None)):
+            raise RuntimeError("Spotware SDK execution enum is unavailable.")
+        execution_type_names = {
+            int(value): str(name) for name, value in execution_enum.items()
+        }
+        execution_runtime, trading_loop_submitter = compose_demo_trading_loop_runtime(
+            transport=transport,
+            ledger=order_ledger,
+            expected_account_id=settings.ctrader_account_id,
+            execution_type_names=execution_type_names,
+            now_epoch=lambda: int(time.time()),
+            on_unmatched=lambda reason, event: print(
+                "Unmatched cTrader execution event: " + " ".join(str(reason).split())[:240]
+            ),
+            position_ledger=position_ledger,
+            symbol_names=symbol_names,
+            instruments=lambda: market_ref["market"].instruments,
+        )
+        execution_runtime_ref["runtime"] = execution_runtime
+        execution_runtime_ref["submitter"] = trading_loop_submitter
+        transport.set_reconcile_handler(on_reconcile)
+        print(
+            "Account-bound demo order ledger, one-shot TradingLoop bridge, "
+            "execution events and protection monitor composed."
+        )
+    except Exception as exc:
+        order_ledger.close()
+        raise SystemExit(
+            "Demo execution lifecycle composition failed closed; no trading loop will start: "
+            + " ".join(str(exc).split())[:240]
+        ) from None
 
     # Compose quote cache first, then candle recorder; both preserve callbacks.
     market_runtime = CTraderMarketDataRuntime(
@@ -377,7 +424,7 @@ def main() -> None:
     transport.on_spot = on_candidate_spot
 
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
-    print("Starting cTrader demo connection. This process observes market data only.")
+    print("Starting cTrader demo connection. Market analysis is active; no TradingLoop is scheduled.")
     from twisted.internet import reactor
 
     reactor.callWhenRunning(transport.start)
