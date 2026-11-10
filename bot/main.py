@@ -75,6 +75,31 @@ def main() -> None:
     transport_ref: dict[str, CTraderSdkTransport] = {}
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
 
+    def on_reconcile(response: object) -> object:
+        """Persist and report the complete broker snapshot without managing positions."""
+        snapshot = reconcile_handler(response)
+        protected = sum(
+            position.stop_loss is not None and position.take_profit is not None
+            for position in snapshot.positions
+        )
+        print(
+            "Broker position reconciliation VERIFIED: "
+            f"account={snapshot.account_id}, "
+            f"open_positions={len(snapshot.positions)}, "
+            f"both_SL_TP_attached={protected}, "
+            f"missing_protection={len(snapshot.positions) - protected}, "
+            f"pending_orders={len(snapshot.pending_orders)}"
+        )
+        for position in snapshot.positions:
+            print(
+                "Broker position: "
+                f"id={position.broker_position_id}, symbol={position.symbol}, "
+                f"side={position.side}, volume={position.volume_units}, "
+                f"SL={position.stop_loss if position.stop_loss is not None else 'MISSING'}, "
+                f"TP={position.take_profit if position.take_profit is not None else 'MISSING'}"
+            )
+        return snapshot
+
     def on_accounts(accounts: tuple[TradingAccount, ...]) -> None:
         demo_accounts = tuple(item for item in accounts if not item.is_live)
         selected_id = settings.ctrader_account_id
@@ -190,7 +215,7 @@ def main() -> None:
         on_account_snapshot=on_account_snapshot,
     )
     transport_ref["transport"] = transport
-    transport.set_reconcile_handler(reconcile_handler)
+    transport.set_reconcile_handler(on_reconcile)
 
     # Compose quote cache first, then candle recorder; both preserve callbacks.
     market_runtime = CTraderMarketDataRuntime(
