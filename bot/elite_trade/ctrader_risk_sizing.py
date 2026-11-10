@@ -113,12 +113,39 @@ def _commission_per_side(
     return max(variable, minimum)
 
 
+def validate_protection_distances(
+    instrument: InstrumentMetadata,
+    *,
+    entry_price: Decimal | str | int,
+    stop_distance_price: Decimal | str | int,
+    take_profit_distance_price: Decimal | str | int,
+) -> None:
+    """Require both broker minimum protection distances in supported point units."""
+    if not isinstance(instrument, InstrumentMetadata):
+        raise TypeError("A broker-verified InstrumentMetadata object is required.")
+    if not instrument.protective_distance_metadata_complete:
+        raise ValueError("Broker minimum SL/TP distance metadata is incomplete.")
+    if instrument.distance_set_in != "SYMBOL_DISTANCE_IN_POINTS":
+        raise ValueError("Percentage-based broker stop distances are not yet supported safely.")
+    _decimal(entry_price, "entry_price")
+    stop_distance = _decimal(stop_distance_price, "stop_distance_price")
+    target_distance = _decimal(take_profit_distance_price, "take_profit_distance_price")
+    point = instrument.price_precision_quantum
+    minimum_stop = Decimal(instrument.sl_distance) * point
+    minimum_target = Decimal(instrument.tp_distance) * point
+    if stop_distance < minimum_stop:
+        raise ValueError("Stop-loss distance is below the broker minimum.")
+    if target_distance < minimum_target:
+        raise ValueError("Take-profit distance is below the broker minimum.")
+
+
 def estimate_total_stop_risk(
     instrument: InstrumentMetadata,
     *,
     volume_cents: int,
     entry_price: Decimal | str | int,
     stop_distance_price: Decimal | str | int,
+    take_profit_distance_price: Decimal | str | int,
     deposit_asset: str,
     quote_to_deposit_rate: Decimal | str | int | None = None,
     usd_to_deposit_rate: Decimal | str | int | None = None,
@@ -140,6 +167,10 @@ def estimate_total_stop_risk(
         raise ValueError("Authenticated account deposit asset is required.")
     entry = _decimal(entry_price, "entry_price")
     stop_distance = _decimal(stop_distance_price, "stop_distance_price")
+    validate_protection_distances(
+        instrument, entry_price=entry, stop_distance_price=stop_distance,
+        take_profit_distance_price=take_profit_distance_price,
+    )
     allowance = _decimal(adverse_price_allowance, "adverse_price_allowance", positive=False)
     if allowance < 0:
         raise ValueError("adverse_price_allowance cannot be negative.")
@@ -190,6 +221,7 @@ def calculate_volume_for_risk(
     risk_cash: Decimal | str | int,
     entry_price: Decimal | str | int,
     stop_distance_price: Decimal | str | int,
+    take_profit_distance_price: Decimal | str | int,
     deposit_asset: str,
     quote_to_deposit_rate: Decimal | str | int | None = None,
     usd_to_deposit_rate: Decimal | str | int | None = None,
@@ -217,6 +249,7 @@ def calculate_volume_for_risk(
             volume_cents=volume,
             entry_price=entry_price,
             stop_distance_price=stop_distance_price,
+            take_profit_distance_price=take_profit_distance_price,
             deposit_asset=deposit_asset,
             quote_to_deposit_rate=quote_to_deposit_rate,
             usd_to_deposit_rate=usd_to_deposit_rate,
