@@ -16,7 +16,9 @@ from elite_trade.ctrader_depth_runtime import CTraderDepthRuntime
 from elite_trade.ctrader_candidate_pipeline import (
     CandidateBuildConfig,
     CTraderCandidatePipeline,
+    CandidateRiskInputs,
 )
+from elite_trade.ctrader_fx_conversion import conversion_rate
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
@@ -79,6 +81,7 @@ def main() -> None:
     )
     transport_ref: dict[str, CTraderSdkTransport] = {}
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
+    account_risk_ref: dict[str, object] = {}
 
     def on_reconcile(response: object) -> object:
         """Persist and report the complete broker snapshot without managing positions."""
@@ -170,6 +173,7 @@ def main() -> None:
         account_id = transport_ref["transport"].authenticated_account_id
         if account_id is None or snapshot.account_id != account_id:
             raise RuntimeError("Account snapshot does not match the authenticated account.")
+        account_risk_ref["snapshot"] = snapshot
         print(
             "Broker account snapshot verified: "
             f"account={snapshot.account_id}, "
@@ -281,14 +285,67 @@ def main() -> None:
         except (InvalidOperation, ValueError) as exc:
             raise RuntimeError(f"Invalid candidate configuration for {symbol}.") from exc
 
+    def candidate_risk_inputs(symbol: str) -> CandidateRiskInputs | None:
+        snapshot = account_risk_ref.get("snapshot")
+        if snapshot is None:
+            return None
+        instruments = market_runtime.instruments
+        instrument = next(
+            (item for item in instruments if item.symbol.upper() == symbol.upper()),
+            None,
+        )
+        if instrument is None:
+            return None
+        deposit_asset = transport.broker_asset_names.get(snapshot.deposit_asset_id)
+        if not deposit_asset:
+            return None
+        now = time.time()
+        def convert(source: str, target: str):
+            return conversion_rate(
+                source, target, instruments, market_runtime.get_quote,
+                now_epoch=now, max_age_seconds=3.0,
+            )
+        quote_to_deposit = convert(instrument.quote_asset, deposit_asset)
+        usd_to_deposit = convert("USD", deposit_asset)
+        base_to_usd = convert(instrument.base_asset, "USD")
+        minimum_asset = instrument.min_commission_asset
+        minimum_to_deposit = convert(minimum_asset, deposit_asset) if minimum_asset else None
+        prefix = "CTRADER_" + symbol.upper().replace("/", "_")
+        raw_allowance = os.getenv(prefix + "_ADVERSE_PRICE_ALLOWANCE")
+        if raw_allowance is None or not raw_allowance.strip():
+            return None
+        try:
+            allowance = Decimal(raw_allowance)
+            if not allowance.is_finite() or allowance <= 0:
+                return None
+        except InvalidOperation:
+            return None
+        if quote_to_deposit is None or usd_to_deposit is None:
+            return None
+        if instrument.base_asset != "USD" and base_to_usd is None:
+            return None
+        if minimum_asset and minimum_asset != deposit_asset and minimum_to_deposit is None:
+            return None
+        return CandidateRiskInputs(
+            deposit_asset=deposit_asset,
+            adverse_price_allowance=allowance,
+            quote_to_deposit_rate=quote_to_deposit,
+            usd_to_deposit_rate=usd_to_deposit,
+            base_to_usd_rate=base_to_usd,
+            min_commission_to_deposit_rate=minimum_to_deposit,
+            observed_at_epoch=now,
+        )
+
     candidate_pipeline = CTraderCandidatePipeline(
         instruments=lambda: market_runtime.instruments,
         quote_provider=market_runtime.get_quote,
         bars_provider=lambda symbol, period, limit: memory.load_bars(
             symbol, period.lower(), limit=limit
         ),
+        # Statistical edge/liquidity calibration is deliberately not inferred
+        # from a few candles or an uncalibrated depth snapshot.
         evidence_provider=lambda _symbol: None,
-        risk_inputs_provider=lambda _symbol: None,
+        risk_inputs_provider=candidate_risk_inputs,
         config_provider=candidate_config,
         now_epoch=time.time,
     )
