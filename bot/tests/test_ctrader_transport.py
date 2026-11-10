@@ -97,6 +97,20 @@ class CTraderTransportTests(unittest.TestCase):
         client.received = transport._message_received
         return transport, client, reactor
 
+    def test_real_sdk_exposes_exact_execution_enum_for_runtime_composition(self):
+        transport = CTraderSdkTransport(
+            environment="demo", client_id="id", client_secret="secret",
+            access_token="token",
+        )
+        transport._load_sdk()
+        enum = transport._sdk.get("ProtoOAExecutionType")
+        self.assertIsNotNone(enum)
+        names = {value: name for name, value in enum.items()}
+        self.assertEqual(names[2], "ORDER_ACCEPTED")
+        self.assertEqual(names[3], "ORDER_FILLED")
+        self.assertEqual(names[11], "ORDER_PARTIAL_FILL")
+        self.assertEqual(names[7], "ORDER_REJECTED")
+
     def test_depth_subscription_and_account_scoped_depth_events(self):
         received = []
         errors = []
