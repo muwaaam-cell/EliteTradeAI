@@ -164,5 +164,7 @@ class CTraderDailyRiskStateProvider:
             equity=equity,
             settled_balance=balance,
             open_positions=len(self.position_ledger.list_open()),
-            observed_at_epoch=min(float(observed), float(history_received)),
+            # TradingLoop's short freshness bound applies to the broker account
+            # snapshot; the separate history watermark has its own 60s limit.
+            observed_at_epoch=float(observed),
         )
