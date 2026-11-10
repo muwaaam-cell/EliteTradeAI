@@ -23,6 +23,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             environment="demo",
             requested_account_id=77,
             authenticated_account_id=None,
+            reconcile_requests=0,
             state=ConnectionState.DISCONNECTED,
             send_demo_order_request=self.sent.append,
             set_reconcile_handler=lambda handler: setattr(self.transport, 'on_reconcile', handler),
@@ -103,6 +104,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         )
         self.assertTrue(self.transport.on_execution_event(filled))
         self.assertEqual(self.transport.reconcile_requests, 1)
+        self.assertFalse(self.unmatched)
         self.assertFalse(self.runtime.protection_monitor.allow_new_entries)
         self.transport.on_reconcile(SimpleNamespace(
             ctidTraderAccountId=77, position=[], order=[]
