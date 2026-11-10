@@ -97,7 +97,14 @@ def map_ctrader_reconcile_response(
         symbol_id = _positive_int(getattr(trade_data, "symbolId", None), "symbolId")
         symbol = symbol_names.get(symbol_id)
         if not isinstance(symbol, str) or not symbol.strip():
-            raise ValueError("Position references an unknown broker symbol ID.")
+            known_ids = sorted(int(value) for value in symbol_names)
+            preview = ", ".join(str(value) for value in known_ids[:20])
+            if len(known_ids) > 20:
+                preview += ", ... (" + str(len(known_ids)) + " total)"
+            raise ValueError(
+                f"Position references unknown broker symbol ID {symbol_id}; "
+                f"catalogue contains {len(known_ids)} IDs [{preview}]."
+            )
 
         side_value = getattr(trade_data, "tradeSide", None)
         if side_value == 1:
