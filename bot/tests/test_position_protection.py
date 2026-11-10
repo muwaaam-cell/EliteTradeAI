@@ -54,6 +54,13 @@ class PositionProtectionMonitorTests(unittest.TestCase):
         self.assertFalse(audit.allow_new_entries)
         self.assertEqual(audit.unprotected_position_ids, ("123", "124"))
 
+    def test_protection_audit_expires_after_five_seconds(self):
+        self.monitor.update(self.snapshot())
+        self.assertTrue(self.monitor.allow_new_entries)
+        self.now += 6
+        self.assertTrue(self.monitor.is_stale)
+        self.assertFalse(self.monitor.allow_new_entries)
+
     def test_pending_orders_block_new_entries(self):
         audit = self.monitor.update(self.snapshot(pending=(object(),)))
         self.assertFalse(audit.allow_new_entries)
