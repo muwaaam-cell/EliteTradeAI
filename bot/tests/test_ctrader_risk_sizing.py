@@ -29,7 +29,7 @@ class CTraderRiskSizingTests(unittest.TestCase):
         instrument = make_instrument()
         risk = estimate_total_stop_risk(
             instrument, volume_cents=100000, entry_price="1.1",
-            stop_distance_price="0.01", adverse_price_allowance="0.001",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", adverse_price_allowance="0.001",
             deposit_asset="USD",
         )
         # 1,000 EUR units; $11 gross stop/allowance loss and $0.11 commission.
@@ -42,7 +42,7 @@ class CTraderRiskSizingTests(unittest.TestCase):
         )
         risk = estimate_total_stop_risk(
             instrument, volume_cents=10000000, entry_price="1.1",
-            stop_distance_price="0.01", deposit_asset="USD",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
         )
         self.assertEqual(risk, Decimal("1030"))
 
@@ -53,7 +53,7 @@ class CTraderRiskSizingTests(unittest.TestCase):
         )
         risk = estimate_total_stop_risk(
             instrument, volume_cents=100000, entry_price="1.1",
-            stop_distance_price="0.01", deposit_asset="USD",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
         )
         self.assertEqual(risk, Decimal("13.85"))
 
@@ -64,7 +64,7 @@ class CTraderRiskSizingTests(unittest.TestCase):
         )
         risk = estimate_total_stop_risk(
             instrument, volume_cents=10000000, entry_price="1.1",
-            stop_distance_price="0.01", deposit_asset="EUR",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="EUR",
             quote_to_deposit_rate="0.9", usd_to_deposit_rate="0.9",
         )
         self.assertEqual(risk, Decimal("927"))
@@ -77,7 +77,7 @@ class CTraderRiskSizingTests(unittest.TestCase):
         )
         risk = estimate_total_stop_risk(
             instrument, volume_cents=100000, entry_price="1.1",
-            stop_distance_price="0.01", deposit_asset="USD",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
         )
         self.assertEqual(risk, Decimal("12"))
 
@@ -86,12 +86,12 @@ class CTraderRiskSizingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             estimate_total_stop_risk(
                 instrument, volume_cents=100000, entry_price="1.1",
-                stop_distance_price="0.01", deposit_asset="USD",
+                stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
             )
         with self.assertRaises(ValueError):
             estimate_total_stop_risk(
                 make_instrument(), volume_cents=100000, entry_price="1.1",
-                stop_distance_price="0.01", deposit_asset="EUR",
+                stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="EUR",
             )
 
     def test_minimum_commission_without_currency_fails_closed(self):
@@ -102,27 +102,27 @@ class CTraderRiskSizingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             estimate_total_stop_risk(
                 instrument, volume_cents=100000, entry_price="1.1",
-                stop_distance_price="0.01", deposit_asset="USD",
+                stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
             )
 
     def test_volume_sizing_respects_budget_and_broker_step(self):
         instrument = make_instrument()
         volume = calculate_volume_for_risk(
             instrument, risk_cash="5", entry_price="1.1",
-            stop_distance_price="0.01", deposit_asset="USD",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
         )
         self.assertIsNotNone(volume)
         self.assertEqual(volume % instrument.volume_step_cents, 0)
         self.assertLessEqual(
             estimate_total_stop_risk(
                 instrument, volume_cents=volume, entry_price="1.1",
-                stop_distance_price="0.01", deposit_asset="USD",
+                stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
             ),
             Decimal("5"),
         )
         self.assertIsNone(calculate_volume_for_risk(
             instrument, risk_cash="0.01", entry_price="1.1",
-            stop_distance_price="0.01", deposit_asset="USD",
+            stop_distance_price="0.01", take_profit_distance_price="0.02", deposit_asset="USD",
         ))
 
 
