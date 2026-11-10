@@ -175,7 +175,7 @@ class CTraderCandidatePipeline:
                 risk_budget_available=evidence.risk_budget_available,
                 market_data_fresh=True,
             ))
-            if selection.mode is MarketRegime.UNKNOWN or selection.mode.value == "WAIT":
+            if selection.mode.value == "WAIT":
                 return CandidateBuildResult(None, selection.reason)
 
             side = Side(signal.direction)
