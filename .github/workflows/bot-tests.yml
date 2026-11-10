@@ -7,6 +7,10 @@ on:
     branches: [main, pepperstone-ctrader-bot]
   workflow_dispatch:
 
+concurrency:
+  group: elite-trade-ai-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
