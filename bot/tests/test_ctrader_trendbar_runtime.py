@@ -65,7 +65,7 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
         return int(self.now() // 60) - minutes_ago
 
     def test_catalogue_requests_historical_and_live_candles_for_exact_verified_symbols(self):
-        self.make_runtime()
+        runtime = self.make_runtime()
         runtime.request_catalogue()
         self.assertEqual(self.transport.catalogue_requests, 1)
         self.transport.on_instruments(self.instruments)
@@ -148,7 +148,7 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
             self.assertEqual(evaluate.call_args_list, expected)
 
     def test_duplicate_historical_timestamps_are_rejected_before_storage(self):
-        runtime = self.make_runtime()
+        self.make_runtime()
         self.transport.on_instruments(self.instruments)
 
         minute = self.recent_minute()
