@@ -100,6 +100,7 @@ class CTraderSdkTransport:
         self.on_deal_history = on_deal_history or (lambda response, start, end: None)
         self._deal_history_in_flight = False
         self._deal_history_range = None
+        self._deal_history_max_rows = 1000
         self.on_reconcile = on_reconcile or (lambda response: None)
         self._has_reconcile_handler = on_reconcile is not None
         self.on_instruments = on_instruments or (lambda instruments: None)
@@ -433,9 +434,17 @@ class CTraderSdkTransport:
                     self._fail("Received an unsolicited cTrader deal-history response.")
                     return
                 start_ms, end_ms = self._deal_history_range
+                page_size = self._deal_history_max_rows
                 self._deal_history_in_flight = False
                 self._deal_history_range = None
                 self.on_deal_history(response, start_ms, end_ms)
+                if bool(getattr(response, "hasMore", False)):
+                    # The API paginates the same bounded interval. Continue
+                    # only after the current page has been handed to durable
+                    # storage; never mark a non-terminal page complete.
+                    self.request_deal_history(
+                        start_ms, end_ms, max_rows=page_size
+                    )
             elif payload_type == self._sdk["ProtoOAReconcileRes"]().payloadType:
                 response = extract(message)
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
@@ -638,6 +647,7 @@ class CTraderSdkTransport:
             max_rows=max_rows,
         )
         self._deal_history_range = (int(from_timestamp_ms), int(to_timestamp_ms))
+        self._deal_history_max_rows = int(max_rows)
         self._deal_history_in_flight = True
         try:
             return self._send(request)
