@@ -210,13 +210,22 @@ def main() -> None:
         history_end_utc=os.getenv("CTRADER_HISTORY_END_UTC") or None,
     )
 
-    # Level II depth is used as raw liquidity evidence; no score is inferred
-    # when the broker has not supplied a fresh book for a selected symbol.
-    _depth_runtime = CTraderDepthRuntime(
-        transport=transport,
-        symbols=symbols,
-        now_epoch=time.time,
-    )
+    # Level II is opt-in to preserve the Android low-data default.
+    depth_enabled = os.getenv("CTRADER_ENABLE_DEPTH", "0").strip().lower() in {
+        "1", "true", "yes",
+    }
+    _depth_runtime = None
+    if depth_enabled:
+        _depth_runtime = CTraderDepthRuntime(
+            transport=transport,
+            symbols=symbols,
+            now_epoch=time.time,
+        )
+    else:
+        print(
+            "Level II depth is disabled for low-data operation; "
+            "liquidity-dependent strategy selection remains unavailable."
+        )
 
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
     print("Starting cTrader demo connection. This process observes market data only.")
