@@ -1,4 +1,5 @@
 import unittest
+from decimal import Decimal
 from types import SimpleNamespace
 
 from elite_trade.ctrader_depth import CTraderDepthBook
@@ -35,18 +36,18 @@ class DepthBookTests(unittest.TestCase):
             Quote(2, 4000, bid=109990),
             Quote(3, 3000, ask=110020),
         )))
-        self.assertEqual(snapshot.bids[0].price, 1.1)
-        self.assertEqual(snapshot.asks[0].price, 1.1002)
+        self.assertEqual(snapshot.bids[0].price, Decimal("1.1"))
+        self.assertEqual(snapshot.asks[0].price, Decimal("1.1002"))
         self.assertEqual(snapshot.total_bid_size, 65)
         self.assertEqual(snapshot.total_ask_size, 30)
         self.assertEqual(snapshot.top_bid_size, 25)
 
     def test_updates_and_deletes_existing_quote_ids(self):
         self.book.update(self.event(newQuotes=(Quote(1, 2500, bid=110000),)))
-        snapshot = self.book.update(self.event(
+        self.book.update(self.event(
             newQuotes=(Quote(1, 1000, bid=110010), Quote(2, 2000, ask=110020)),
-            deletedQuotes=(1,),
         ))
+        snapshot = self.book.update(self.event(deletedQuotes=(1,)))
         self.assertEqual(len(snapshot.bids), 0)
         self.assertEqual(snapshot.asks[0].size_units, 20)
 
@@ -66,7 +67,7 @@ class DepthBookTests(unittest.TestCase):
         )))
         with self.assertRaisesRegex(ValueError, "crossed"):
             self.book.update(self.event(newQuotes=(Quote(2, 1000, ask=109990),)))
-        self.assertEqual(self.book.get("EURUSD").asks[0].price, 1.1001)
+        self.assertEqual(self.book.get("EURUSD").asks[0].price, Decimal("1.1001"))
 
     def test_stale_depth_is_not_returned(self):
         self.book.update(self.event(newQuotes=(Quote(1, 1000, bid=110000),)))
