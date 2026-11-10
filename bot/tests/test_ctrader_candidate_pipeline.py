@@ -47,6 +47,12 @@ class CTraderCandidatePipelineTests(unittest.TestCase):
                 target_atr_multiple=Decimal("2"),
                 max_spread_price=Decimal("0"),
             )
+        with self.assertRaises(ValueError):
+            CandidateBuildConfig(
+                stop_atr_multiple=Decimal("NaN"),
+                target_atr_multiple=Decimal("2"),
+                max_spread_price=Decimal("0.5"),
+            )
 
 
 if __name__ == "__main__":
