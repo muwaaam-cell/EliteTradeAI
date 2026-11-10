@@ -384,6 +384,19 @@ class CTraderDealHistoryStore:
                 (str(account), pid, int(position_status), observed_epoch),
             )
 
+    def closed_position_ids(self, *, account_id: int) -> tuple[str, ...]:
+        account = int(account_id)
+        if account <= 0:
+            raise DealHistoryError("A positive account ID is required.")
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT position_id FROM ctrader_position_status
+                   WHERE account_id=? AND position_status=2
+                   ORDER BY position_id""",
+                (str(account),),
+            ).fetchall()
+        return tuple(str(row["position_id"]) for row in rows)
+
     def get_position_status(self, *, account_id: int, position_id: str) -> int | None:
         account = int(account_id)
         pid = str(position_id).strip()
