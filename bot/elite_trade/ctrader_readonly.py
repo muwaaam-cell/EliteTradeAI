@@ -148,8 +148,8 @@ def main() -> None:
         if not shutting_down:
             try:
                 transport.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"Read-only transport shutdown warning: {type(exc).__name__}")
         if reactor.running:
             reactor.stop()
         print("Read-only runtime stopped. No orders were submitted.")
