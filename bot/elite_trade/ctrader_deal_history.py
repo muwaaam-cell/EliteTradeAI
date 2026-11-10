@@ -410,6 +410,54 @@ class CTraderDealHistoryStore:
             ).fetchone()
         return int(row["position_status"]) if row is not None else None
 
+    def latest_complete_history_range(
+        self, *, account_id: int
+    ) -> tuple[int, int, float] | None:
+        """Return the most recent broker-confirmed terminal history range."""
+        account = int(account_id)
+        if account <= 0:
+            raise DealHistoryError("A positive account ID is required.")
+        with self._lock:
+            row = self._db.execute(
+                """SELECT requested_from_ms, requested_to_ms, received_epoch
+                   FROM ctrader_deal_history_runs
+                   WHERE account_id=? AND has_more=0 AND complete=1
+                   ORDER BY run_id DESC LIMIT 1""",
+                (str(account),),
+            ).fetchone()
+        if row is None:
+            return None
+        return (
+            int(row["requested_from_ms"]),
+            int(row["requested_to_ms"]),
+            float(row["received_epoch"]),
+        )
+
+    def deals_in_range(
+        self, *, account_id: int, from_ms: int, to_ms: int
+    ) -> tuple[dict, ...]:
+        """Return decoded, account-scoped deals inside an inclusive time range."""
+        account = int(account_id)
+        start = int(from_ms)
+        end = int(to_ms)
+        if account <= 0 or start < 0 or end < start:
+            raise DealHistoryError("Invalid account or deal-history range.")
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT * FROM ctrader_deals
+                   WHERE account_id=? AND execution_timestamp>=?
+                     AND execution_timestamp<=?
+                   ORDER BY execution_timestamp,deal_id""",
+                (str(account), start, end),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            raw = item.pop("close_detail_json")
+            item["close_detail"] = json.loads(raw) if raw else None
+            result.append(item)
+        return tuple(result)
+
     def deals_for_position(
         self, *, account_id: int, position_id: str
     ) -> tuple[dict, ...]:
