@@ -416,8 +416,9 @@ def main() -> None:
             candidate_reported.add(symbol)
         elif result.candidate is not None:
             print(
-                f"Candidate ready for {symbol}; execution remains disabled "
-                "until the separate demo risk/execution lifecycle is integrated."
+                f"Candidate ready for {symbol}; demo execution bridge is composed, "
+                "but no TradingLoop is scheduled until calibrated evidence and "
+                "broker daily P&L accounting are available."
             )
 
     transport.on_spot = on_candidate_spot
