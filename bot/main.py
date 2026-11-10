@@ -12,7 +12,6 @@ from elite_trade.ctrader_market_data_runtime import CTraderMarketDataRuntime
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState, TradingAccount
 from elite_trade.ctrader_trendbar_runtime import CTraderTrendbarRuntime
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
-from elite_trade.account_snapshot import account_snapshot_from_ctrader
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
 from elite_trade.market_memory import MarketMemory
