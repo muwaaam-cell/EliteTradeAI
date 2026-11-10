@@ -671,6 +671,7 @@ def main() -> None:
         from twisted.internet.task import LoopingCall
 
         last_history_refresh = {"epoch": 0.0}
+        refresh_errors = {"snapshot": False, "history": False}
 
         def refresh() -> None:
             if transport.state is not ConnectionState.AUTHENTICATED:
@@ -678,8 +679,14 @@ def main() -> None:
             if not getattr(transport, "_snapshot_in_flight", False):
                 try:
                     transport.request_account_snapshot()
-                except Exception:
-                    pass
+                    refresh_errors["snapshot"] = False
+                except Exception as exc:
+                    if not refresh_errors["snapshot"]:
+                        print(
+                            "Periodic broker snapshot request failed: "
+                            + " ".join(str(exc).split())[:160]
+                        )
+                    refresh_errors["snapshot"] = True
             now = time.time()
             if (
                 now - last_history_refresh["epoch"] >= 30.0
@@ -691,8 +698,14 @@ def main() -> None:
                     transport.request_deal_history(start_ms, end_ms, max_rows=1000)
                     history_range_ref["range"] = (start_ms, end_ms)
                     last_history_refresh["epoch"] = now
-                except Exception:
-                    pass
+                    refresh_errors["history"] = False
+                except Exception as exc:
+                    if not refresh_errors["history"]:
+                        print(
+                            "Periodic broker history refresh failed: "
+                            + " ".join(str(exc).split())[:160]
+                        )
+                    refresh_errors["history"] = True
 
         loop = LoopingCall(refresh)
         loop.start(2.5, now=False)
