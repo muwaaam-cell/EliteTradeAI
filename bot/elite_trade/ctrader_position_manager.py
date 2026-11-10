@@ -24,9 +24,10 @@ class PositionManagementError(RuntimeError):
 class CTraderPositionManager:
     """Move existing bot-owned stops to break-even/trailing levels.
 
-    This manager never touches positions without a matching local order-ledger
-    entry, never manages symbols outside XAUUSD/EURUSD, and never closes or
-    reverses positions. It requires a fresh broker reconciliation and quote.
+    Routine management only tightens stops; it never closes or reverses
+    positions. An explicit close-all command has a separate idempotent method.
+    Both paths require a matching local order-ledger entry and the XAUUSD/EURUSD
+    allowlist, so manual positions are excluded. Fresh broker state is mandatory.
     """
 
     def __init__(
