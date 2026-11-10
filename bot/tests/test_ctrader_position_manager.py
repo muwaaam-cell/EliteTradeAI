@@ -25,10 +25,14 @@ class FakeTransport:
 
     def __init__(self):
         self.amendments = []
+        self.close_requests = []
         self.reconcile_count = 0
 
     def send_demo_position_protection_request(self, request):
         self.amendments.append(request)
+
+    def send_demo_close_position_request(self, request):
+        self.close_requests.append(request)
 
     def request_positions_reconcile(self):
         self.reconcile_count += 1
@@ -105,6 +109,17 @@ class PositionManagerTests(unittest.TestCase):
         self.manager.now_epoch = lambda: 110.0
         with self.assertRaises(PositionManagementError):
             self.manager.manage_positions()
+
+
+    def test_close_all_only_sends_once_for_bot_owned_allowlisted_positions(self):
+        sent = self.manager.close_all_bot_positions()
+        self.assertEqual(sent, 1)
+        self.assertEqual(len(self.transport.close_requests), 1)
+        request = self.transport.close_requests[0]
+        self.assertEqual(request.positionId, 7007)
+        self.assertEqual(request.volume, 1)
+        self.assertEqual(self.manager.close_all_bot_positions(), 0)
+        self.assertEqual(len(self.transport.close_requests), 1)
 
 
 if __name__ == "__main__":
