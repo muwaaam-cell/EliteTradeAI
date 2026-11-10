@@ -12,6 +12,9 @@ from elite_trade.adaptive_risk import (
 
 class AdaptiveRiskTests(unittest.TestCase):
 
+    def test_daily_target_is_unset_by_default(self):
+        self.assertIsNone(AdaptiveRiskConfig().daily_target)
+
     def test_string_config_values_are_normalized_to_decimal(self):
         config = AdaptiveRiskConfig(daily_target="50", max_giveback="20",
                                     normal_risk_pct="0.5", max_risk_cash="7")
@@ -86,7 +89,9 @@ class AdaptiveRiskTests(unittest.TestCase):
     def test_target_activation_trailing_floor_and_persistence(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = str(Path(tmp) / "risk.sqlite")
-            tracker = ProfitProtectionTracker(db)
+            tracker = ProfitProtectionTracker(
+                db, AdaptiveRiskConfig(daily_target="50", max_giveback="20")
+            )
             day = date(2026, 11, 1)
             mode, floor = tracker.evaluate(trading_day=day, daily_net_pnl="50")
             self.assertEqual(mode, TradingMode.PROFIT_PROTECTION)
@@ -101,13 +106,25 @@ class AdaptiveRiskTests(unittest.TestCase):
 
     def test_daily_loss_lock_is_persisted(self):
         with tempfile.TemporaryDirectory() as tmp:
-            tracker = ProfitProtectionTracker(str(Path(tmp) / "risk.sqlite"))
+            tracker = ProfitProtectionTracker(
+                str(Path(tmp) / "risk.sqlite"),
+                AdaptiveRiskConfig(daily_target="50", max_giveback="20"),
+            )
             day = date(2026, 11, 1)
             mode, _ = tracker.evaluate(trading_day=day, daily_net_pnl="50",
                                        daily_loss_limit_reached=True)
             self.assertEqual(mode, TradingMode.DAILY_LOSS_LOCK)
             mode, _ = tracker.evaluate(trading_day=day, daily_net_pnl="90")
             self.assertEqual(mode, TradingMode.GIVEBACK_LOCK)
+
+    def test_unset_target_never_activates_profit_protection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tracker = ProfitProtectionTracker(str(Path(tmp) / "risk.sqlite"))
+            mode, floor = tracker.evaluate(
+                trading_day=date(2026, 11, 1), daily_net_pnl="50000"
+            )
+            self.assertEqual(mode, TradingMode.NORMAL)
+            self.assertEqual(floor, Decimal("0"))
 
 
 if __name__ == "__main__":

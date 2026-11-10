@@ -10,6 +10,7 @@ from contextlib import closing
 import sqlite3
 import threading
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final
 
@@ -37,6 +38,9 @@ class OrderRecord:
     updated_at: int
     broker_order_id: str | None = None
     last_error: str | None = None
+    broker_position_id: str | None = None
+    strategy_mode: str | None = None
+    initial_cash_risk: Decimal | None = None
 
 
 class OrderLedger:
@@ -65,7 +69,10 @@ class OrderLedger:
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     broker_order_id TEXT UNIQUE,
-                    last_error TEXT
+                    broker_position_id TEXT,
+                    last_error TEXT,
+                    strategy_mode TEXT,
+                    initial_cash_risk TEXT
                 )"""
             )
             schema = db.execute(
@@ -86,7 +93,10 @@ class OrderLedger:
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL,
                         broker_order_id TEXT UNIQUE,
-                        last_error TEXT
+                        broker_position_id TEXT,
+                        last_error TEXT,
+                        strategy_mode TEXT,
+                        initial_cash_risk TEXT
                     )"""
                 )
                 db.execute(
@@ -99,6 +109,15 @@ class OrderLedger:
                 db.execute("DROP TABLE orders")
                 db.execute("ALTER TABLE orders_v2 RENAME TO orders")
                 db.execute("COMMIT")
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()
+            }
+            if "broker_position_id" not in columns:
+                db.execute("ALTER TABLE orders ADD COLUMN broker_position_id TEXT")
+            if "strategy_mode" not in columns:
+                db.execute("ALTER TABLE orders ADD COLUMN strategy_mode TEXT")
+            if "initial_cash_risk" not in columns:
+                db.execute("ALTER TABLE orders ADD COLUMN initial_cash_risk TEXT")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)"
             )
@@ -162,6 +181,12 @@ class OrderLedger:
             updated_at=row["updated_at"],
             broker_order_id=row["broker_order_id"],
             last_error=row["last_error"],
+            broker_position_id=row["broker_position_id"],
+            strategy_mode=row["strategy_mode"],
+            initial_cash_risk=(
+                Decimal(row["initial_cash_risk"])
+                if row["initial_cash_risk"] is not None else None
+            ),
         )
 
     def reserve(self, client_order_id: str, intent: object, *, now: int) -> bool:
@@ -179,15 +204,31 @@ class OrderLedger:
         volume = getattr(intent, "volume_units", None)
         if isinstance(volume, bool) or not isinstance(volume, int) or volume <= 0:
             raise ValueError("volume_units must be a positive integer.")
+        strategy_mode = getattr(intent, "strategy_mode", None)
+        initial_cash_risk = getattr(intent, "initial_cash_risk", None)
+        if strategy_mode is None and initial_cash_risk is None:
+            risk_text = None
+        else:
+            if strategy_mode not in {"SCALPING", "INTRADAY"} or initial_cash_risk is None:
+                raise ValueError("strategy_mode and initial_cash_risk must be supplied together.")
+            try:
+                risk_value = Decimal(str(initial_cash_risk))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("initial_cash_risk must be a finite positive decimal.") from exc
+            if not risk_value.is_finite() or risk_value <= 0:
+                raise ValueError("initial_cash_risk must be a finite positive decimal.")
+            risk_text = str(risk_value)
         if isinstance(now, bool) or not isinstance(now, int) or now < 0:
             raise ValueError("now must be a non-negative integer timestamp.")
         with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             cursor = db.execute(
                 """INSERT OR IGNORE INTO orders
-                   (client_order_id,symbol,side,volume_units,status,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (order_id, symbol, side, volume, PENDING, now, now),
+                   (client_order_id,symbol,side,volume_units,status,created_at,updated_at,
+                    strategy_mode,initial_cash_risk)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (order_id, symbol, side, volume, PENDING, now, now,
+                 strategy_mode, risk_text),
             )
             inserted = cursor.rowcount == 1
             db.execute("COMMIT")
@@ -250,8 +291,9 @@ class OrderLedger:
         broker_order_id: str,
         *,
         now: int,
+        broker_position_id: str | None = None,
     ) -> bool:
-        """Record broker-confirmed cumulative filled volume without losing the remainder."""
+        """Record broker-confirmed cumulative fill and its position correlation."""
         order_id = self._text(client_order_id, "client_order_id")
         broker_id = self._text(broker_order_id, "broker_order_id")
         if isinstance(filled_volume_units, bool) or not isinstance(filled_volume_units, int) or filled_volume_units <= 0:
@@ -274,10 +316,62 @@ class OrderLedger:
                 db.execute("ROLLBACK")
                 raise ValueError("Cumulative filled volume is decreasing or exceeds requested volume.")
             status = FILLED if filled_volume_units == row["volume_units"] else PARTIALLY_FILLED
+            position_id = (
+                self._text(broker_position_id, "broker_position_id")
+                if broker_position_id is not None else None
+            )
             db.execute(
                 """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
-                   broker_order_id=COALESCE(broker_order_id,?) WHERE client_order_id=?""",
-                (status, filled_volume_units, now, broker_id, order_id),
+                   broker_order_id=COALESCE(broker_order_id,?),
+                   broker_position_id=COALESCE(broker_position_id,?)
+                   WHERE client_order_id=?""",
+                (status, filled_volume_units, now, broker_id, position_id, order_id),
+            )
+            db.execute("COMMIT")
+            return True
+
+    def resolve_unknown_partial_fill(
+        self,
+        client_order_id: str,
+        filled_volume_units: int,
+        broker_order_id: str,
+        *,
+        now: int,
+        broker_position_id: str | None = None,
+    ) -> bool:
+        """Resolve an uncertain send from an authenticated cumulative fill event."""
+        order_id = self._text(client_order_id, "client_order_id")
+        broker_id = self._text(broker_order_id, "broker_order_id")
+        if isinstance(filled_volume_units, bool) or not isinstance(filled_volume_units, int) or filled_volume_units <= 0:
+            raise ValueError("filled_volume_units must be a positive integer.")
+        if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+            raise ValueError("now must be a non-negative integer timestamp.")
+        with self._lock, closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status,volume_units,broker_order_id FROM orders WHERE client_order_id=?",
+                (order_id,),
+            ).fetchone()
+            if row is None or row["status"] != UNKNOWN:
+                db.execute("ROLLBACK")
+                return False
+            if row["broker_order_id"] and row["broker_order_id"] != broker_id:
+                db.execute("ROLLBACK")
+                raise ValueError("Broker order ID cannot be changed once recorded.")
+            if filled_volume_units > row["volume_units"]:
+                db.execute("ROLLBACK")
+                raise ValueError("Recovered fill exceeds the requested volume.")
+            status = FILLED if filled_volume_units == row["volume_units"] else PARTIALLY_FILLED
+            position_id = (
+                self._text(broker_position_id, "broker_position_id")
+                if broker_position_id is not None else None
+            )
+            db.execute(
+                """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
+                   broker_order_id=COALESCE(broker_order_id,?),
+                   broker_position_id=COALESCE(broker_position_id,?),last_error=NULL
+                   WHERE client_order_id=?""",
+                (status, filled_volume_units, now, broker_id, position_id, order_id),
             )
             db.execute("COMMIT")
             return True
@@ -338,6 +432,17 @@ class OrderLedger:
             ).fetchall()
             return [self._record(row) for row in rows if row is not None]
 
+
+    def list_by_broker_position_id(self, broker_position_id: str) -> list[OrderRecord]:
+        """Return entry orders correlated to one broker position, oldest first."""
+        position_id = self._text(broker_position_id, "broker_position_id")
+        with closing(self._connect()) as db, db:
+            rows = db.execute(
+                """SELECT * FROM orders WHERE broker_position_id=?
+                   ORDER BY created_at,client_order_id""",
+                (position_id,),
+            ).fetchall()
+            return [self._record(row) for row in rows if row is not None]
 
     def get_by_broker_order_id(self, broker_order_id: str) -> OrderRecord | None:
         """Find a locally reserved order by its broker-assigned order ID."""

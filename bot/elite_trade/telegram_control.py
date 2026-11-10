@@ -1,10 +1,11 @@
-"""Minimal private-chat Telegram control; no trade execution is exposed."""
+"""Private-chat Telegram controls for the guarded cTrader demo runtime."""
 from __future__ import annotations
 
 import json
 import os
 import time
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -18,7 +19,9 @@ class TelegramControl:
     def __init__(self, *, token: str | None = None, chat_id: str | None = None,
                  kill_switch: KillSwitch | None = None,
                  daily_guard: DailySessionGuard | None = None,
-                 offset_file: str | Path | None = None):
+                 offset_file: str | Path | None = None,
+                 status_provider: Callable[[], str] | None = None,
+                 close_all_request_path: str | Path | None = None):
         self.token = (token if token is not None else os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
         self.chat_id = (chat_id if chat_id is not None else os.getenv("TELEGRAM_CHAT_ID", "")).strip()
         if not self.token or not self.chat_id:
@@ -27,6 +30,12 @@ class TelegramControl:
             raise ValueError("Telegram authorised chat ID must be a numeric ID.")
         self.kill_switch = kill_switch or KillSwitch()
         self.daily_guard = daily_guard
+        if status_provider is not None and not callable(status_provider):
+            raise TypeError("status_provider must be callable.")
+        self.status_provider = status_provider
+        self.close_all_request_path = (
+            Path(close_all_request_path) if close_all_request_path is not None else None
+        )
         self.offset_file = Path(offset_file) if offset_file is not None else None
         self.offset = self._load_offset() if self.offset_file is not None else 0
         self._offset_initialized = self.offset_file is None or self.offset_file.exists()
@@ -102,9 +111,14 @@ class TelegramControl:
                 "Resume emergency pause: /resume emergency confirm. "
                 "The daily profit target activates reduced-risk profit protection; "
                 "no manual target resume is needed. Giveback and daily-loss locks "
-                "cannot be overridden. Trading execution is not enabled."
+                "cannot be overridden. New orders, if any, are demo-only and require every broker, calibration, risk and protection gate; live execution is disabled."
             )
         if command == "/status":
+            if self.status_provider is not None:
+                try:
+                    return "EliteTrade AI status: " + str(self.status_provider())[:3500]
+                except Exception:
+                    return "Broker status could not be verified; new entries remain blocked."
             return "EliteTrade AI: " + ("PAUSED (kill switch active)." if self.kill_switch.is_active()
                                         else "RUNNING IN SAFE / NON-EXECUTING MODE.")
         if command == "/target":
@@ -157,7 +171,26 @@ class TelegramControl:
                 "A daily loss or giveback lock cannot be overridden."
             )
         if command == "/closeall":
-            return "Close-all is unavailable until a verified broker execution adapter exists. Use cTrader directly to manage open positions."
+            if self.close_all_request_path is None:
+                return "Close-all is unavailable until a verified broker execution adapter exists. Use cTrader directly to manage open positions."
+            path = self.close_all_request_path
+            if path.exists():
+                return "A close-all request is already queued. It targets bot-owned XAUUSD/EURUSD positions only; manual positions are excluded."
+            temporary = path.with_name(path.name + ".tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary.write_text(str(time.time_ns()), encoding="utf-8")
+                temporary.chmod(0o600)
+                temporary.replace(path)
+                path.chmod(0o600)
+            except OSError:
+                temporary.unlink(missing_ok=True)
+                return "Close-all request could not be queued; no broker action was taken."
+            return (
+                "Close-all request queued. On the next broker market update, the demo runtime "
+                "will request closure only for bot-owned XAUUSD/EURUSD positions after fresh "
+                "broker reconciliation. Manual positions will not be touched."
+            )
         return None
 
     def poll_once(self, timeout: int = 10) -> int:

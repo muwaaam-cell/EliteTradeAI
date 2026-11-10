@@ -8,7 +8,9 @@ from elite_trade.adaptive_risk import MarketCondition, TradingMode
 from elite_trade.daily_session import DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote, Side
 from elite_trade.kill_switch import KillSwitch
-from elite_trade.trading_loop import BrokerRiskState, EntryCandidate, TradingLoop
+from elite_trade.trading_loop import BrokerRiskSizingInputs, BrokerRiskState, EntryCandidate, TradingLoop
+from elite_trade.instrument import InstrumentMetadata
+from elite_trade.ctrader_risk_sizing import estimate_total_stop_risk
 
 
 class TradingLoopTests(unittest.TestCase):
@@ -59,6 +61,8 @@ class TradingLoopTests(unittest.TestCase):
             demo_execution_authorized=lambda: True,
             now_epoch=lambda: 101.0,
             now=lambda: self.now,
+            allow_legacy_sizing=True,
+            allow_unselected_strategy=True,
         )
         args.update(overrides)
         return TradingLoop(**args)
@@ -73,6 +77,66 @@ class TradingLoopTests(unittest.TestCase):
         self.assertFalse(result.entry_submission_enabled)
         self.assertEqual(result.outcomes[0].sized_volume_units, 500)
         self.assertEqual(result.outcomes[0].risk_plan.risk_cash, Decimal('5.000'))
+
+    def test_default_cycle_rejects_missing_or_wait_strategy_selection(self):
+        missing = self.make_loop(allow_unselected_strategy=False).run_cycle()
+        self.assertFalse(missing.outcomes[0].decision.allow_new_entry)
+        self.assertIsNone(missing.outcomes[0].sized_volume_units)
+
+    def test_default_cycle_rejects_legacy_unverified_sizing_inputs(self):
+        result = self.make_loop(allow_legacy_sizing=False).run_cycle()
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+        self.assertFalse(result.outcomes[0].submitted)
+        self.assertIsNone(result.outcomes[0].sized_volume_units)
+
+    def test_cycle_uses_broker_commission_and_protection_metadata_for_sizing(self):
+        instrument = InstrumentMetadata(
+            symbol="EURUSD", symbol_id=7, digits=5, pip_position=4,
+            volume_step_cents=1000, min_volume_cents=1000,
+            max_volume_cents=10000000, base_asset_id=1, quote_asset_id=2,
+            base_asset="EUR", quote_asset="USD",
+            symbol_trading_mode="ENABLED", account_access_rights="FULL_ACCESS",
+            catalog_enabled=True, enable_short_selling=True,
+            lot_size_cents=10000000, sl_distance=10, tp_distance=10,
+            precise_trading_commission_rate=5000000000,
+            commission_type="USD_PER_MILLION_USD",
+        )
+        candidate = EntryCandidate(
+            intent=OrderIntent(
+                "EURUSD", Side.BUY, 1000, Decimal("1.0902"), Decimal("1.1202")
+            ),
+            quote=Quote(Decimal("1.1000"), Decimal("1.1002"), 100.0),
+            limits=PolicyLimits(
+                max_quote_age_seconds=3,
+                max_spread_price=Decimal("0.0005"),
+                min_stop_distance=Decimal("0.0005"),
+                max_volume_units=10000000,
+            ),
+            symbol_verified=True,
+            market_condition=MarketCondition.GOOD,
+            broker_risk_inputs=BrokerRiskSizingInputs(
+                instrument=instrument,
+                entry_price=Decimal("1.1002"),
+                stop_distance_price=Decimal("0.01"),
+                take_profit_distance_price=Decimal("0.02"),
+                deposit_asset="USD",
+                adverse_price_allowance=Decimal("0.0001"),
+            ),
+        )
+        result = self.make_loop(get_candidates=lambda: [candidate]).run_cycle()
+        outcome = result.outcomes[0]
+        self.assertTrue(outcome.decision.allow_new_entry)
+        self.assertFalse(outcome.submitted)
+        self.assertEqual(outcome.sized_volume_units, 48000)
+        self.assertLessEqual(
+            estimate_total_stop_risk(
+                instrument, volume_cents=outcome.sized_volume_units,
+                entry_price="1.1002", stop_distance_price="0.01",
+                take_profit_distance_price="0.02", deposit_asset="USD",
+                adverse_price_allowance="0.0001",
+            ),
+            Decimal("5"),
+        )
 
     def test_daily_loss_lock_blocks_entries_but_management_continues(self):
         self.risk = BrokerRiskState(
@@ -219,6 +283,45 @@ class TradingLoopTests(unittest.TestCase):
         # A passing pre-trade decision is not permission to bypass demo execution.
         self.assertFalse(outcome.submitted)
         self.assertFalse(result.entry_submission_enabled)
+
+
+    def test_execution_handoff_runs_only_after_risk_and_pretrade_approval(self):
+        from types import SimpleNamespace
+        calls = []
+        loop = self.make_loop(
+            submit_order=lambda candidate, intent, plan: (
+                calls.append((candidate, intent, plan))
+                or SimpleNamespace(request_sent=True, state="PENDING")
+            )
+        )
+        result = loop.run_cycle()
+        self.assertTrue(result.entry_submission_enabled)
+        self.assertTrue(result.outcomes[0].decision.allow_new_entry)
+        self.assertTrue(result.outcomes[0].submitted)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1].volume_units, result.outcomes[0].sized_volume_units)
+
+    def test_execution_handoff_is_not_called_when_pretrade_gate_blocks(self):
+        calls = []
+        self.switch.activate("test")
+        loop = self.make_loop(
+            submit_order=lambda *args: calls.append(args)
+        )
+        result = loop.run_cycle()
+        self.assertTrue(result.entry_submission_enabled)
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+        self.assertFalse(result.outcomes[0].submitted)
+        self.assertEqual(calls, [])
+
+    def test_execution_handoff_reports_adapter_failure_without_claiming_submission(self):
+        def fail(*args):
+            raise OSError("broker send unavailable")
+        result = self.make_loop(submit_order=fail).run_cycle()
+        self.assertTrue(result.entry_submission_enabled)
+        self.assertTrue(result.outcomes[0].decision.allow_new_entry)
+        self.assertFalse(result.outcomes[0].submitted)
+        self.assertIn("broker send unavailable", result.outcomes[0].submission_error)
+
 
 
 if __name__ == "__main__":

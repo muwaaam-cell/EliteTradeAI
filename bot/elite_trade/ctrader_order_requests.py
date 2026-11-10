@@ -22,6 +22,8 @@ class MarketOrderSpec:
     entry_reference_price: float
     stop_loss: float
     take_profit: float | None = None
+    strategy_mode: str | None = None
+    initial_cash_risk: Decimal | str | None = None
 
 
 def _positive_integer(value: object, field: str) -> int:
@@ -91,13 +93,13 @@ def build_market_order_request(
     if spec.side == "SELL" and stop_loss <= reference:
         raise ValueError("A SELL stop loss must be above the entry reference price.")
 
-    take_profit = None
-    if spec.take_profit is not None:
-        take_profit = _finite_price(spec.take_profit, "take_profit")
-        if spec.side == "BUY" and take_profit <= reference:
-            raise ValueError("A BUY take profit must be above the entry reference price.")
-        if spec.side == "SELL" and take_profit >= reference:
-            raise ValueError("A SELL take profit must be below the entry reference price.")
+    if spec.take_profit is None:
+        raise ValueError("A broker-attached take profit is mandatory.")
+    take_profit = _finite_price(spec.take_profit, "take_profit")
+    if spec.side == "BUY" and take_profit <= reference:
+        raise ValueError("A BUY take profit must be above the entry reference price.")
+    if spec.side == "SELL" and take_profit >= reference:
+        raise ValueError("A SELL take profit must be below the entry reference price.")
 
     try:
         market_order = order_type_enum.Value("MARKET")
@@ -128,8 +130,7 @@ def build_market_order_request(
 
     request.clientOrderId = client_order_id
     request.relativeStopLoss = relative_distance(stop_loss, "stop_loss")
-    if take_profit is not None:
-        request.relativeTakeProfit = relative_distance(take_profit, "take_profit")
+    request.relativeTakeProfit = relative_distance(take_profit, "take_profit")
     return request
 
 @dataclass(frozen=True)

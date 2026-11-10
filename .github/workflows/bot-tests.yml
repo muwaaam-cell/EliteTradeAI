@@ -2,10 +2,14 @@ name: EliteTrade AI quality checks
 
 on:
   push:
-    branches: [pepperstone-ctrader-bot, safety/market-order-relative-protection]
+    branches: [pepperstone-ctrader-bot, safety/market-order-relative-protection, elite-integration-20261110]
   pull_request:
-    branches: [main]
+    branches: [main, pepperstone-ctrader-bot]
   workflow_dispatch:
+
+concurrency:
+  group: elite-trade-ai-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -29,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt coverage
           python -m pip check
-          python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq; ProtoOAApplicationAuthReq(); print('Vendored Spotware SDK import: OK')"
+          python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq, ProtoOADepthEvent, ProtoOASubscribeDepthQuotesReq; ProtoOAApplicationAuthReq(); ProtoOADepthEvent(); ProtoOASubscribeDepthQuotesReq(); print('Vendored Spotware SDK import: OK')"
       - name: Run unit tests with coverage
         run: |
           PYTHONPATH=. coverage run --branch --source=elite_trade -m unittest discover -s tests -v

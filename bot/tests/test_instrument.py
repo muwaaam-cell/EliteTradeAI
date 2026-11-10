@@ -92,6 +92,31 @@ class InstrumentMetadataTests(unittest.TestCase):
         self.assertTrue(metadata.can_open_long)
         self.assertFalse(metadata.can_open_short)
 
+    def test_broker_cost_and_protection_metadata_is_validated(self):
+        metadata = make_meta(
+            sl_distance=10, tp_distance=12,
+            precise_trading_commission_rate=5000000,
+            precise_min_commission=1000000,
+            min_commission_asset="USD",
+            pnl_conversion_fee_rate=1,
+        )
+        self.assertTrue(metadata.protective_distance_metadata_complete)
+        self.assertTrue(metadata.commission_metadata_complete)
+        for field, value in (
+            ("sl_distance", -1), ("tp_distance", True),
+            ("precise_trading_commission_rate", -1),
+            ("pnl_conversion_fee_rate", -1),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                make_meta(**{field: value})
+        for field, value in (
+            ("distance_set_in", "UNKNOWN"),
+            ("commission_type", "UNKNOWN"),
+            ("min_commission_type", "UNKNOWN"),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                make_meta(**{field: value})
+
     def test_invalid_modes_are_rejected(self):
         with self.assertRaises(ValueError):
             make_meta(symbol_trading_mode="LONG_ONLY")

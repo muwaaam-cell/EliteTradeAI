@@ -97,7 +97,14 @@ def map_ctrader_reconcile_response(
         symbol_id = _positive_int(getattr(trade_data, "symbolId", None), "symbolId")
         symbol = symbol_names.get(symbol_id)
         if not isinstance(symbol, str) or not symbol.strip():
-            raise ValueError("Position references an unknown broker symbol ID.")
+            known_ids = sorted(int(value) for value in symbol_names)
+            preview = ", ".join(str(value) for value in known_ids[:20])
+            if len(known_ids) > 20:
+                preview += ", ... (" + str(len(known_ids)) + " total)"
+            raise ValueError(
+                f"Position references unknown broker symbol ID {symbol_id}; "
+                f"catalogue contains {len(known_ids)} IDs [{preview}]."
+            )
 
         side_value = getattr(trade_data, "tradeSide", None)
         if side_value == 1:
@@ -206,7 +213,10 @@ class PositionLedgerReconcileHandler:
             raise ValueError("A broker symbol ID mapping is required.")
         self.ledger = ledger
         self.expected_account_id = account_id
-        self.symbol_names = dict(symbol_names)
+        # Keep caller-owned dicts live: the broker symbol catalogue arrives only
+        # after authentication, while this handler must be installed before start.
+        # Other Mapping implementations are copied to avoid retaining mutable views.
+        self.symbol_names = symbol_names if isinstance(symbol_names, dict) else dict(symbol_names)
         self.clock = clock or time.time
         self.max_age_seconds = max_age_seconds
         self.last_snapshot: CTraderReconcileSnapshot | None = None

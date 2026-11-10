@@ -153,7 +153,8 @@ def fetch_us_cpi_calendar(
     headers = {"Accept": "application/json", "User-Agent": "EliteTradeAI/0.1"}
     request = Request(CALENDAR_URL, headers=headers, method="GET")
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
+        # CALENDAR_URL is a fixed, source-controlled HTTPS endpoint; no user URL is accepted.
+        with urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
             if getattr(response, "status", 200) != 200:
                 raise CalendarFeedError("Calendar server returned a non-200 response.")
             raw = response.read(1_000_001)

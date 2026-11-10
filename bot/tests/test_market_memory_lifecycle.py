@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,7 @@ class MarketMemoryLifecycleTests(unittest.TestCase):
             memory = MarketMemory(path)
             memory.store_bars("EURUSD", "M15", [MarketBar(60, 1, 1.1, 0.9, 1.05)])
             memory.close()
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 count = connection.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
             self.assertEqual(count, 1)
 

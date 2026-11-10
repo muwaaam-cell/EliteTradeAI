@@ -13,7 +13,7 @@ from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState
 class FakeRequest:
     def __init__(self):
         self.payloadType = type(self).payload_type
-        if type(self).__name__ in {"ProtoOASubscribeSpotsReq", "ProtoOASymbolByIdReq"}:
+        if type(self).__name__ in {"ProtoOASubscribeSpotsReq", "ProtoOASymbolByIdReq", "ProtoOASubscribeDepthQuotesReq"}:
             self.symbolId = []
 
 
@@ -32,8 +32,9 @@ class FakeClient:
     def setMessageReceivedCallback(self, callback): self.received = callback
     def startService(self): self.started = True
     def stopService(self): self.stopped = True
-    def send(self, request):
+    def send(self, request, **kwargs):
         self.sent.append(request)
+        self.last_send_kwargs = kwargs
         self.last_deferred = FakeDeferred()
         return self.last_deferred
 
@@ -58,7 +59,9 @@ def fake_sdk():
         ("ProtoOAGetAccountListByAccessTokenReq", 3),
         ("ProtoOAGetAccountListByAccessTokenRes", 4),
         ("ProtoOAAccountAuthReq", 5), ("ProtoOAAccountAuthRes", 6),
-        ("ProtoOANewOrderReq", 24), ("ProtoHeartbeatEvent", 7), ("ProtoOASubscribeSpotsReq", 8),
+        ("ProtoOANewOrderReq", 24), ("ProtoOAAmendPositionSLTPReq", 29),
+        ("ProtoOAClosePositionReq", 30), ("ProtoHeartbeatEvent", 7),
+        ("ProtoOASubscribeSpotsReq", 8),
         ("ProtoOASpotEvent", 9), ("ProtoOAErrorRes", 10),
         ("ProtoOATraderReq", 11), ("ProtoOATraderRes", 12),
         ("ProtoOAGetPositionUnrealizedPnLReq", 13),
@@ -68,6 +71,8 @@ def fake_sdk():
         ("ProtoOAAssetListReq", 19), ("ProtoOAAssetListRes", 20),
         ("ProtoOASymbolByIdReq", 21), ("ProtoOASymbolByIdRes", 22),
         ("ProtoOAExecutionEvent", 23),
+        ("ProtoOADepthEvent", 25), ("ProtoOASubscribeDepthQuotesReq", 26),
+        ("ProtoOADealListReq", 27), ("ProtoOADealListRes", 28),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -94,6 +99,94 @@ class CTraderTransportTests(unittest.TestCase):
         transport._client = client
         client.received = transport._message_received
         return transport, client, reactor
+
+    def test_real_sdk_exposes_exact_execution_enum_for_runtime_composition(self):
+        transport = CTraderSdkTransport(
+            environment="demo", client_id="id", client_secret="secret",
+            access_token="token",
+        )
+        transport._load_sdk()
+        enum = transport._sdk.get("ProtoOAExecutionType")
+        self.assertIsNotNone(enum)
+        names = {value: name for name, value in enum.items()}
+        self.assertEqual(names[2], "ORDER_ACCEPTED")
+        self.assertEqual(names[3], "ORDER_FILLED")
+        self.assertEqual(names[11], "ORDER_PARTIAL_FILL")
+        self.assertEqual(names[7], "ORDER_REJECTED")
+
+    def test_depth_subscription_and_account_scoped_depth_events(self):
+        received = []
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_depth_event=received.append, on_error=errors.append
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.subscribe_depth_quotes((7, 9))
+        request = client.sent[-1]
+        self.assertEqual(request.payloadType, 26)
+        self.assertEqual(request.ctidTraderAccountId, 77)
+        self.assertEqual(request.symbolId, [7, 9])
+        with self.assertRaises(ValueError):
+            transport.subscribe_depth_quotes((7, 7))
+        client.received(client, SimpleNamespace(
+            payloadType=25,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, symbolId=7,
+                newQuotes=(), deletedQuotes=(),
+            ),
+        ))
+        self.assertEqual(len(received), 1)
+        self.assertFalse(errors)
+
+    def test_account_callback_selects_only_once(self):
+        holder = {}
+
+        def choose_account(accounts):
+            holder["transport"].select_account(accounts[0].account_id)
+
+        transport, client, _ = self.make_transport(on_accounts=choose_account)
+        holder["transport"] = transport
+        transport.start()
+        client.connected(client)
+        client.received(client, SimpleNamespace(payloadType=2))
+        client.received(client, SimpleNamespace(
+            payloadType=4,
+            body=SimpleNamespace(ctidTraderAccount=[
+                SimpleNamespace(ctidTraderAccountId=77, isLive=False)
+            ])
+        ))
+
+        auth_requests = [r for r in client.sent if r.payloadType == 5]
+        self.assertEqual(len(auth_requests), 1)
+        self.assertEqual(transport.state, ConnectionState.ACCOUNT_AUTHENTICATING)
+
+    def test_configured_account_is_selected_only_once(self):
+        transport, client, _ = self.make_transport(account_id=77)
+        transport.start()
+        client.connected(client)
+        client.received(client, SimpleNamespace(payloadType=2))
+        client.received(client, SimpleNamespace(
+            payloadType=4,
+            body=SimpleNamespace(ctidTraderAccount=[
+                SimpleNamespace(ctidTraderAccountId=77, isLive=False)
+            ])
+        ))
+
+        auth_requests = [r for r in client.sent if r.payloadType == 5]
+        self.assertEqual(len(auth_requests), 1)
+        self.assertEqual(transport.state, ConnectionState.ACCOUNT_AUTHENTICATING)
+
+    def test_stale_request_timeout_does_not_undo_connection_progress(self):
+        transport, client, _ = self.make_transport()
+        transport.state = ConnectionState.APPLICATION_AUTHENTICATING
+        transport._send(transport._sdk["ProtoOAApplicationAuthReq"]())
+
+        transport.state = ConnectionState.AWAITING_ACCOUNT_SELECTION
+        client.last_deferred.errback(
+            SimpleNamespace(value=TimeoutError(20, "Deferred"))
+        )
+        self.assertEqual(transport.state, ConnectionState.AWAITING_ACCOUNT_SELECTION)
 
     def test_app_auth_then_account_discovery_and_explicit_selection(self):
         discovered = []
@@ -257,6 +350,74 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.ERROR)
         self.assertTrue(errors)
 
+    def test_catalogue_trader_response_seeds_initial_snapshot_without_duplicate_request(self):
+        snapshots = []
+        holder = {}
+
+        def on_instruments(_instruments):
+            holder["transport"].request_account_snapshot()
+
+        transport, client, _ = self.make_transport(
+            on_instruments=on_instruments,
+            on_account_snapshot=snapshots.append,
+        )
+        holder["transport"] = transport
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_instrument_catalog()
+
+        light = ProtoOALightSymbol(
+            symbolId=7, symbolName="EURUSD", enabled=True,
+            baseAssetId=1, quoteAssetId=2,
+        )
+        assets = SimpleNamespace(
+            ctidTraderAccountId=77,
+            asset=[
+                ProtoOAAsset(assetId=1, name="EUR"),
+                ProtoOAAsset(assetId=2, name="USD"),
+            ],
+        )
+        trader = ProtoOATrader(
+            ctidTraderAccountId=77, balance=10000, depositAssetId=2,
+            moneyDigits=2, accessRights=ProtoOAAccessRights.FULL_ACCESS,
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=18,
+            body=SimpleNamespace(ctidTraderAccountId=77, symbol=[light]),
+        ))
+        client.received(client, SimpleNamespace(payloadType=20, body=assets))
+        client.received(client, SimpleNamespace(
+            payloadType=12,
+            body=SimpleNamespace(ctidTraderAccountId=77, trader=trader),
+        ))
+        full = ProtoOASymbol(
+            symbolId=7, digits=5, pipPosition=4, minVolume=1000,
+            maxVolume=100000, stepVolume=1000,
+            tradingMode=ProtoOATradingMode.ENABLED,
+            enableShortSelling=True,
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=22,
+            body=SimpleNamespace(ctidTraderAccountId=77, symbol=[full]),
+        ))
+
+        # The startup snapshot reuses the catalogue trader record and requests
+        # only PnL, avoiding a duplicate TraderReq during startup.
+        self.assertEqual([r.payloadType for r in client.sent], [17, 19, 11, 21, 13])
+        self.assertTrue(transport._snapshot_in_flight)
+        self.assertIs(transport._pending_trader, trader)
+
+        pnl = ProtoOAGetPositionUnrealizedPnLRes(
+            ctidTraderAccountId=77, moneyDigits=2,
+        )
+        client.received(client, SimpleNamespace(payloadType=14, body=pnl))
+        self.assertEqual(len(snapshots), 1)
+        self.assertFalse(transport._snapshot_in_flight)
+
+        # Later periodic refreshes must fetch fresh trader and PnL data.
+        transport.request_account_snapshot()
+        self.assertEqual([r.payloadType for r in client.sent[-2:]], [11, 13])
+
     def test_account_snapshot_requests_broker_balance_and_position_pnl(self):
         received = []
         transport, client, _ = self.make_transport(on_account_snapshot=received.append)
@@ -358,7 +519,7 @@ class CTraderTransportTests(unittest.TestCase):
         transport, client, reactor = self.make_transport(on_reconcile=lambda response: None)
         transport.state = ConnectionState.AUTHENTICATED
         transport.authenticated_account_id = 77
-        def fail_send(request):
+        def fail_send(request, **kwargs):
             raise OSError("socket unavailable")
         client.send = fail_send
         with self.assertRaises(OSError):
@@ -486,6 +647,98 @@ class CTraderTransportTests(unittest.TestCase):
     def test_invalid_configuration_rejected(self):
         with self.assertRaises(ValueError):
             CTraderSdkTransport(environment="paper", client_id="i", client_secret="s", access_token="t")
+
+
+    def test_deal_history_paginates_until_terminal_broker_page(self):
+        pages = []
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_deal_history=lambda response, start, end: pages.append(
+                (response.hasMore, start, end)
+            ),
+            on_error=errors.append,
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_deal_history(100, 900, max_rows=500)
+        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(client.sent[0].maxRows, 500)
+
+        client.received(client, SimpleNamespace(
+            payloadType=28,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, hasMore=True, deal=[]
+            ),
+        ))
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(len(client.sent), 2)
+        self.assertTrue(transport._deal_history_in_flight)
+        self.assertEqual(client.sent[1].fromTimestamp, 100)
+        self.assertEqual(client.sent[1].toTimestamp, 900)
+        self.assertEqual(client.sent[1].maxRows, 500)
+
+        client.received(client, SimpleNamespace(
+            payloadType=28,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, hasMore=False, deal=[]
+            ),
+        ))
+        self.assertEqual(pages, [(True, 100, 900), (False, 100, 900)])
+        self.assertEqual(len(client.sent), 2)
+        self.assertFalse(transport._deal_history_in_flight)
+        self.assertFalse(errors)
+
+
+    def test_deal_history_pagination_stops_when_page_persistence_fails(self):
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_deal_history=lambda response, start, end: False,
+            on_error=errors.append,
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_deal_history(100, 900, max_rows=500)
+        client.received(client, SimpleNamespace(
+            payloadType=28,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, hasMore=True, deal=[]
+            ),
+        ))
+        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(transport.state, ConnectionState.ERROR)
+        self.assertFalse(transport._deal_history_in_flight)
+        self.assertTrue(errors)
+        self.assertIn("not durably accepted", errors[0])
+
+
+    def test_demo_position_amend_and_close_senders_are_account_scoped(self):
+        transport, client, _ = self.make_transport()
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        amend_type = transport._sdk["ProtoOAAmendPositionSLTPReq"]
+        close_type = transport._sdk["ProtoOAClosePositionReq"]
+        amend = amend_type()
+        amend.ctidTraderAccountId = 77
+        close = close_type()
+        close.ctidTraderAccountId = 77
+        transport.send_demo_position_protection_request(amend)
+        transport.send_demo_close_position_request(close)
+        self.assertEqual(client.sent, [amend, close])
+        wrong = close_type()
+        wrong.ctidTraderAccountId = 88
+        with self.assertRaisesRegex(ValueError, "does not match the authenticated account"):
+            transport.send_demo_close_position_request(wrong)
+
+    def test_live_transport_refuses_position_management_requests(self):
+        transport, client, _ = self.make_transport()
+        transport.environment = "live"
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        request = transport._sdk["ProtoOAAmendPositionSLTPReq"]()
+        request.ctidTraderAccountId = 77
+        with self.assertRaisesRegex(RuntimeError, "restricted to demo"):
+            transport.send_demo_position_protection_request(request)
+        self.assertEqual(client.sent, [])
 
 
 if __name__ == "__main__":

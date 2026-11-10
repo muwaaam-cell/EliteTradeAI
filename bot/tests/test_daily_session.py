@@ -24,6 +24,19 @@ class DailySessionGuardTests(unittest.TestCase):
         return self.guard.evaluate(daily_net_pnl=Decimal(str(pnl)), equity="1000",
                                    open_positions=positions, now=now or self.now)
 
+    def test_unset_target_keeps_profit_protection_disabled(self):
+        guard = DailySessionGuard(
+            Path(self.temp.name) / "unset.sqlite3", timezone="UTC",
+            max_daily_loss="15", max_open_positions=2,
+        )
+        result = guard.evaluate(
+            daily_net_pnl="50000", equity="1000", open_positions=0, now=self.now
+        )
+        self.assertIsNone(guard.profit_target)
+        self.assertEqual(result.state, ACTIVE)
+        self.assertTrue(result.allow_new_entries)
+        self.assertEqual(result.protection_floor, Decimal("0"))
+
     def test_active_session_allows_entries_below_target(self):
         result = self.evaluate("12")
         self.assertEqual(result.state, ACTIVE)
@@ -61,6 +74,49 @@ class DailySessionGuardTests(unittest.TestCase):
         )
         self.assertEqual(restarted.evaluate(daily_net_pnl=55, equity=1000,
                          open_positions=0, now=self.now).state, TARGET_RESUMED)
+
+    def test_percentage_daily_loss_uses_and_persists_session_start_equity(self):
+        path = Path(self.temp.name) / "percentage.sqlite3"
+        guard = DailySessionGuard(
+            path, timezone="UTC", max_daily_loss_pct="1.0",
+            max_open_positions=2,
+        )
+        # P&L=-5 and equity=995 imply a $1,000 session-start balance;
+        # the 1% loss threshold is therefore $10.
+        first = guard.evaluate(
+            daily_net_pnl="-5", equity="995", open_positions=0, now=self.now
+        )
+        self.assertEqual(first.state, ACTIVE)
+        restarted = DailySessionGuard(
+            path, timezone="UTC", max_daily_loss_pct="1.0",
+            max_open_positions=2,
+        )
+        # Even if equity later changes, the persisted baseline remains $1,000.
+        locked = restarted.evaluate(
+            daily_net_pnl="-10", equity="990", open_positions=0, now=self.now
+        )
+        self.assertEqual(locked.state, LOSS_LOCK)
+        self.assertFalse(locked.allow_new_entries)
+
+    def test_percentage_daily_loss_rejects_ambiguous_or_invalid_configuration(self):
+        with self.assertRaises(ValueError):
+            DailySessionGuard(
+                Path(self.temp.name) / "none.sqlite3", timezone="UTC",
+                max_open_positions=2,
+            )
+        with self.assertRaises(ValueError):
+            DailySessionGuard(
+                Path(self.temp.name) / "both.sqlite3", timezone="UTC",
+                max_daily_loss="10", max_daily_loss_pct="1",
+                max_open_positions=2,
+            )
+        for value in ("0", "-1", "5.1", "NaN"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                DailySessionGuard(
+                    Path(self.temp.name) / f"bad-{value}.sqlite3",
+                    timezone="UTC", max_daily_loss_pct=value,
+                    max_open_positions=2,
+                )
 
     def test_daily_loss_lock_overrides_and_persists(self):
         result = self.evaluate("-15")

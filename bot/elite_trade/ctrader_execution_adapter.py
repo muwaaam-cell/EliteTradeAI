@@ -21,6 +21,8 @@ class _LedgerIntent:
     symbol: str
     side: str
     volume_units: int
+    strategy_mode: str | None = None
+    initial_cash_risk: object | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,8 @@ class CTraderDemoExecutionAdapter:
             symbol=symbol.strip(),
             side=spec.side,
             volume_units=spec.volume_units,
+            strategy_mode=spec.strategy_mode,
+            initial_cash_risk=spec.initial_cash_risk,
         )
         if not self.ledger.reserve(
             spec.client_order_id, intent, now=self.now_epoch()

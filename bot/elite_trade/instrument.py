@@ -70,6 +70,15 @@ class InstrumentMetadata:
     swap_long: Optional[Decimal] = None
     swap_short: Optional[Decimal] = None
     max_exposure_cents: Optional[int] = None
+    sl_distance: Optional[int] = None
+    tp_distance: Optional[int] = None
+    distance_set_in: str = "SYMBOL_DISTANCE_IN_POINTS"
+    commission_type: str = "USD_PER_MILLION_USD"
+    precise_trading_commission_rate: Optional[int] = None
+    precise_min_commission: Optional[int] = None
+    min_commission_asset: Optional[str] = None
+    min_commission_type: str = "CURRENCY"
+    pnl_conversion_fee_rate: Optional[int] = None
 
     def __post_init__(self) -> None:
         for name in ("symbol", "base_asset", "quote_asset"):
@@ -102,6 +111,11 @@ class InstrumentMetadata:
                 "max_exposure_cents",
                 _integer(self.max_exposure_cents, "max_exposure_cents", minimum=1),
             )
+        for name in ("sl_distance", "tp_distance", "precise_trading_commission_rate",
+                     "precise_min_commission", "pnl_conversion_fee_rate"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, _integer(value, name, minimum=0))
         for name in ("swap_long", "swap_short"):
             value = getattr(self, name)
             if value is not None:
@@ -111,6 +125,22 @@ class InstrumentMetadata:
             raise ValueError("catalog_enabled must be boolean")
         if not isinstance(self.enable_short_selling, bool):
             raise ValueError("enable_short_selling must be boolean")
+        if self.distance_set_in not in {
+            "SYMBOL_DISTANCE_IN_POINTS", "SYMBOL_DISTANCE_IN_PERCENTAGE",
+        }:
+            raise ValueError("unsupported cTrader symbol distance type")
+        if self.commission_type not in {
+            "USD_PER_MILLION_USD", "USD_PER_LOT", "PERCENTAGE_OF_VALUE",
+            "QUOTE_CCY_PER_LOT",
+        }:
+            raise ValueError("unsupported cTrader commission type")
+        if self.min_commission_type not in {"CURRENCY", "QUOTE_CURRENCY"}:
+            raise ValueError("unsupported cTrader minimum commission type")
+        if self.min_commission_asset is not None:
+            object.__setattr__(
+                self, "min_commission_asset",
+                _non_empty_str(self.min_commission_asset, "min_commission_asset"),
+            )
         if not isinstance(self.symbol_trading_mode, str) or self.symbol_trading_mode not in {
             "ENABLED",
             "DISABLED_WITHOUT_PENDINGS_EXECUTION",
@@ -136,6 +166,16 @@ class InstrumentMetadata:
         this is not an independently verified exchange tick-size guarantee.
         """
         return self.price_precision_quantum
+
+    @property
+    def protective_distance_metadata_complete(self) -> bool:
+        """True only when broker minimum SL and TP distances were supplied."""
+        return self.sl_distance is not None and self.tp_distance is not None
+
+    @property
+    def commission_metadata_complete(self) -> bool:
+        """True only when the broker supplied a precise trading commission rate."""
+        return self.precise_trading_commission_rate is not None
 
     @property
     def is_tradable(self) -> bool:

@@ -54,8 +54,9 @@ class DailySessionGuard:
         database: str | Path,
         *,
         timezone: str,
-        profit_target: Decimal | str | int,
-        max_daily_loss: Decimal | str | int,
+        profit_target: Decimal | str | int | None = None,
+        max_daily_loss: Decimal | str | int | None = None,
+        max_daily_loss_pct: Decimal | str | int | None = None,
         max_open_positions: int,
         max_giveback: Decimal | str | int = "20",
     ) -> None:
@@ -63,10 +64,26 @@ class DailySessionGuard:
             self.zone = ZoneInfo(timezone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError("A valid IANA timezone is required.") from exc
-        self.profit_target = _money(profit_target, "profit_target")
-        self.max_daily_loss = _money(max_daily_loss, "max_daily_loss")
+        self.profit_target = (
+            None if profit_target is None else _money(profit_target, "profit_target")
+        )
+        if (max_daily_loss is None) == (max_daily_loss_pct is None):
+            raise ValueError("Configure exactly one of max_daily_loss or max_daily_loss_pct.")
+        self.max_daily_loss = (
+            _money(max_daily_loss, "max_daily_loss")
+            if max_daily_loss is not None else None
+        )
+        self.max_daily_loss_pct = None
+        if max_daily_loss_pct is not None:
+            try:
+                percentage = Decimal(str(max_daily_loss_pct))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("max_daily_loss_pct must be a finite percentage.") from exc
+            if not percentage.is_finite() or not Decimal("0") < percentage <= Decimal("5"):
+                raise ValueError("max_daily_loss_pct must be greater than zero and at most five.")
+            self.max_daily_loss_pct = percentage
         self.max_giveback = _money(max_giveback, "max_giveback")
-        if self.max_giveback >= self.profit_target:
+        if self.profit_target is not None and self.max_giveback >= self.profit_target:
             raise ValueError("max_giveback must be smaller than profit_target.")
         if isinstance(max_open_positions, bool) or not isinstance(max_open_positions, int) or max_open_positions < 1:
             raise ValueError("max_open_positions must be a positive integer.")
@@ -153,6 +170,28 @@ class DailySessionGuard:
         with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             previous = self._read_or_create(db, day, local_now)
+            if self.max_daily_loss_pct is not None:
+                baseline_key = f"daily_start_equity:{day}"
+                baseline_row = db.execute(
+                    "SELECT setting_value FROM daily_settings WHERE setting_key=?",
+                    (baseline_key,),
+                ).fetchone()
+                if baseline_row is None:
+                    # Broker daily P&L is measured from the local session
+                    # boundary, so equity minus that P&L reconstructs the
+                    # session-start equity. Persist it to survive restarts.
+                    baseline = account_equity - pnl
+                    if not baseline.is_finite() or baseline <= 0:
+                        raise ValueError("Cannot establish a positive daily starting equity.")
+                    db.execute(
+                        "INSERT INTO daily_settings(setting_key,setting_value) VALUES(?,?)",
+                        (baseline_key, str(baseline)),
+                    )
+                else:
+                    baseline = _money(baseline_row[0], "daily_start_equity")
+                daily_loss_limit = baseline * self.max_daily_loss_pct / Decimal("100")
+            else:
+                daily_loss_limit = self.max_daily_loss
 
         if previous == LOSS_LOCK:
             state = LOSS_LOCK
@@ -160,10 +199,10 @@ class DailySessionGuard:
         elif previous == TARGET_LOCK:
             state = TARGET_LOCK
             mode, floor = TradingMode.GIVEBACK_LOCK, max(
-                self.profit_target - self.max_giveback, Decimal("0")
+                (self.profit_target or Decimal("0")) - self.max_giveback, Decimal("0")
             )
         else:
-            loss_reached = pnl <= -self.max_daily_loss
+            loss_reached = pnl <= -daily_loss_limit
             mode, floor = self.protection.evaluate(
                 trading_day=local_now.date(),
                 daily_net_pnl=pnl,

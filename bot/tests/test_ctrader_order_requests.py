@@ -59,16 +59,20 @@ class CTraderOrderRequestTests(unittest.TestCase):
         self.assertFalse(hasattr(request, "stopLoss"))
         self.assertFalse(hasattr(request, "takeProfit"))
 
-    def test_builds_sell_and_allows_no_take_profit(self):
+    def test_builds_sell_with_mandatory_stop_and_take_profit(self):
         request = self.build(self.spec(
             side="SELL", entry_reference_price=1.25,
-            stop_loss=1.30, take_profit=None,
+            stop_loss=1.30, take_profit=1.15,
         ))
         self.assertEqual(request.tradeSide, 2)
         self.assertEqual(request.relativeStopLoss, 5000)
-        self.assertFalse(hasattr(request, "relativeTakeProfit"))
+        self.assertEqual(request.relativeTakeProfit, 10000)
         self.assertFalse(hasattr(request, "stopLoss"))
         self.assertFalse(hasattr(request, "takeProfit"))
+
+    def test_rejects_missing_take_profit(self):
+        with self.assertRaisesRegex(ValueError, "take profit is mandatory"):
+            self.build(self.spec(take_profit=None))
 
     def test_builds_real_spotware_generated_protobuf_request(self):
         from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOANewOrderReq

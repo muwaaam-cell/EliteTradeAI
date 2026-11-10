@@ -3,6 +3,9 @@ from collections.abc import Iterable, Mapping
 
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
     ProtoOAAccessRights,
+    ProtoOACommissionType,
+    ProtoOAMinCommissionType,
+    ProtoOASymbolDistanceType,
     ProtoOATradingMode,
 )
 from elite_trade.instrument import InstrumentMetadata
@@ -98,6 +101,9 @@ def instrument_from_ctrader(
     def optional_integer(field: str):
         return getattr(symbol, field) if symbol.HasField(field) else None
 
+    def optional_string(field: str):
+        return getattr(symbol, field) if symbol.HasField(field) else None
+
     return InstrumentMetadata(
         symbol=light_symbol.symbolName,
         symbol_id=symbol.symbolId,
@@ -124,4 +130,19 @@ def instrument_from_ctrader(
         swap_long=optional_decimal("swapLong"),
         swap_short=optional_decimal("swapShort"),
         max_exposure_cents=optional_integer("maxExposure"),
+        sl_distance=optional_integer("slDistance"),
+        tp_distance=optional_integer("tpDistance"),
+        distance_set_in=_enum_name(
+            ProtoOASymbolDistanceType, symbol.distanceSetIn, "distanceSetIn"
+        ),
+        commission_type=_enum_name(
+            ProtoOACommissionType, symbol.commissionType, "commissionType"
+        ),
+        precise_trading_commission_rate=optional_integer("preciseTradingCommissionRate"),
+        precise_min_commission=optional_integer("preciseMinCommission"),
+        min_commission_asset=optional_string("minCommissionAsset"),
+        min_commission_type=_enum_name(
+            ProtoOAMinCommissionType, symbol.minCommissionType, "minCommissionType"
+        ),
+        pnl_conversion_fee_rate=optional_integer("pnlConversionFeeRate"),
     )
