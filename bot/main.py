@@ -175,7 +175,7 @@ def main() -> None:
         account_id = transport_ref["transport"].authenticated_account_id
         if account_id is None:
             print("Deal history ignored: no authenticated account.")
-            return
+            return False
         try:
             result = deal_store.ingest_page(
                 account_id=account_id,
@@ -212,8 +212,10 @@ def main() -> None:
                             + " ".join(str(exc).split())[:160]
                         )
                 persist_verified_closed_outcomes()
+            return True
         except Exception as exc:
             print(f"Deal-history persistence failed: {exc}")
+            return False
 
     def on_account_snapshot(snapshot: object) -> None:
         account_id = transport_ref["transport"].authenticated_account_id
