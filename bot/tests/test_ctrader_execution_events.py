@@ -86,6 +86,15 @@ class CTraderExecutionEventTests(unittest.TestCase):
         self.assertEqual(restarted.get("client-1").status, FILLED)
         self.assertEqual(restarted.get("client-1").filled_volume_units, 100)
 
+    def test_unknown_can_be_resolved_by_authenticated_full_fill(self):
+        self.assertTrue(self.ledger.mark_unknown("client-1", now=2, error="connection lost"))
+        filled = self.decode(self.event(3, executed=100))
+        self.assertTrue(apply_execution_update(self.ledger, filled, now=3))
+        record = self.ledger.get("client-1")
+        self.assertEqual(record.status, FILLED)
+        self.assertEqual(record.filled_volume_units, 100)
+        self.assertEqual(record.broker_order_id, "9001")
+
     def test_unknown_can_be_resolved_by_authenticated_accept_or_reject(self):
         for execution_type, expected in ((2, SUBMITTED), (7, REJECTED)):
             with self.subTest(expected=expected):
