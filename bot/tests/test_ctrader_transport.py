@@ -70,6 +70,7 @@ def fake_sdk():
         ("ProtoOASymbolByIdReq", 21), ("ProtoOASymbolByIdRes", 22),
         ("ProtoOAExecutionEvent", 23),
         ("ProtoOADepthEvent", 25), ("ProtoOASubscribeDepthQuotesReq", 26),
+        ("ProtoOADealListReq", 27), ("ProtoOADealListRes", 28),
     ]:
         cls = type(name, (FakeRequest,), {"payload_type": number})
         classes[name] = cls
@@ -576,6 +577,46 @@ class CTraderTransportTests(unittest.TestCase):
     def test_invalid_configuration_rejected(self):
         with self.assertRaises(ValueError):
             CTraderSdkTransport(environment="paper", client_id="i", client_secret="s", access_token="t")
+
+
+    def test_deal_history_paginates_until_terminal_broker_page(self):
+        pages = []
+        errors = []
+        transport, client, _ = self.make_transport(
+            on_deal_history=lambda response, start, end: pages.append(
+                (response.hasMore, start, end)
+            ),
+            on_error=errors.append,
+        )
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_deal_history(100, 900, max_rows=500)
+        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(client.sent[0].maxRows, 500)
+
+        client.received(client, SimpleNamespace(
+            payloadType=28,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, hasMore=True, deal=[]
+            ),
+        ))
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(len(client.sent), 2)
+        self.assertTrue(transport._deal_history_in_flight)
+        self.assertEqual(client.sent[1].fromTimestamp, 100)
+        self.assertEqual(client.sent[1].toTimestamp, 900)
+        self.assertEqual(client.sent[1].maxRows, 500)
+
+        client.received(client, SimpleNamespace(
+            payloadType=28,
+            body=SimpleNamespace(
+                ctidTraderAccountId=77, hasMore=False, deal=[]
+            ),
+        ))
+        self.assertEqual(pages, [(True, 100, 900), (False, 100, 900)])
+        self.assertEqual(len(client.sent), 2)
+        self.assertFalse(transport._deal_history_in_flight)
+        self.assertFalse(errors)
 
 
 if __name__ == "__main__":
