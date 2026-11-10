@@ -615,6 +615,82 @@ def main() -> None:
         config_provider=candidate_config,
         now_epoch=time.time,
     )
+    def start_trading_loop() -> None:
+        if daily_guard is None or daily_risk_provider is None:
+            print("TradingLoop not scheduled: daily broker-risk configuration is unavailable.")
+            return
+        from twisted.internet.task import LoopingCall
+
+        runtime = execution_runtime_ref.get("runtime")
+        if runtime is None:
+            print("TradingLoop not scheduled: demo execution runtime is unavailable.")
+            return
+        trading_loop = TradingLoop(
+            guard=daily_guard,
+            kill_switch=kill_switch,
+            manage_positions=position_manager.manage_positions,
+            load_risk_state=daily_risk_provider,
+            get_candidates=candidate_pipeline,
+            is_broker_connected=lambda: transport.state is ConnectionState.AUTHENTICATED,
+            demo_execution_authorized=lambda: (
+                transport.environment == "demo"
+                and runtime.protection_monitor.allow_new_entries
+            ),
+            now_epoch=time.time,
+            now=lambda: datetime.now(daily_guard.zone),
+            submit_order=trading_loop_submitter,
+        )
+
+        def run_cycle() -> None:
+            result = trading_loop.run_cycle()
+            if result.management_error:
+                print("TradingLoop management gate: " + result.management_error)
+            for outcome in result.outcomes:
+                if outcome.submitted:
+                    print(
+                        f"Demo order request sent once for {outcome.symbol}; "
+                        "waiting for authenticated broker execution confirmation."
+                    )
+
+        loop = LoopingCall(run_cycle)
+        loop.start(5.0, now=True)
+        trading_loop_ref["loop"] = loop
+        trading_loop_ref["enabled"] = True
+        print(
+            "Evidence-gated cTrader DEMO TradingLoop scheduled. "
+            "Live execution remains disabled."
+        )
+
+    def start_broker_refresh() -> None:
+        from twisted.internet.task import LoopingCall
+
+        last_history_refresh = {"epoch": 0.0}
+
+        def refresh() -> None:
+            if transport.state is not ConnectionState.AUTHENTICATED:
+                return
+            if not getattr(transport, "_snapshot_in_flight", False):
+                try:
+                    transport.request_account_snapshot()
+                except Exception:
+                    pass
+            now = time.time()
+            if (
+                now - last_history_refresh["epoch"] >= 30.0
+                and not getattr(transport, "_deal_history_in_flight", False)
+            ):
+                end_ms = int(now * 1000)
+                start_ms = end_ms - deal_history_days * 24 * 60 * 60 * 1000
+                try:
+                    transport.request_deal_history(start_ms, end_ms, max_rows=1000)
+                    history_range_ref["range"] = (start_ms, end_ms)
+                    last_history_refresh["epoch"] = now
+                except Exception:
+                    pass
+
+        loop = LoopingCall(refresh)
+        loop.start(2.5, now=False)
+
     candidate_reported: set[str] = set()
     previous_spot_handler = transport.on_spot
 
@@ -622,9 +698,10 @@ def main() -> None:
         if callable(previous_spot_handler):
             previous_spot_handler(event)
         process_close_all_request()
-        try:
-            position_manager.manage_positions()
-        except Exception as exc:
+        if not trading_loop_ref.get("enabled"):
+            try:
+                position_manager.manage_positions()
+            except Exception as exc:
             print(
                 "Bot-owned position management blocked safely: "
                 + " ".join(str(exc).split())[:200]
@@ -769,6 +846,8 @@ def main() -> None:
     from twisted.internet import reactor
 
     reactor.callWhenRunning(transport.start)
+    reactor.callWhenRunning(start_broker_refresh)
+    reactor.callWhenRunning(start_trading_loop)
     reactor.callWhenRunning(start_telegram_runtime)
     try:
         reactor.run()
