@@ -191,6 +191,22 @@ class OrderLedgerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ledger.resolve_unknown("missing", PENDING, now=100)
 
+    def test_broker_position_lookup_returns_only_correlated_orders(self):
+        intent = SimpleNamespace(
+            symbol="EURUSD", side=Side.BUY, volume_units=100,
+            strategy_mode="SCALPING", initial_cash_risk=Decimal("0.25"),
+        )
+        self.ledger.reserve("position-order-1", intent, now=100)
+        self.ledger.mark_submitted("position-order-1", "broker-1", now=101)
+        self.ledger.mark_partial_fill(
+            "position-order-1", 100, "broker-1", now=102,
+            broker_position_id="position-77",
+        )
+        rows = self.ledger.list_by_broker_position_id("position-77")
+        self.assertEqual([row.client_order_id for row in rows], ["position-order-1"])
+        self.assertEqual(rows[0].initial_cash_risk, Decimal("0.25"))
+        self.assertEqual(self.ledger.list_by_broker_position_id("unknown-position"), [])
+
     def test_strategy_and_initial_cash_risk_metadata_persist_across_restart(self):
         intent = SimpleNamespace(
             symbol="EURUSD", side=Side.SELL, volume_units=500,
