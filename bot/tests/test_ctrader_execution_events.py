@@ -56,6 +56,7 @@ class CTraderExecutionEventTests(unittest.TestCase):
         self.assertEqual(filled.status, FILLED)
         self.assertTrue(apply_execution_update(self.ledger, filled, now=4))
         self.assertEqual(self.ledger.get("client-1").filled_volume_units, 100)
+        self.assertEqual(self.ledger.get("client-1").broker_position_id, "7007")
 
     def test_event_must_match_reserved_volume_and_local_order(self):
         wrong_volume = self.decode(self.event(2))
