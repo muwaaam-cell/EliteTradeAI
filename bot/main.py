@@ -91,6 +91,7 @@ def main() -> None:
     account_risk_ref: dict[str, object] = {}
     execution_runtime_ref: dict[str, object] = {}
     history_range_ref: dict[str, tuple[int, int]] = {}
+    history_refresh_pending = {"value": False}
 
     def on_reconcile(response: object) -> object:
         """Persist and report the complete broker snapshot without managing positions."""
@@ -140,11 +141,11 @@ def main() -> None:
             market_ref["market"].request_catalogue()
             end_ms = int(time.time() * 1000)
             start_ms = end_ms - deal_history_days * 24 * 60 * 60 * 1000
-            history_range_ref["range"] = (start_ms, end_ms)
             try:
                 transport_ref["transport"].request_deal_history(
                     start_ms, end_ms, max_rows=1000
                 )
+                history_range_ref["range"] = (start_ms, end_ms)
                 print(
                     f"Requested up to 1000 demo deals from the last "
                     f"{deal_history_days} days."
@@ -177,6 +178,21 @@ def main() -> None:
                 )
             else:
                 print("Requested deal-history window returned its final page.")
+                if history_refresh_pending["value"]:
+                    refresh_end = int(time.time() * 1000)
+                    refresh_start = refresh_end - deal_history_days * 24 * 60 * 60 * 1000
+                    try:
+                        transport_ref["transport"].request_deal_history(
+                            refresh_start, refresh_end, max_rows=1000
+                        )
+                        history_range_ref["range"] = (refresh_start, refresh_end)
+                        history_refresh_pending["value"] = False
+                        return
+                    except Exception as exc:
+                        print(
+                            "Deferred deal-history refresh still unavailable: "
+                            + " ".join(str(exc).split())[:160]
+                        )
                 persist_verified_closed_outcomes()
         except Exception as exc:
             print(f"Deal-history persistence failed: {exc}")
@@ -302,15 +318,15 @@ def main() -> None:
             # newly emitted close deals can be included in the next final page.
             start_ms = int(time.time() * 1000) - deal_history_days * 24 * 60 * 60 * 1000
             end_ms = int(time.time() * 1000)
-            history_range_ref["range"] = (start_ms, end_ms)
             try:
                 transport.request_deal_history(start_ms, end_ms, max_rows=1000)
+                history_range_ref["range"] = (start_ms, end_ms)
             except Exception as exc:
+                history_refresh_pending["value"] = True
                 print(
                     "Closed position recorded; deal-history refresh deferred: "
                     + " ".join(str(exc).split())[:160]
                 )
-            persist_verified_closed_outcomes()
     try:
         transport._load_sdk()
         execution_enum = transport._sdk.get("ProtoOAExecutionType")
