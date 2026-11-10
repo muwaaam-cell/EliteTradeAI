@@ -8,7 +8,9 @@ from elite_trade.adaptive_risk import MarketCondition, TradingMode
 from elite_trade.daily_session import DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote, Side
 from elite_trade.kill_switch import KillSwitch
-from elite_trade.trading_loop import BrokerRiskState, EntryCandidate, TradingLoop
+from elite_trade.trading_loop import BrokerRiskSizingInputs, BrokerRiskState, EntryCandidate, TradingLoop
+from elite_trade.instrument import InstrumentMetadata
+from elite_trade.ctrader_risk_sizing import estimate_total_stop_risk
 
 
 class TradingLoopTests(unittest.TestCase):
@@ -73,6 +75,55 @@ class TradingLoopTests(unittest.TestCase):
         self.assertFalse(result.entry_submission_enabled)
         self.assertEqual(result.outcomes[0].sized_volume_units, 500)
         self.assertEqual(result.outcomes[0].risk_plan.risk_cash, Decimal('5.000'))
+
+    def test_cycle_uses_broker_commission_and_protection_metadata_for_sizing(self):
+        instrument = InstrumentMetadata(
+            symbol="EURUSD", symbol_id=7, digits=5, pip_position=4,
+            volume_step_cents=1000, min_volume_cents=1000,
+            max_volume_cents=10000000, base_asset_id=1, quote_asset_id=2,
+            base_asset="EUR", quote_asset="USD",
+            symbol_trading_mode="ENABLED", account_access_rights="FULL_ACCESS",
+            catalog_enabled=True, enable_short_selling=True,
+            lot_size_cents=10000000, sl_distance=10, tp_distance=10,
+            precise_trading_commission_rate=5000000000,
+            commission_type="USD_PER_MILLION_USD",
+        )
+        candidate = EntryCandidate(
+            intent=OrderIntent(
+                "EURUSD", Side.BUY, 1000, Decimal("1.0902"), Decimal("1.1202")
+            ),
+            quote=Quote(Decimal("1.1000"), Decimal("1.1002"), 100.0),
+            limits=PolicyLimits(
+                max_quote_age_seconds=3,
+                max_spread_price=Decimal("0.0005"),
+                min_stop_distance=Decimal("0.0005"),
+                max_volume_units=10000000,
+            ),
+            symbol_verified=True,
+            market_condition=MarketCondition.GOOD,
+            broker_risk_inputs=BrokerRiskSizingInputs(
+                instrument=instrument,
+                entry_price=Decimal("1.1002"),
+                stop_distance_price=Decimal("0.01"),
+                take_profit_distance_price=Decimal("0.02"),
+                deposit_asset="USD",
+                adverse_price_allowance=Decimal("0.0001"),
+            ),
+        )
+        result = self.make_loop(get_candidates=lambda: [candidate]).run_cycle()
+        outcome = result.outcomes[0]
+        self.assertTrue(outcome.decision.allow_new_entry)
+        self.assertFalse(outcome.submitted)
+        self.assertEqual(outcome.sized_volume_units, 48000)
+        self.assertLessEqual(
+            estimate_total_stop_risk(
+                instrument, volume_cents=outcome.sized_volume_units,
+                entry_price="1.1002", stop_distance_price="0.01",
+                take_profit_distance_price="0.02", deposit_asset="USD",
+                adverse_price_allowance="0.0001",
+            ),
+            Decimal("5"),
+        )
 
     def test_daily_loss_lock_blocks_entries_but_management_continues(self):
         self.risk = BrokerRiskState(
