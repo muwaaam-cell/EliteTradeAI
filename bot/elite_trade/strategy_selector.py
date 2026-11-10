@@ -26,6 +26,7 @@ class StrategyMode(str, Enum):
 
 @dataclass(frozen=True)
 class StrategySelectionConfig:
+    """Initial guardrails only; values require instrument-specific backtest calibration."""
     min_signal_quality: Decimal = Decimal("0.70")
     min_liquidity_score: Decimal = Decimal("0.60")
     max_scalping_spread_to_atr: Decimal = Decimal("0.08")
