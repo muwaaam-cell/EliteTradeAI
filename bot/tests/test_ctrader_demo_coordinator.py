@@ -120,6 +120,7 @@ class DemoCoordinatorTests(unittest.TestCase):
             transport=self.transport,
             authorization_gate=self.gate,
             client_order_id_factory=lambda: "demo-cycle-001",
+            enabled=True,
         )
 
     def test_risk_cycle_is_sized_then_one_demo_order_is_sent_with_attached_sl_tp(self):
@@ -142,6 +143,18 @@ class DemoCoordinatorTests(unittest.TestCase):
         result = self.coordinator.run_once()
         self.assertIsNone(result.submission)
         self.assertIsNotNone(result.blocked_reason)
+        self.assertEqual(self.sent, [])
+
+    def test_demo_coordinator_is_disabled_by_default(self):
+        coordinator = DemoTradingCoordinator(
+            trading_loop=self.loop,
+            execution_runtime=self.runtime,
+            transport=self.transport,
+            authorization_gate=self.gate,
+        )
+        result = coordinator.run_once()
+        self.assertIsNone(result.submission)
+        self.assertEqual(result.blocked_reason, "Demo trading coordinator is disabled.")
         self.assertEqual(self.sent, [])
 
     def test_unarmed_or_wrong_order_cannot_pass_cycle_authorization_gate(self):
