@@ -61,6 +61,7 @@ class TradingLoopTests(unittest.TestCase):
             demo_execution_authorized=lambda: True,
             now_epoch=lambda: 101.0,
             now=lambda: self.now,
+            allow_legacy_sizing=True,
         )
         args.update(overrides)
         return TradingLoop(**args)
@@ -75,6 +76,12 @@ class TradingLoopTests(unittest.TestCase):
         self.assertFalse(result.entry_submission_enabled)
         self.assertEqual(result.outcomes[0].sized_volume_units, 500)
         self.assertEqual(result.outcomes[0].risk_plan.risk_cash, Decimal('5.000'))
+
+    def test_default_cycle_rejects_legacy_unverified_sizing_inputs(self):
+        result = self.make_loop(allow_legacy_sizing=False).run_cycle()
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+        self.assertFalse(result.outcomes[0].submitted)
+        self.assertIsNone(result.outcomes[0].sized_volume_units)
 
     def test_cycle_uses_broker_commission_and_protection_metadata_for_sizing(self):
         instrument = InstrumentMetadata(
