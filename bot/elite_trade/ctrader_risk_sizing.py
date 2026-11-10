@@ -228,15 +228,24 @@ def calculate_volume_for_risk(
     base_to_usd_rate: Decimal | str | int | None = None,
     min_commission_to_deposit_rate: Decimal | str | int | None = None,
     adverse_price_allowance: Decimal | str | int = "0",
+    max_volume_cents: int | None = None,
 ) -> int | None:
     """Find the largest broker-valid volume whose estimated stop loss fits risk_cash."""
     budget = _decimal(risk_cash, "risk_cash")
+    if max_volume_cents is not None and (
+        isinstance(max_volume_cents, bool) or not isinstance(max_volume_cents, int)
+        or max_volume_cents <= 0
+    ):
+        raise ValueError("max_volume_cents must be a positive integer when supplied.")
     step = instrument.volume_step_cents
     minimum = (
         Decimal(instrument.min_volume_cents) / Decimal(step)
     ).to_integral_value(rounding=ROUND_CEILING) * step
+    maximum_bound = instrument.max_volume_cents
+    if max_volume_cents is not None:
+        maximum_bound = min(maximum_bound, max_volume_cents)
     maximum = (
-        Decimal(instrument.max_volume_cents) / Decimal(step)
+        Decimal(maximum_bound) / Decimal(step)
     ).to_integral_value(rounding=ROUND_FLOOR) * step
     low = int(minimum)
     high = int(maximum)
