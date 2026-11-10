@@ -2,7 +2,7 @@ import unittest
 from decimal import Decimal
 from types import SimpleNamespace
 
-from elite_trade.ctrader_depth import CTraderDepthBook
+from elite_trade.ctrader_depth import CTraderDepthBook, depth_liquidity_score
 
 
 class Quote:
@@ -68,6 +68,27 @@ class DepthBookTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "crossed"):
             self.book.update(self.event(newQuotes=(Quote(2, 1000, ask=109990),)))
         self.assertEqual(self.book.get("EURUSD").asks[0].price, Decimal("1.1001"))
+
+    def test_depth_liquidity_score_uses_weaker_two_sided_depth_and_thresholds(self):
+        snapshot = self.book.update(self.event(newQuotes=(
+            Quote(1, 2500, bid=110000),
+            Quote(2, 4000, bid=109990),
+            Quote(3, 3000, ask=110020),
+        )))
+        score = depth_liquidity_score(
+            snapshot, min_top_level_size_units="20",
+            min_total_depth_units="40", now_epoch=self.now,
+        )
+        self.assertEqual(score, Decimal("0.75"))
+        self.assertIsNone(depth_liquidity_score(
+            snapshot, min_top_level_size_units="20",
+            min_total_depth_units="40", now_epoch=self.now + 4,
+        ))
+        empty = self.book.update(self.event(deletedQuotes=(1, 2, 3)))
+        self.assertIsNone(depth_liquidity_score(
+            empty, min_top_level_size_units="20",
+            min_total_depth_units="40", now_epoch=self.now,
+        ))
 
     def test_stale_depth_is_not_returned(self):
         self.book.update(self.event(newQuotes=(Quote(1, 1000, bid=110000),)))
