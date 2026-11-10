@@ -269,6 +269,13 @@ def apply_order_error(
     error = update.error_code
     if update.description:
         error = f"{error}: {update.description}"
+    if record.status == "UNKNOWN":
+        return ledger.resolve_unknown(
+            record.client_order_id,
+            REJECTED,
+            now=now,
+            broker_order_id=update.broker_order_id,
+        )
     return ledger.mark_terminal(
         record.client_order_id,
         REJECTED,
