@@ -46,6 +46,7 @@ class CandidateRiskInputs:
     usd_to_deposit_rate: Decimal | None = None
     base_to_usd_rate: Decimal | None = None
     min_commission_to_deposit_rate: Decimal | None = None
+    observed_at_epoch: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,9 @@ class CTraderCandidatePipeline:
             risk_inputs = self.risk_inputs_provider(instrument.symbol)
             if not isinstance(risk_inputs, CandidateRiskInputs):
                 return CandidateBuildResult(None, "Broker deposit-currency conversion inputs are unavailable.")
+            risk_age = now - float(risk_inputs.observed_at_epoch)
+            if risk_age < 0 or risk_age > cfg.evidence_max_age_seconds:
+                return CandidateBuildResult(None, "Deposit-currency conversion inputs are stale or have an invalid timestamp.")
             broker_sizing = BrokerRiskSizingInputs(
                 instrument=instrument,
                 entry_price=entry,
