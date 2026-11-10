@@ -636,28 +636,39 @@ def main() -> None:
         from twisted.internet.threads import deferToThread
         from twisted.internet.task import LoopingCall
 
-        def boot() -> None:
-            controller.poll_once(timeout=0)
-            controller.send(
-                "EliteTrade AI connected to the Pepperstone cTrader demo monitor. "
-                "Status is broker-derived. New entries remain blocked until daily-risk "
-                "and end-to-end demo validation are complete. /closeall affects only "
-                "bot-owned XAUUSD/EURUSD positions."
-            )
+        from twisted.internet.threads import deferToThread
+        from twisted.internet.task import LoopingCall
 
-        def start_polling(_result):
-            loop = LoopingCall(
-                lambda: deferToThread(controller.poll_once, timeout=0)
-            )
-            loop.start(3.0, now=False)
-            print("Telegram controls connected to broker status and close-all request queue.")
-            return loop
+        startup_notice = {"sent": False}
+        startup_message = (
+            "EliteTrade AI connected to the Pepperstone cTrader demo monitor. "
+            "Status is broker-derived. New entries remain blocked until daily-risk "
+            "and end-to-end demo validation are complete. /closeall affects only "
+            "bot-owned XAUUSD/EURUSD positions."
+        )
 
-        def report_failure(failure):
-            print("Telegram bootstrap failed: " + str(getattr(failure, "value", failure))[:200])
-            return None
+        def poll_telegram():
+            deferred = deferToThread(controller.poll_once, timeout=0)
 
-        deferToThread(boot).addCallbacks(start_polling, report_failure)
+            def after_poll(_result):
+                if not startup_notice["sent"]:
+                    startup_notice["sent"] = True
+                    return deferToThread(controller.send, startup_message)
+                return _result
+
+            def recover(failure):
+                print(
+                    "Telegram polling failed; next poll will retry: "
+                    + str(getattr(failure, "value", failure))[:180]
+                )
+                return None
+
+            deferred.addCallbacks(after_poll, recover)
+            return deferred
+
+        loop = LoopingCall(poll_telegram)
+        loop.start(3.0, now=True)
+        print("Telegram controls connected to broker status and close-all request queue.")
 
     def process_close_all_request() -> None:
         if not close_all_request_path.exists():
