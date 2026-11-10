@@ -7,7 +7,7 @@ score or treat partial book data as a complete execution guarantee.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from math import isfinite
 from typing import Callable, Iterable
 
@@ -231,7 +231,7 @@ def depth_liquidity_score(
             raise ValueError(f"{name} must be finite and positive.")
         try:
             number = Decimal(str(value))
-        except Exception as exc:
+        except (InvalidOperation, TypeError, ValueError) as exc:
             raise ValueError(f"{name} must be finite and positive.") from exc
         if not number.is_finite() or number <= 0:
             raise ValueError(f"{name} must be finite and positive.")
@@ -241,7 +241,8 @@ def depth_liquidity_score(
     total_required = positive(min_total_depth_units, "min_total_depth_units")
     now = positive(now_epoch, "now_epoch")
     max_age = positive(max_age_seconds, "max_age_seconds")
-    age = now - Decimal(str(snapshot.received_at_epoch))
+    received = positive(snapshot.received_at_epoch, "received_at_epoch")
+    age = now - received
     if age < 0 or age > max_age:
         return None
     if snapshot.top_bid_size is None or snapshot.top_ask_size is None:
