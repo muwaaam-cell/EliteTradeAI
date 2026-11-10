@@ -11,6 +11,7 @@ from elite_trade.config import Settings
 from elite_trade.ctrader_market_data_runtime import CTraderMarketDataRuntime
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState, TradingAccount
 from elite_trade.ctrader_trendbar_runtime import CTraderTrendbarRuntime
+from elite_trade.ctrader_depth_runtime import CTraderDepthRuntime
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
@@ -207,6 +208,14 @@ def main() -> None:
         history_count=int(os.getenv("CTRADER_HISTORY_COUNT", "500")),
         history_start_utc=os.getenv("CTRADER_HISTORY_START_UTC") or None,
         history_end_utc=os.getenv("CTRADER_HISTORY_END_UTC") or None,
+    )
+
+    # Level II depth is used as raw liquidity evidence; no score is inferred
+    # when the broker has not supplied a fresh book for a selected symbol.
+    _depth_runtime = CTraderDepthRuntime(
+        transport=transport,
+        symbols=symbols,
+        now_epoch=time.time,
     )
 
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
