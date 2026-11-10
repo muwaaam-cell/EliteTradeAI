@@ -133,9 +133,9 @@ class DemoTradingCoordinator:
                     side=side,
                     volume_units=outcome.sized_volume_units,
                     client_order_id=client_order_id.strip(),
-                    entry_reference_price=sizing.entry_price,
-                    stop_loss=intent.stop_loss,
-                    take_profit=intent.take_profit,
+                    entry_reference_price=float(sizing.entry_price),
+                    stop_loss=float(intent.stop_loss),
+                    take_profit=float(intent.take_profit),
                 )
                 self.authorization_gate.arm(spec, instrument.symbol)
                 submission = self.execution_runtime.adapter.submit_market_order(
