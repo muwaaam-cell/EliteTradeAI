@@ -53,6 +53,7 @@ class CTraderSdkTransport:
         on_state: Callable[[ConnectionState], None] | None = None,
         on_error: Callable[[str], None] | None = None,
         on_spot: Callable[[object], None] | None = None,
+        on_depth_event: Callable[[object], None] | None = None,
         on_trendbar_response: Callable[[object], None] | None = None,
         on_execution_event: Callable[[object], None] | None = None,
         on_order_error: Callable[[object], None] | None = None,
@@ -91,6 +92,7 @@ class CTraderSdkTransport:
         self.on_state = on_state or (lambda state: None)
         self.on_error = on_error or (lambda message: None)
         self.on_spot = on_spot or (lambda event: None)
+        self.on_depth_event = on_depth_event or (lambda event: None)
         self.on_trendbar_response = on_trendbar_response or (lambda response: None)
         self.on_execution_event = on_execution_event or (lambda event: None)
         self.on_order_error = on_order_error or (lambda event: None)
@@ -140,6 +142,8 @@ class CTraderSdkTransport:
                 ProtoOAGetAccountListByAccessTokenRes,
                 ProtoOASubscribeSpotsReq,
                 ProtoOASpotEvent,
+                ProtoOADepthEvent,
+                ProtoOASubscribeDepthQuotesReq,
                 ProtoOAGetTrendbarsReq,
                 ProtoOAGetTrendbarsRes,
                 ProtoOASubscribeLiveTrendbarReq,
@@ -175,6 +179,8 @@ class CTraderSdkTransport:
                 "ProtoOAGetAccountListByAccessTokenRes": ProtoOAGetAccountListByAccessTokenRes,
                 "ProtoOASubscribeSpotsReq": ProtoOASubscribeSpotsReq,
                 "ProtoOASpotEvent": ProtoOASpotEvent,
+                "ProtoOADepthEvent": ProtoOADepthEvent,
+                "ProtoOASubscribeDepthQuotesReq": ProtoOASubscribeDepthQuotesReq,
                 "ProtoOAGetTrendbarsReq": ProtoOAGetTrendbarsReq,
                 "ProtoOAGetTrendbarsRes": ProtoOAGetTrendbarsRes,
                 "ProtoOASubscribeLiveTrendbarReq": ProtoOASubscribeLiveTrendbarReq,
@@ -430,6 +436,13 @@ class CTraderSdkTransport:
                     self._fail("Received market data for an unexpected cTrader account.")
                     return
                 self.on_spot(event)
+            elif ("ProtoOADepthEvent" in self._sdk
+                  and payload_type == self._sdk["ProtoOADepthEvent"]().payloadType):
+                event = extract(message)
+                if int(event.ctidTraderAccountId) != self.authenticated_account_id:
+                    self._fail("Received market depth for an unexpected cTrader account.")
+                    return
+                self.on_depth_event(event)
             elif payload_type == self._sdk["ProtoOAExecutionEvent"]().payloadType:
                 event = extract(message)
                 if int(event.ctidTraderAccountId) != self.authenticated_account_id:
@@ -706,6 +719,23 @@ class CTraderSdkTransport:
         request.ctidTraderAccountId = self.authenticated_account_id
         request.symbolId.extend(normalized)
         request.subscribeToSpotTimestamp = True
+        self._send(request)
+
+    def subscribe_depth_quotes(self, symbol_ids: tuple[int, ...] | list[int]) -> None:
+        """Subscribe to authenticated Level II depth for verified broker symbols."""
+        if self.environment != "demo" or self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Market depth requires an authenticated demo account.")
+        if not symbol_ids:
+            raise ValueError("At least one depth symbol ID is required.")
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
+               for value in symbol_ids):
+            raise ValueError("Depth symbol IDs must be positive integers.")
+        normalized = tuple(symbol_ids)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("Depth symbol IDs must be unique.")
+        request = self._sdk["ProtoOASubscribeDepthQuotesReq"]()
+        request.ctidTraderAccountId = self.authenticated_account_id
+        request.symbolId.extend(normalized)
         self._send(request)
 
     def request_historical_trendbars(
