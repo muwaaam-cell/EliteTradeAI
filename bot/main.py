@@ -42,7 +42,7 @@ from elite_trade.worker_token_vault import WorkerTokenVault
 
 
 def main() -> None:
-    load_dotenv()
+    load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.env')
     settings = Settings.from_env()
 
     print("EliteTrade AI — Pepperstone cTrader guarded demo runtime")
