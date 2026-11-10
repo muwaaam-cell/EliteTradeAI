@@ -17,6 +17,7 @@ from elite_trade.instrument import InstrumentMetadata
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.order_ledger import OrderLedger
 from elite_trade.position_ledger import PositionLedger
+from elite_trade.strategy_selector import StrategyMode, StrategySelection
 from elite_trade.trading_loop import (
     BrokerRiskSizingInputs,
     BrokerRiskState,
@@ -87,6 +88,10 @@ class DemoCoordinatorTests(unittest.TestCase):
             ),
             symbol_verified=True,
             market_condition=MarketCondition.GOOD,
+            strategy_selection=StrategySelection(
+                StrategyMode.SCALPING, "BUY", Decimal("0.25"),
+                "test-only calibrated evidence",
+            ),
             broker_risk_inputs=BrokerRiskSizingInputs(
                 instrument=self.instrument,
                 entry_price=Decimal("1.1002"),
