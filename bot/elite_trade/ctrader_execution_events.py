@@ -120,9 +120,9 @@ def apply_execution_update(
     if record.status in {FILLED, REJECTED, CANCELLED}:
         return False
     if record.status == "UNKNOWN":
-        if update.status == PARTIALLY_FILLED:
+        if update.status in {PARTIALLY_FILLED, FILLED}:
             if update.broker_order_id is None:
-                raise ValueError("Partial fill has no broker order ID.")
+                raise ValueError("Fill event has no broker order ID.")
             return ledger.resolve_unknown_partial_fill(
                 update.client_order_id,
                 update.executed_volume_units,
@@ -151,7 +151,16 @@ def apply_execution_update(
             update.broker_order_id,
             now=now,
         )
-    if update.status in {FILLED, REJECTED, CANCELLED}:
+    if update.status == FILLED:
+        if update.broker_order_id is None:
+            raise ValueError("Filled broker order has no broker order ID.")
+        return ledger.mark_partial_fill(
+            update.client_order_id,
+            update.executed_volume_units,
+            update.broker_order_id,
+            now=now,
+        )
+    if update.status in {REJECTED, CANCELLED}:
         return ledger.mark_terminal(
             update.client_order_id,
             update.status,
