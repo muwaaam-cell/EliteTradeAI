@@ -80,8 +80,9 @@ class CTraderPositionManager:
                 CREATE TABLE IF NOT EXISTS position_close_requests (
                     account_id TEXT NOT NULL,
                     position_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
                     requested_epoch REAL NOT NULL,
-                    PRIMARY KEY (account_id, position_id)
+                    PRIMARY KEY (account_id, position_id, request_id)
                 )
             """)
             self._db.execute("""
@@ -304,7 +305,7 @@ class CTraderPositionManager:
                         )
         return amended
 
-    def close_all_bot_positions(self) -> int:
+    def close_all_bot_positions(self, *, request_id: str | None = None) -> int:
         """Send one close request for each fresh, bot-owned allowlisted position.
 
         Requests are durably reserved before send and never automatically
@@ -318,6 +319,12 @@ class CTraderPositionManager:
         now = float(self.now_epoch())
         if not isfinite(now) or now < 0:
             raise PositionManagementError("Local close-all clock is invalid.")
+        request_token = (
+            str(request_id).strip() if request_id is not None
+            else f"local-{int(now * 1000000)}"
+        )
+        if not request_token or len(request_token) > 128:
+            raise PositionManagementError("Close-all request ID is invalid.")
         sent = 0
         for position in self.position_ledger.list_open():
             if position.symbol.upper() not in {"XAUUSD", "EURUSD"}:
@@ -353,8 +360,9 @@ class CTraderPositionManager:
             with self._lock, self._db:
                 cursor = self._db.execute(
                     """INSERT OR IGNORE INTO position_close_requests
-                       (account_id,position_id,requested_epoch) VALUES (?,?,?)""",
-                    (str(self.account_id), position.broker_position_id, now),
+                       (account_id,position_id,request_id,requested_epoch)
+                       VALUES (?,?,?,?)""",
+                    (str(self.account_id), position.broker_position_id, request_token, now),
                 )
                 if cursor.rowcount != 1:
                     continue
