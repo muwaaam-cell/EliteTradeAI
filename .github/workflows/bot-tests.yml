@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt coverage
           python -m pip check
-          python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq; ProtoOAApplicationAuthReq(); print('Vendored Spotware SDK import: OK')"
+          python -c "from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol; from ctrader_open_api.messages.OpenApiMessages_pb2 import ProtoOAApplicationAuthReq, ProtoOADepthEvent, ProtoOASubscribeDepthQuotesReq; ProtoOAApplicationAuthReq(); ProtoOADepthEvent(); ProtoOASubscribeDepthQuotesReq(); print('Vendored Spotware SDK import: OK')"
       - name: Run unit tests with coverage
         run: |
           PYTHONPATH=. coverage run --branch --source=elite_trade -m unittest discover -s tests -v
