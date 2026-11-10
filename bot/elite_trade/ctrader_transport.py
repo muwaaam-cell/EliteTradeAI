@@ -175,6 +175,9 @@ class CTraderSdkTransport:
                 ProtoOASymbolByIdReq,
                 ProtoOASymbolByIdRes,
             )
+            from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
+                ProtoOAExecutionType,
+            )
             self._sdk = {
                 "Client": Client,
                 "EndPoints": EndPoints,
@@ -212,6 +215,7 @@ class CTraderSdkTransport:
                 "ProtoOAAssetListRes": ProtoOAAssetListRes,
                 "ProtoOASymbolByIdReq": ProtoOASymbolByIdReq,
                 "ProtoOASymbolByIdRes": ProtoOASymbolByIdRes,
+                "ProtoOAExecutionType": ProtoOAExecutionType,
             }
         if self._reactor is None:
             from twisted.internet import reactor
