@@ -49,6 +49,21 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             authorize_order=lambda spec, symbol: True,
         )
 
+    def test_composition_requires_explicit_trading_loop_authorizer(self):
+        self.transport.state = ConnectionState.AUTHENTICATED
+        self.transport.authenticated_account_id = 77
+        with self.assertRaisesRegex(TypeError, "explicit trading-loop pre-trade authorizer"):
+            compose_demo_execution_runtime(
+                transport=self.transport,
+                ledger=self.ledger,
+                expected_account_id=77,
+                execution_type_names={2: "ORDER_ACCEPTED", 3: "ORDER_FILLED"},
+                now_epoch=lambda: self.now,
+                on_unmatched=lambda reason, event: self.unmatched.append((reason, event)),
+                position_ledger=self.position_ledger,
+                symbol_names={10: "EURUSD"},
+            )
+
     def test_installs_callbacks_and_sends_once_through_shared_ledger(self):
         self.transport.state = ConnectionState.AUTHENTICATED
         self.transport.authenticated_account_id = 77
