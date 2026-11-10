@@ -109,6 +109,11 @@ class CTraderMarketDataRuntime:
         if callable(self._previous_state):
             self._previous_state(state)
 
+    @property
+    def instruments(self) -> tuple[object, ...]:
+        """Broker-verified instrument metadata currently bound to this session."""
+        return tuple(self._instruments_by_name[name] for name in sorted(self._instruments_by_name))
+
     def get_quote(self, symbol: str) -> MarketQuote | None:
         """Return a fresh quote by exact broker symbol name, or None."""
         if not isinstance(symbol, str):
