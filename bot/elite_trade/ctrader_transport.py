@@ -148,6 +148,8 @@ class CTraderSdkTransport:
                 ProtoOAAccountAuthReq,
                 ProtoOAAccountAuthRes,
                 ProtoOANewOrderReq,
+                ProtoOAAmendPositionSLTPReq,
+                ProtoOAClosePositionReq,
                 ProtoOAApplicationAuthReq,
                 ProtoOAApplicationAuthRes,
                 ProtoOAGetAccountListByAccessTokenReq,
@@ -188,6 +190,8 @@ class CTraderSdkTransport:
                 "ProtoOAAccountAuthReq": ProtoOAAccountAuthReq,
                 "ProtoOAAccountAuthRes": ProtoOAAccountAuthRes,
                 "ProtoOANewOrderReq": ProtoOANewOrderReq,
+                "ProtoOAAmendPositionSLTPReq": ProtoOAAmendPositionSLTPReq,
+                "ProtoOAClosePositionReq": ProtoOAClosePositionReq,
                 "ProtoOAApplicationAuthReq": ProtoOAApplicationAuthReq,
                 "ProtoOAApplicationAuthRes": ProtoOAApplicationAuthRes,
                 "ProtoOAGetAccountListByAccessTokenReq": ProtoOAGetAccountListByAccessTokenReq,
@@ -278,6 +282,32 @@ class CTraderSdkTransport:
         order_request_type = self._sdk.get("ProtoOANewOrderReq")
         if order_request_type is None or not isinstance(request, order_request_type):
             raise TypeError("Only cTrader market-order protobuf requests may use this sender.")
+        return self._send(request)
+
+    def send_demo_position_protection_request(self, request):
+        """Send one validated SL/TP amendment for the authenticated demo account."""
+        if self.environment != "demo":
+            raise RuntimeError("Position protection amendments are restricted to demo.")
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Position protection requires an authenticated account.")
+        if getattr(request, "ctidTraderAccountId", None) != self.authenticated_account_id:
+            raise ValueError("Protection request account does not match the authenticated account.")
+        request_type = self._sdk.get("ProtoOAAmendPositionSLTPReq")
+        if request_type is None or not isinstance(request, request_type):
+            raise TypeError("Only cTrader position-protection protobuf requests may use this sender.")
+        return self._send(request)
+
+    def send_demo_close_position_request(self, request):
+        """Send one validated close request for the authenticated demo account."""
+        if self.environment != "demo":
+            raise RuntimeError("Position close requests are restricted to demo.")
+        if self.state != ConnectionState.AUTHENTICATED or self.authenticated_account_id is None:
+            raise RuntimeError("Position close requires an authenticated account.")
+        if getattr(request, "ctidTraderAccountId", None) != self.authenticated_account_id:
+            raise ValueError("Close request account does not match the authenticated account.")
+        request_type = self._sdk.get("ProtoOAClosePositionReq")
+        if request_type is None or not isinstance(request, request_type):
+            raise TypeError("Only cTrader position-close protobuf requests may use this sender.")
         return self._send(request)
 
     def _send_failed(self, failure, sent_state=None, request_name=""):
