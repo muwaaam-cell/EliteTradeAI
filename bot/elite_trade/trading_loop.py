@@ -170,7 +170,7 @@ class TradingLoop:
                     selection = candidate.strategy_selection
                     if (
                         not isinstance(selection, StrategySelection)
-                        or selection.mode is StrategyMode.WAIT
+                        or selection.mode not in {StrategyMode.SCALPING, StrategyMode.INTRADAY}
                         or selection.direction != getattr(candidate.intent.side, "value", candidate.intent.side)
                         or selection.expected_net_edge_r is None
                         or not selection.expected_net_edge_r.is_finite()
