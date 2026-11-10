@@ -46,7 +46,7 @@ def main() -> None:
     settings = Settings.from_env()
 
     print("EliteTrade AI — Pepperstone cTrader demo market-data runtime")
-    print("Order execution: no trading loop is scheduled; demo adapter remains behind the evidence and risk gates.")
+    print("Order execution: demo-only; the TradingLoop starts only after fresh broker reconciliation and all evidence, risk and protection gates pass. Live execution is disabled.")
     if settings.ctrader_env != "demo":
         raise SystemExit("Refusing to start: this runtime supports demo accounts only.")
     if settings.ctrader_account_id is None:
@@ -823,7 +823,7 @@ def main() -> None:
         startup_notice = {"sent": False}
         startup_message = (
             "EliteTrade AI connected to the Pepperstone cTrader demo monitor. "
-            "Status is broker-derived. New entries remain blocked until daily-risk "
+            "Status is broker-derived. New entries require fresh reconciliation, broker-attached protection, calibrated market evidence and current daily-risk approval; missing evidence means WAIT. Live execution is disabled. "
             "and end-to-end demo validation are complete. /closeall affects only "
             "bot-owned XAUUSD/EURUSD positions."
         )
@@ -872,7 +872,7 @@ def main() -> None:
             )
 
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
-    print("Starting cTrader demo connection. Market analysis is active; no TradingLoop is scheduled.")
+    print("Starting cTrader demo connection. Market analysis is active; the guarded demo TradingLoop will start only after broker reconciliation and protection approval.")
     from twisted.internet import reactor
 
     reactor.callWhenRunning(transport.start)
