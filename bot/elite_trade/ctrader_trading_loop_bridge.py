@@ -99,6 +99,19 @@ class CTraderTradingLoopSubmitter:
         client_order_id = self.client_order_id_factory()
         if not isinstance(client_order_id, str) or not client_order_id.strip() or len(client_order_id.strip()) > 50:
             raise ValueError("Generated client order ID must contain 1 to 50 characters.")
+        selection = getattr(candidate, "strategy_selection", None)
+        strategy_mode = getattr(getattr(selection, "mode", None), "value", None)
+        risk_cash = getattr(risk_plan, "risk_cash", None)
+        try:
+            from decimal import Decimal, InvalidOperation
+            risk_cash_value = Decimal(str(risk_cash))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("A positive initial cash-risk amount is required.") from exc
+        if strategy_mode not in {"SCALPING", "INTRADAY"}:
+            raise ValueError("A validated SCALPING or INTRADAY selection is required.")
+        if not risk_cash_value.is_finite() or risk_cash_value <= 0:
+            raise ValueError("A positive initial cash-risk amount is required.")
+
         spec = MarketOrderSpec(
             account_id=self.account_id,
             symbol_id=instrument.symbol_id,
@@ -108,12 +121,8 @@ class CTraderTradingLoopSubmitter:
             entry_reference_price=reference_f,
             stop_loss=stop_f,
             take_profit=target_f,
-            strategy_mode=getattr(
-                getattr(candidate, "strategy_selection", None), "mode", None
-            ).value if getattr(
-                getattr(candidate, "strategy_selection", None), "mode", None
-            ) is not None else None,
-            initial_cash_risk=getattr(risk_plan, "risk_cash", None),
+            strategy_mode=strategy_mode,
+            initial_cash_risk=risk_cash_value,
         )
         if getattr(self._local, "armed", None) is not None:
             raise RuntimeError("Nested order submission is not permitted.")
