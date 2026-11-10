@@ -2,7 +2,7 @@ name: EliteTrade AI quality checks
 
 on:
   push:
-    branches: [pepperstone-ctrader-bot, safety/market-order-relative-protection]
+    branches: [pepperstone-ctrader-bot, safety/market-order-relative-protection, elite-integration-20261110]
   pull_request:
     branches: [main]
   workflow_dispatch:
