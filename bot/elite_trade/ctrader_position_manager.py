@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from elite_trade.ctrader_order_requests import (
+    PositionCloseSpec,
     PositionProtectionSpec,
+    build_close_position_request,
     build_position_protection_request,
 )
 from elite_trade.position_ledger import PositionLedger, PositionStatus
@@ -73,6 +75,14 @@ class CTraderPositionManager:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         with self._db:
+            self._db.execute("""
+                CREATE TABLE IF NOT EXISTS position_close_requests (
+                    account_id TEXT NOT NULL,
+                    position_id TEXT NOT NULL,
+                    requested_epoch REAL NOT NULL,
+                    PRIMARY KEY (account_id, position_id)
+                )
+            """)
             self._db.execute("""
                 CREATE TABLE IF NOT EXISTS position_management_state (
                     account_id TEXT NOT NULL,
@@ -283,6 +293,84 @@ class CTraderPositionManager:
                             + " ".join(str(reconcile_exc).split())[:160]
                         )
         return amended
+
+    def close_all_bot_positions(self) -> int:
+        """Send one close request for each fresh, bot-owned allowlisted position.
+
+        Requests are durably reserved before send and never automatically
+        repeated after uncertainty. Manual/unowned positions are untouched.
+        """
+        if (
+            getattr(self.transport, "authenticated_account_id", None) != self.account_id
+            or getattr(getattr(self.transport, "state", None), "value", getattr(self.transport, "state", None)) != "authenticated"
+        ):
+            raise PositionManagementError("Authenticated demo account is unavailable.")
+        now = float(self.now_epoch())
+        if not isfinite(now) or now < 0:
+            raise PositionManagementError("Local close-all clock is invalid.")
+        sent = 0
+        for position in self.position_ledger.list_open():
+            if position.symbol.upper() not in {"XAUUSD", "EURUSD"}:
+                continue
+            records = self.order_ledger.list_by_broker_position_id(
+                position.broker_position_id
+            )
+            if not any(
+                getattr(item, "symbol", "").upper() == position.symbol.upper()
+                and getattr(item, "strategy_mode", None) in {"SCALPING", "INTRADAY"}
+                for item in records
+            ):
+                continue
+            if (
+                position.last_snapshot_epoch is None
+                or now < position.last_snapshot_epoch
+                or now - position.last_snapshot_epoch > self.max_snapshot_age_seconds
+            ):
+                raise PositionManagementError(
+                    f"Close-all blocked: position {position.broker_position_id} has stale broker state."
+                )
+            volume_cents = position.volume_units * Decimal("100")
+            if volume_cents <= 0 or volume_cents != volume_cents.to_integral_value():
+                raise PositionManagementError(
+                    f"Position {position.broker_position_id} volume cannot be represented exactly."
+                )
+            position_id = int(position.broker_position_id)
+            request = build_close_position_request(PositionCloseSpec(
+                account_id=self.account_id,
+                position_id=position_id,
+                volume_units=int(volume_cents),
+            ))
+            with self._lock, self._db:
+                cursor = self._db.execute(
+                    """INSERT OR IGNORE INTO position_close_requests
+                       (account_id,position_id,requested_epoch) VALUES (?,?,?)""",
+                    (str(self.account_id), position.broker_position_id, now),
+                )
+                if cursor.rowcount != 1:
+                    continue
+            try:
+                self.transport.send_demo_close_position_request(request)
+                sent += 1
+                reconcile = getattr(self.transport, "request_positions_reconcile", None)
+                if callable(reconcile):
+                    reconcile()
+            except Exception as exc:
+                self.on_issue(
+                    f"Close request for bot position {position.broker_position_id} is uncertain: "
+                    + " ".join(str(exc).split())[:180]
+                )
+                reconcile = getattr(self.transport, "request_positions_reconcile", None)
+                if callable(reconcile) and not getattr(
+                    self.transport, "position_reconciliation_in_flight", False
+                ):
+                    try:
+                        reconcile()
+                    except Exception as reconcile_exc:
+                        self.on_issue(
+                            "Close-request reconciliation failed: "
+                            + " ".join(str(reconcile_exc).split())[:160]
+                        )
+        return sent
 
     def close(self) -> None:
         with self._lock:
