@@ -15,8 +15,9 @@ from typing import Callable, Iterable
 
 from elite_trade.adaptive_risk import (
     AdaptiveRiskConfig, AdaptiveRiskEngine, MarketCondition, RiskPlan, TradingMode,
-    calculate_volume_for_risk, calculate_volume_units,
+    calculate_volume_units,
 )
+from elite_trade.ctrader_risk_sizing import calculate_volume_for_risk
 from elite_trade.daily_session import TARGET_RESUMED, DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote
 from elite_trade.kill_switch import KillSwitch
