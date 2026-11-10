@@ -22,6 +22,8 @@ class MarketOrderSpec:
     entry_reference_price: float
     stop_loss: float
     take_profit: float | None = None
+    strategy_mode: str | None = None
+    initial_cash_risk: Decimal | str | None = None
 
 
 def _positive_integer(value: object, field: str) -> int:
