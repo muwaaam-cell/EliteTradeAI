@@ -285,5 +285,44 @@ class TradingLoopTests(unittest.TestCase):
         self.assertFalse(result.entry_submission_enabled)
 
 
+    def test_execution_handoff_runs_only_after_risk_and_pretrade_approval(self):
+        from types import SimpleNamespace
+        calls = []
+        loop = self.make_loop(
+            submit_order=lambda candidate, intent, plan: (
+                calls.append((candidate, intent, plan))
+                or SimpleNamespace(request_sent=True, state="PENDING")
+            )
+        )
+        result = loop.run_cycle()
+        self.assertTrue(result.entry_submission_enabled)
+        self.assertTrue(result.outcomes[0].decision.allow_new_entry)
+        self.assertTrue(result.outcomes[0].submitted)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1].volume_units, result.outcomes[0].sized_volume_units)
+
+    def test_execution_handoff_is_not_called_when_pretrade_gate_blocks(self):
+        calls = []
+        self.switch.activate("test")
+        loop = self.make_loop(
+            submit_order=lambda *args: calls.append(args)
+        )
+        result = loop.run_cycle()
+        self.assertTrue(result.entry_submission_enabled)
+        self.assertFalse(result.outcomes[0].decision.allow_new_entry)
+        self.assertFalse(result.outcomes[0].submitted)
+        self.assertEqual(calls, [])
+
+    def test_execution_handoff_reports_adapter_failure_without_claiming_submission(self):
+        def fail(*args):
+            raise OSError("broker send unavailable")
+        result = self.make_loop(submit_order=fail).run_cycle()
+        self.assertTrue(result.entry_submission_enabled)
+        self.assertTrue(result.outcomes[0].decision.allow_new_entry)
+        self.assertFalse(result.outcomes[0].submitted)
+        self.assertIn("broker send unavailable", result.outcomes[0].submission_error)
+
+
+
 if __name__ == "__main__":
     unittest.main()
