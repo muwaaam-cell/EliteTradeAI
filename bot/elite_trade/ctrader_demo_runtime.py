@@ -78,6 +78,8 @@ def compose_demo_execution_runtime(
             raise RuntimeError("Compose demo execution handlers before transport startup.")
     if not callable(now_epoch) or not callable(on_unmatched):
         raise TypeError("Runtime requires clock and unmatched-event callbacks.")
+    if not callable(getattr(transport, "request_positions_reconcile", None)):
+        raise TypeError("Transport must support post-fill position reconciliation.")
 
     protection_monitor = PositionProtectionMonitor(
         expected_account_id=expected_account_id,
