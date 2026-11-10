@@ -211,6 +211,19 @@ class CTraderExecutionEventTests(unittest.TestCase):
             apply_order_error(self.ledger, update, now=3)
         self.assertEqual(self.ledger.get("client-1").status, "PENDING")
 
+    def test_order_error_resolves_unknown_when_broker_order_id_is_known(self):
+        self.ledger.mark_submitted("client-1", "9001", now=2)
+        self.ledger.mark_unknown("client-1", now=3, error="event stream interrupted")
+        event = SimpleNamespace(
+            ctidTraderAccountId=77, orderId=9001,
+            errorCode="TRADING_BAD_STOPS", description="Rejected by broker",
+        )
+        update = decode_order_error_event(event, expected_account_id=77)
+        self.assertTrue(apply_order_error(self.ledger, update, now=4))
+        record = self.ledger.get("client-1")
+        self.assertEqual(record.status, REJECTED)
+        self.assertEqual(record.broker_order_id, "9001")
+
     def test_order_error_does_not_reopen_terminal_order(self):
         self.assertTrue(self.ledger.mark_submitted("client-1", "9001", now=2))
         self.assertTrue(self.ledger.mark_terminal(
