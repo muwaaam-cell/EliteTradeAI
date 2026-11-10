@@ -113,6 +113,9 @@ class CTraderSdkTransport:
         self._catalog_full_request_sent = False
         self._pending_trader = None
         self._pending_pnl = None
+        # Reuse the authenticated trader record received during catalogue
+        # discovery for the initial account snapshot.
+        self._snapshot_trader_seed = None
         self._snapshot_in_flight = False
         self._reconcile_in_flight = False
         self._reconcile_timeout_call = None
@@ -139,6 +142,11 @@ class CTraderSdkTransport:
     def position_reconciliation_in_flight(self) -> bool:
         """Whether an authoritative broker position snapshot is outstanding."""
         return self._reconcile_in_flight
+
+    @property
+    def account_metadata_request_in_flight(self) -> bool:
+        """Whether catalogue or account-snapshot requests are outstanding."""
+        return self._catalog_in_flight or self._snapshot_in_flight
 
     def _load_sdk(self):
         if self._sdk is None:
@@ -392,12 +400,12 @@ class CTraderSdkTransport:
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id:
                     self._fail("Received account balance for an unexpected cTrader account.")
                     return
-                if self._snapshot_in_flight:
-                    self._pending_trader = response.trader
-                    self._complete_account_snapshot_if_ready()
                 if self._catalog_in_flight:
                     self._catalog_trader = response.trader
                     self._maybe_request_full_symbol_metadata()
+                elif self._snapshot_in_flight:
+                    self._pending_trader = response.trader
+                    self._complete_account_snapshot_if_ready()
             elif payload_type == self._sdk["ProtoOASymbolsListRes"]().payloadType:
                 response = extract(message)
                 if int(response.ctidTraderAccountId) != self.authenticated_account_id or not self._catalog_in_flight:
@@ -443,6 +451,10 @@ class CTraderSdkTransport:
                 except (KeyError, TypeError, ValueError):
                     self._fail("cTrader symbol catalogue is incomplete or inconsistent; trading metadata rejected.")
                     return
+                # The catalogue's authenticated trader response is fresh enough
+                # for the immediately following startup snapshot. Reuse it to
+                # avoid a second overlapping ProtoOATraderReq.
+                self._snapshot_trader_seed = self._catalog_trader
                 self._catalog_in_flight = False
                 self._catalog_symbols = None
                 self._catalog_assets = None
@@ -566,6 +578,7 @@ class CTraderSdkTransport:
         if self._catalog_in_flight or self._snapshot_in_flight:
             raise RuntimeError("Another account metadata/snapshot request is already in progress.")
         self._catalog_in_flight = True
+        self._snapshot_trader_seed = None
         self._catalog_symbols = None
         self._catalog_assets = None
         self._catalog_trader = None
@@ -665,6 +678,7 @@ class CTraderSdkTransport:
         self._catalog_assets = None
         self._catalog_trader = None
         self._catalog_full_request_sent = False
+        self._snapshot_trader_seed = None
 
     def request_deal_history(
         self, from_timestamp_ms: int, to_timestamp_ms: int, *, max_rows: int = 1000
@@ -699,15 +713,25 @@ class CTraderSdkTransport:
             raise RuntimeError("Account snapshot requires an authenticated account.")
         if self._snapshot_in_flight or self._catalog_in_flight:
             raise RuntimeError("Another account metadata/snapshot request is already in progress.")
-        self._pending_trader = None
+        self._pending_trader = self._snapshot_trader_seed
+        self._snapshot_trader_seed = None
         self._pending_pnl = None
         self._snapshot_in_flight = True
-        trader_request = self._sdk["ProtoOATraderReq"]()
-        trader_request.ctidTraderAccountId = self.authenticated_account_id
         pnl_request = self._sdk["ProtoOAGetPositionUnrealizedPnLReq"]()
         pnl_request.ctidTraderAccountId = self.authenticated_account_id
-        self._send(trader_request)
-        self._send(pnl_request)
+        try:
+            # Only later periodic snapshots need a new trader request.
+            if self._pending_trader is None:
+                trader_request = self._sdk["ProtoOATraderReq"]()
+                trader_request.ctidTraderAccountId = self.authenticated_account_id
+                self._send(trader_request)
+            self._send(pnl_request)
+            self._complete_account_snapshot_if_ready()
+        except Exception:
+            self._pending_trader = None
+            self._pending_pnl = None
+            self._snapshot_in_flight = False
+            raise
 
     def _complete_account_snapshot_if_ready(self) -> None:
         if self._pending_trader is None or self._pending_pnl is None:
