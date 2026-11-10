@@ -152,3 +152,52 @@ def aggregate_verified_closed_position(
         close_deal_ids=tuple(sorted(close_ids)),
         trade_id=f"ctrader:{account_id}:{pid}",
     )
+
+
+def build_verified_outcome_from_stores(
+    *,
+    account_id: int,
+    position_id: str,
+    symbol: str,
+    broker_position_status: int,
+    history_from_ms: int,
+    history_to_ms: int,
+    deal_store: object,
+    order_ledger: object,
+) -> VerifiedPositionOutcome:
+    """Build an outcome from the durable account-scoped broker and order stores.
+
+    The caller must supply the broker's explicit positionStatus value from an
+    authoritative position record. The deal store must have recorded the
+    terminal hasMore=False page for the exact requested history interval.
+    """
+    complete = deal_store.has_complete_history_range(
+        account_id=account_id,
+        from_ms=history_from_ms,
+        to_ms=history_to_ms,
+    )
+    deals = deal_store.deals_for_position(
+        account_id=account_id, position_id=position_id
+    )
+    records = order_ledger.list_by_broker_position_id(position_id)
+    opening_orders = []
+    for record in records:
+        filled = getattr(record, "filled_volume_units", 0)
+        if not isinstance(filled, int) or isinstance(filled, bool) or filled <= 0:
+            continue
+        opening_orders.append({
+            "broker_position_id": position_id,
+            "symbol": getattr(record, "symbol", ""),
+            "strategy_mode": getattr(record, "strategy_mode", None),
+            "initial_cash_risk": getattr(record, "initial_cash_risk", None),
+            "filled_volume_units": filled,
+        })
+    return aggregate_verified_closed_position(
+        account_id=account_id,
+        position_id=position_id,
+        symbol=symbol,
+        broker_position_status=broker_position_status,
+        history_complete=complete,
+        deals=deals,
+        opening_orders=opening_orders,
+    )
