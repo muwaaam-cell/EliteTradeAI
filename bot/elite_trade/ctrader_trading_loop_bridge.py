@@ -145,6 +145,7 @@ def compose_demo_trading_loop_runtime(
     symbol_names: dict[int, str],
     instruments: Callable[[], Iterable[InstrumentMetadata]],
     client_order_id_factory: Callable[[], str] | None = None,
+    on_position_status: Callable[[int, str, int], None] | None = None,
 ):
     """Compose the account-bound demo lifecycle and its TradingLoop callback.
 
@@ -169,6 +170,7 @@ def compose_demo_trading_loop_runtime(
         position_ledger=position_ledger,
         symbol_names=symbol_names,
         authorize_order=bridge.authorize_order,
+        on_position_status=on_position_status,
     )
     bridge.bind_adapter(runtime.adapter)
     return runtime, bridge
