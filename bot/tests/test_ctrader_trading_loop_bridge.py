@@ -66,6 +66,37 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
         self.assertEqual(spec.client_order_id, "bridge-order-1")
         self.assertFalse(self.bridge.authorize_order(spec, symbol))
 
+    def test_sell_uses_bid_and_requires_broker_short_permission(self):
+        sell_intent = OrderIntent(
+            symbol="EURUSD", side=Side.SELL, volume_units=100,
+            stop_loss=Decimal("1.11000"), take_profit=Decimal("1.08000"),
+        )
+        candidate = SimpleNamespace(
+            intent=sell_intent,
+            quote=Quote(Decimal("1.10000"), Decimal("1.10010"), 100.0),
+            broker_risk_inputs=SimpleNamespace(instrument=self.instrument),
+        )
+        sized = OrderIntent(
+            symbol="EURUSD", side=Side.SELL, volume_units=500,
+            stop_loss=Decimal("1.11000"), take_profit=Decimal("1.08000"),
+        )
+        self.bridge(candidate, sized, self.plan)
+        spec, symbol = self.adapter.calls[-1]
+        self.assertEqual(spec.side, "SELL")
+        self.assertEqual(spec.entry_reference_price, 1.1)
+        self.assertEqual(symbol, "EURUSD")
+
+        no_short = InstrumentMetadata(
+            **{**self.instrument.__dict__, "enable_short_selling": False}
+        )
+        blocked = SimpleNamespace(
+            intent=sell_intent, quote=candidate.quote,
+            broker_risk_inputs=SimpleNamespace(instrument=no_short),
+        )
+        with self.assertRaisesRegex(ValueError, "short"):
+            self.bridge(blocked, sized, self.plan)
+        self.assertEqual(len(self.adapter.calls), 1)
+
     def test_refuses_direct_adapter_authorization_outside_loop_handoff(self):
         spec = MarketOrderSpec(
             account_id=77, symbol_id=42, side="BUY", volume_units=500,
