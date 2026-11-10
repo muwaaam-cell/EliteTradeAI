@@ -128,6 +128,11 @@ class CTraderSdkTransport:
         """Return the complete authenticated account symbol-name catalogue."""
         return dict(self._broker_symbol_names)
 
+    @property
+    def position_reconciliation_in_flight(self) -> bool:
+        """Whether an authoritative broker position snapshot is outstanding."""
+        return self._reconcile_in_flight
+
     def _load_sdk(self):
         if self._sdk is None:
             from ctrader_open_api import Client, EndPoints, Protobuf, TcpProtocol
