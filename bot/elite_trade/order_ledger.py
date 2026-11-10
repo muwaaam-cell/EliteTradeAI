@@ -282,6 +282,45 @@ class OrderLedger:
             db.execute("COMMIT")
             return True
 
+    def resolve_unknown_partial_fill(
+        self,
+        client_order_id: str,
+        filled_volume_units: int,
+        broker_order_id: str,
+        *,
+        now: int,
+    ) -> bool:
+        """Resolve an uncertain send from an authenticated cumulative partial fill."""
+        order_id = self._text(client_order_id, "client_order_id")
+        broker_id = self._text(broker_order_id, "broker_order_id")
+        if isinstance(filled_volume_units, bool) or not isinstance(filled_volume_units, int) or filled_volume_units <= 0:
+            raise ValueError("filled_volume_units must be a positive integer.")
+        if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+            raise ValueError("now must be a non-negative integer timestamp.")
+        with self._lock, closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status,volume_units,broker_order_id FROM orders WHERE client_order_id=?",
+                (order_id,),
+            ).fetchone()
+            if row is None or row["status"] != UNKNOWN:
+                db.execute("ROLLBACK")
+                return False
+            if row["broker_order_id"] and row["broker_order_id"] != broker_id:
+                db.execute("ROLLBACK")
+                raise ValueError("Broker order ID cannot be changed once recorded.")
+            if filled_volume_units >= row["volume_units"]:
+                db.execute("ROLLBACK")
+                raise ValueError("A partial-fill recovery must be below the requested volume.")
+            db.execute(
+                """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
+                   broker_order_id=COALESCE(broker_order_id,?),last_error=NULL
+                   WHERE client_order_id=?""",
+                (PARTIALLY_FILLED, filled_volume_units, now, broker_id, order_id),
+            )
+            db.execute("COMMIT")
+            return True
+
     def mark_unknown(self, client_order_id: str, *, now: int, error: str | None = None) -> bool:
         """Record timeout/uncertain outcome. The ID remains permanently reserved."""
         return self._transition(
