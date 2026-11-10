@@ -674,7 +674,8 @@ def main() -> None:
         if not close_all_request_path.exists():
             return
         try:
-            sent = position_manager.close_all_bot_positions()
+            request_id = close_all_request_path.read_text(encoding="utf-8").strip()
+            sent = position_manager.close_all_bot_positions(request_id=request_id)
             close_all_request_path.unlink(missing_ok=True)
             print(
                 "Telegram close-all request processed: "
