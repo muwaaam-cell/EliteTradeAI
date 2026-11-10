@@ -2,6 +2,9 @@ import unittest
 
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import (
     ProtoOAAccessRights,
+    ProtoOACommissionType,
+    ProtoOAMinCommissionType,
+    ProtoOASymbolDistanceType,
     ProtoOAAsset,
     ProtoOALightSymbol,
     ProtoOASymbol,
@@ -26,6 +29,15 @@ class CTraderInstrumentMappingTests(unittest.TestCase):
             tradingMode=ProtoOATradingMode.ENABLED,
             enableShortSelling=True,
             lotSize=10000000,
+            slDistance=10,
+            tpDistance=12,
+            commissionType=ProtoOACommissionType.USD_PER_MILLION_USD,
+            preciseTradingCommissionRate=5000000,
+            preciseMinCommission=1000000,
+            minCommissionAsset="USD",
+            minCommissionType=ProtoOAMinCommissionType.CURRENCY,
+            distanceSetIn=ProtoOASymbolDistanceType.SYMBOL_DISTANCE_IN_POINTS,
+            pnlConversionFeeRate=1,
         )
         self.light = ProtoOALightSymbol(
             symbolId=7,
@@ -76,6 +88,17 @@ class CTraderInstrumentMappingTests(unittest.TestCase):
         self.assertEqual(metadata.symbol, "EURUSD")
         self.assertEqual(metadata.volume_step_cents, 1000)
         self.assertEqual(metadata.lot_size_cents, 10000000)
+        self.assertEqual(metadata.sl_distance, 10)
+        self.assertEqual(metadata.tp_distance, 12)
+        self.assertEqual(metadata.distance_set_in, "SYMBOL_DISTANCE_IN_POINTS")
+        self.assertEqual(metadata.commission_type, "USD_PER_MILLION_USD")
+        self.assertEqual(metadata.precise_trading_commission_rate, 5000000)
+        self.assertEqual(metadata.precise_min_commission, 1000000)
+        self.assertEqual(metadata.min_commission_asset, "USD")
+        self.assertEqual(metadata.min_commission_type, "CURRENCY")
+        self.assertEqual(metadata.pnl_conversion_fee_rate, 1)
+        self.assertTrue(metadata.protective_distance_metadata_complete)
+        self.assertTrue(metadata.commission_metadata_complete)
         self.assertTrue(metadata.is_tradable)
         self.assertTrue(metadata.can_open_short)
 
