@@ -433,6 +433,17 @@ class OrderLedger:
             return [self._record(row) for row in rows if row is not None]
 
 
+    def list_by_broker_position_id(self, broker_position_id: str) -> list[OrderRecord]:
+        """Return entry orders correlated to one broker position, oldest first."""
+        position_id = self._text(broker_position_id, "broker_position_id")
+        with closing(self._connect()) as db, db:
+            rows = db.execute(
+                """SELECT * FROM orders WHERE broker_position_id=?
+                   ORDER BY created_at,client_order_id""",
+                (position_id,),
+            ).fetchall()
+            return [self._record(row) for row in rows if row is not None]
+
     def get_by_broker_order_id(self, broker_order_id: str) -> OrderRecord | None:
         """Find a locally reserved order by its broker-assigned order ID."""
         broker_id = self._text(broker_order_id, "broker_order_id")
