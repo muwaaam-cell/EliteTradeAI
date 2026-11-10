@@ -17,6 +17,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.ledger = OrderLedger(Path(self.temp.name) / "orders.sqlite3", account_id=77)
         self.position_ledger = PositionLedger(Path(self.temp.name) / "positions.sqlite3", account_id=77)
         self.sent = []
+        self.reconcile_requests = 0
         self.unmatched = []
         self.transport = SimpleNamespace(
             environment="demo",
@@ -25,6 +26,9 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             state=ConnectionState.DISCONNECTED,
             send_demo_order_request=self.sent.append,
             set_reconcile_handler=lambda handler: setattr(self.transport, 'on_reconcile', handler),
+            request_positions_reconcile=lambda: setattr(
+                self.transport, "reconcile_requests", self.transport.reconcile_requests + 1
+            ),
         )
         self.runtime = compose_demo_execution_runtime(
             transport=self.transport,
@@ -41,6 +45,10 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
     def test_installs_callbacks_and_sends_once_through_shared_ledger(self):
         self.transport.state = ConnectionState.AUTHENTICATED
         self.transport.authenticated_account_id = 77
+        # A fresh complete snapshot is required before the execution adapter authorizes entries.
+        self.transport.on_reconcile(SimpleNamespace(
+            ctidTraderAccountId=77, position=[], order=[]
+        ))
         spec = MarketOrderSpec(
             account_id=77, symbol_id=10, side="BUY", volume_units=100,
             client_order_id="runtime-order-1", entry_reference_price=1.1,
@@ -59,6 +67,41 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.assertTrue(self.transport.on_execution_event(event))
         self.assertEqual(self.ledger.get("runtime-order-1").status, SUBMITTED)
         self.assertEqual(self.ledger.get("runtime-order-1").broker_order_id, "9001")
+
+    def test_fill_invalidates_protection_permission_until_post_fill_reconcile(self):
+        self.transport.state = ConnectionState.AUTHENTICATED
+        self.transport.authenticated_account_id = 77
+        self.transport.on_reconcile(SimpleNamespace(
+            ctidTraderAccountId=77, position=[], order=[]
+        ))
+        spec = MarketOrderSpec(
+            account_id=77, symbol_id=10, side="BUY", volume_units=100,
+            client_order_id="runtime-fill-1", entry_reference_price=1.1,
+            stop_loss=1.09, take_profit=1.12,
+        )
+        self.runtime.adapter.submit_market_order(spec, symbol="EURUSD")
+        accepted = SimpleNamespace(
+            ctidTraderAccountId=77, executionType=2,
+            order=SimpleNamespace(
+                clientOrderId="runtime-fill-1", orderId=9010,
+                executedVolume=0, tradeData=SimpleNamespace(volume=100),
+            ),
+        )
+        self.assertTrue(self.transport.on_execution_event(accepted))
+        filled = SimpleNamespace(
+            ctidTraderAccountId=77, executionType=3,
+            order=SimpleNamespace(
+                clientOrderId="runtime-fill-1", orderId=9010,
+                executedVolume=100, tradeData=SimpleNamespace(volume=100),
+            ),
+        )
+        self.assertTrue(self.transport.on_execution_event(filled))
+        self.assertEqual(self.transport.reconcile_requests, 1)
+        self.assertFalse(self.runtime.protection_monitor.allow_new_entries)
+        self.transport.on_reconcile(SimpleNamespace(
+            ctidTraderAccountId=77, position=[], order=[]
+        ))
+        self.assertTrue(self.runtime.protection_monitor.allow_new_entries)
 
     def test_unmatched_event_is_reported_without_mutating_ledger(self):
         event = SimpleNamespace(
@@ -121,6 +164,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.assertEqual(self.position_ledger.get("123").status.value, "OPEN")
         self.assertEqual(snapshot.pending_orders, (pending,))
         self.assertIs(self.runtime.on_reconcile.last_snapshot, snapshot)
+        self.assertFalse(self.runtime.protection_monitor.allow_new_entries)
 
 
 if __name__ == "__main__":
