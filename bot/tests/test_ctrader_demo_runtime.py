@@ -49,6 +49,12 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.transport.on_reconcile(SimpleNamespace(
             ctidTraderAccountId=77, position=[], order=[]
         ))
+        self.assertTrue(
+            self.runtime.protection_monitor.allow_new_entries,
+            msg=f"protection audit={self.runtime.protection_monitor.last_audit!r}; "
+                f"in-flight={self.ledger.list_in_flight()!r}",
+        )
+        self.assertEqual(self.ledger.list_in_flight(), [])
         spec = MarketOrderSpec(
             account_id=77, symbol_id=10, side="BUY", volume_units=100,
             client_order_id="runtime-order-1", entry_reference_price=1.1,
