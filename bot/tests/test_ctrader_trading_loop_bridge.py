@@ -39,12 +39,13 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
             intent=self.intent,
             quote=Quote(Decimal("1.10000"), Decimal("1.10010"), 100.0),
             broker_risk_inputs=SimpleNamespace(instrument=self.instrument),
+            strategy_selection=SimpleNamespace(mode=StrategyMode.SCALPING),
         )
         self.sized = OrderIntent(
             symbol="EURUSD", side=Side.BUY, volume_units=500,
             stop_loss=Decimal("1.09000"), take_profit=Decimal("1.12000"),
         )
-        self.plan = SimpleNamespace(allow_new_entries=True)
+        self.plan = SimpleNamespace(allow_new_entries=True, risk_cash=Decimal("0.50"))
         self.bridge = CTraderTradingLoopSubmitter(
             account_id=77,
             instruments=lambda: (self.instrument,),
@@ -78,6 +79,7 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
             intent=sell_intent,
             quote=Quote(Decimal("1.10000"), Decimal("1.10010"), 100.0),
             broker_risk_inputs=SimpleNamespace(instrument=self.instrument),
+            strategy_selection=SimpleNamespace(mode=StrategyMode.SCALPING),
         )
         sized = OrderIntent(
             symbol="EURUSD", side=Side.SELL, volume_units=500,
@@ -129,6 +131,7 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
         candidate = SimpleNamespace(
             intent=self.intent, quote=self.candidate.quote,
             broker_risk_inputs=SimpleNamespace(instrument=disabled),
+            strategy_selection=SimpleNamespace(mode=StrategyMode.SCALPING),
         )
         with self.assertRaisesRegex(ValueError, "tradable"):
             self.bridge(candidate, self.sized, self.plan)
