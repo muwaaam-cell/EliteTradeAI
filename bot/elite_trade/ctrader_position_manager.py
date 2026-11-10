@@ -4,10 +4,9 @@ from __future__ import annotations
 import sqlite3
 from math import isfinite
 import threading
-from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable
 
 from elite_trade.ctrader_order_requests import (
     PositionProtectionSpec,
