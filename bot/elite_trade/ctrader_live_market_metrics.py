@@ -6,7 +6,6 @@ from math import isfinite
 from typing import Callable, Mapping
 
 from elite_trade.ctrader_depth import DepthSnapshot, depth_liquidity_score
-from elite_trade.market_memory import MarketBar
 from elite_trade.strategy import Candle, analyse, atr, ema, rsi
 
 
