@@ -1,10 +1,13 @@
 import math
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from decimal import Decimal
 
 from elite_trade.ctrader_historical_backtest import (
     BacktestCosts,
     _metrics,
+    _simulate,
     run_sensitivity,
 )
 from elite_trade.market_memory import MarketBar
@@ -69,6 +72,44 @@ class HistoricalBacktestTests(unittest.TestCase):
             result.out_of_sample.trades,
             len(self._bars()),
         )
+
+    def test_slippage_is_charged_on_both_entry_and_exit_fills(self):
+        bars = self._bars(51)
+        costs = self._costs()
+        for direction in ("BUY", "SELL"):
+            with self.subTest(direction=direction):
+                signal = SimpleNamespace(direction=direction, reason="test")
+                with patch(
+                    "elite_trade.ctrader_historical_backtest.analyse",
+                    return_value=signal,
+                ), patch(
+                    "elite_trade.ctrader_historical_backtest.atr",
+                    return_value=1.0,
+                ):
+                    trades = _simulate(
+                        bars,
+                        stop_multiple=Decimal("1"),
+                        target_multiple=Decimal("1"),
+                        costs=costs,
+                        max_holding_bars=1,
+                    )
+                self.assertEqual(len(trades), 1)
+                trade = trades[0]
+                expected_entry = (
+                    Decimal(str(bars[50].open)) + costs.spread_price
+                    + costs.slippage_per_side
+                    if direction == "BUY"
+                    else Decimal(str(bars[50].open)) - costs.slippage_per_side
+                )
+                self.assertEqual(trade.entry_price, expected_entry)
+                self.assertEqual(trade.exit_reason, "TIME")
+                expected_exit = (
+                    Decimal(str(bars[50].close)) - costs.slippage_per_side
+                    if direction == "BUY"
+                    else Decimal(str(bars[50].close)) + costs.spread_price
+                    + costs.slippage_per_side
+                )
+                self.assertEqual(trade.exit_price, expected_exit)
 
     def test_metrics_report_costed_r_expectancy(self):
         from elite_trade.ctrader_historical_backtest import SimulatedTrade
