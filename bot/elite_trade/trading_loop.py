@@ -71,6 +71,8 @@ class CandidateOutcome:
     submitted: bool = False
     risk_plan: RiskPlan | None = None
     sized_volume_units: int | None = None
+    sized_intent: OrderIntent | None = None
+    broker_risk_inputs: BrokerRiskSizingInputs | None = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,7 @@ class TradingLoop:
             symbol = getattr(candidate.intent, "symbol", "<invalid>")
             plan = None
             volume = None
+            sized_intent = None
             try:
                 # Fresh account data per candidate: missing/stale/unreadable
                 # broker data must be rejected by the pre-trade gate.
@@ -287,6 +290,10 @@ class TradingLoop:
                 symbol, decision, submitted=False,
                 risk_plan=plan,
                 sized_volume_units=volume,
+                sized_intent=sized_intent if decision.allow_new_entry else None,
+                broker_risk_inputs=(
+                    candidate.broker_risk_inputs if decision.allow_new_entry else None
+                ),
             ))
 
         return CycleResult(
