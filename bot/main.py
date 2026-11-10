@@ -21,7 +21,11 @@ from elite_trade.ctrader_candidate_pipeline import (
 from elite_trade.ctrader_fx_conversion import conversion_rate
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
 from elite_trade.ctrader_closed_positions import build_verified_outcome_from_stores
-from elite_trade.ctrader_calibration_store import VerifiedOutcomeStore
+from elite_trade.ctrader_calibration_store import (
+    BrokerCalibratedEvidenceProvider,
+    VerifiedOutcomeStore,
+)
+from elite_trade.ctrader_live_market_metrics import CTraderLiveMarketMetrics
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
 from elite_trade.order_ledger import OrderLedger
@@ -202,6 +206,7 @@ def main() -> None:
         if account_id is None or snapshot.account_id != account_id:
             raise RuntimeError("Account snapshot does not match the authenticated account.")
         account_risk_ref["snapshot"] = snapshot
+        account_risk_ref["observed_at_epoch"] = time.time()
         print(
             "Broker account snapshot verified: "
             f"account={snapshot.account_id}, "
@@ -472,15 +477,49 @@ def main() -> None:
             observed_at_epoch=now,
         )
 
+    def depth_thresholds(symbol: str) -> dict[str, str] | None:
+        prefix = "CTRADER_" + symbol.upper().replace("/", "_")
+        top = os.getenv(prefix + "_MIN_TOP_LEVEL_SIZE_UNITS")
+        total = os.getenv(prefix + "_MIN_TOTAL_DEPTH_UNITS")
+        if not top or not total:
+            return None
+        return {
+            "min_top_level_size_units": top,
+            "min_total_depth_units": total,
+            "max_age_seconds": "3",
+        }
+
+    live_market_metrics = CTraderLiveMarketMetrics(
+        bars_provider=lambda symbol, period, limit: memory.load_bars(
+            symbol, period, limit=limit
+        ),
+        depth_provider=(
+            (lambda symbol: _depth_runtime.get_depth(symbol))
+            if _depth_runtime is not None else (lambda _symbol: None)
+        ),
+        depth_threshold_provider=depth_thresholds,
+        # The daily realized-PnL/session guard is not yet connected to the
+        # broker snapshot stream, so this remains false rather than guessing.
+        risk_budget_provider=lambda _symbol: False,
+        now_epoch=time.time,
+    )
+    calibrated_evidence_provider = BrokerCalibratedEvidenceProvider(
+        store=outcome_store,
+        account_id=settings.ctrader_account_id,
+        market_metrics_provider=live_market_metrics,
+        now_epoch=time.time,
+    )
+
     candidate_pipeline = CTraderCandidatePipeline(
         instruments=lambda: market_runtime.instruments,
         quote_provider=market_runtime.get_quote,
         bars_provider=lambda symbol, period, limit: memory.load_bars(
             symbol, period.lower(), limit=limit
         ),
-        # Statistical edge/liquidity calibration is deliberately not inferred
-        # from a few candles or an uncalibrated depth snapshot.
-        evidence_provider=lambda _symbol: None,
+        # Historical post-cost edge comes only from persisted, broker-verified
+        # closed positions; current quality/liquidity/volatility are measured
+        # from M15 bars and fresh two-sided Level II depth.
+        evidence_provider=calibrated_evidence_provider,
         risk_inputs_provider=candidate_risk_inputs,
         config_provider=candidate_config,
         now_epoch=time.time,
