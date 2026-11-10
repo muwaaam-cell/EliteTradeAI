@@ -222,5 +222,37 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.assertFalse(self.runtime.protection_monitor.allow_new_entries)
 
 
+    def test_broker_position_status_is_captured_without_order_correlation(self):
+        observed = []
+        transport = self.transport
+        # Recompose with an independent authenticated position-status sink.
+        runtime = compose_demo_execution_runtime(
+            transport=transport,
+            ledger=self.ledger,
+            expected_account_id=77,
+            execution_type_names={2: "ORDER_ACCEPTED", 3: "ORDER_FILLED"},
+            now_epoch=lambda: self.now,
+            on_unmatched=lambda reason, event: self.unmatched.append((reason, event)),
+            position_ledger=self.position_ledger,
+            symbol_names={10: "EURUSD"},
+            authorize_order=lambda spec, symbol: True,
+            on_position_status=lambda account, position, status: observed.append(
+                (account, position, status)
+            ),
+        )
+        event = SimpleNamespace(
+            ctidTraderAccountId=77,
+            executionType=2,
+            position=SimpleNamespace(positionId=9911, positionStatus=2),
+            order=SimpleNamespace(
+                clientOrderId="unmatched-close-event", orderId=9011,
+                executedVolume=0, tradeData=SimpleNamespace(volume=100),
+            ),
+        )
+        self.assertFalse(transport.on_execution_event(event))
+        self.assertEqual(observed, [(77, "9911", 2)])
+        self.assertTrue(self.unmatched)
+
+
 if __name__ == "__main__":
     unittest.main()
