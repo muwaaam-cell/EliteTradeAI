@@ -26,23 +26,18 @@ class StrategyMode(str, Enum):
 
 @dataclass(frozen=True)
 class StrategySelectionConfig:
-    """Initial guardrails only; values require instrument-specific backtest calibration."""
+    """SCALPING guardrails; values require instrument-specific calibration."""
     min_signal_quality: Decimal = Decimal("0.70")
     min_liquidity_score: Decimal = Decimal("0.60")
     max_scalping_spread_to_atr: Decimal = Decimal("0.08")
-    max_intraday_spread_to_atr: Decimal = Decimal("0.20")
     max_scalping_volatility_percentile: Decimal = Decimal("0.80")
-    max_intraday_volatility_percentile: Decimal = Decimal("0.95")
-    min_intraday_trend_strength: Decimal = Decimal("0.60")
     min_scalping_net_edge_r: Decimal = Decimal("0.10")
 
     def __post_init__(self) -> None:
         for name in (
             "min_signal_quality", "min_liquidity_score",
-            "max_scalping_spread_to_atr", "max_intraday_spread_to_atr",
+            "max_scalping_spread_to_atr",
             "max_scalping_volatility_percentile",
-            "max_intraday_volatility_percentile",
-            "min_intraday_trend_strength",
         ):
             value = _metric(getattr(self, name), name)
             if value < 0 or value > 1:
@@ -91,7 +86,7 @@ def _metric(value: object, name: str) -> Decimal:
 
 
 class AdaptiveStrategySelector:
-    """Choose a strategy mode only when every required evidence gate passes."""
+    """Choose SCALPING only when every required evidence gate passes."""
 
     def __init__(self, config: StrategySelectionConfig | None = None) -> None:
         self.config = config or StrategySelectionConfig()
