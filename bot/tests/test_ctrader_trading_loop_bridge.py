@@ -93,7 +93,7 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
             intent=sell_intent, quote=candidate.quote,
             broker_risk_inputs=SimpleNamespace(instrument=no_short),
         )
-        with self.assertRaisesRegex(ValueError, "short"):
+        with self.assertRaisesRegex(ValueError, "SELL"):
             self.bridge(blocked, sized, self.plan)
         self.assertEqual(len(self.adapter.calls), 1)
 
