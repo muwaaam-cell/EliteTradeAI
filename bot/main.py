@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -33,6 +35,9 @@ from elite_trade.ctrader_trading_loop_bridge import compose_demo_trading_loop_ru
 from elite_trade.ctrader_position_manager import CTraderPositionManager
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.telegram_control import TelegramControl
+from elite_trade.daily_session import DailySessionGuard
+from elite_trade.ctrader_daily_risk import CTraderDailyRiskStateProvider
+from elite_trade.trading_loop import TradingLoop
 from elite_trade.market_memory import MarketMemory
 from elite_trade.worker_token_vault import WorkerTokenVault
 
@@ -97,6 +102,7 @@ def main() -> None:
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
     account_risk_ref: dict[str, object] = {}
     execution_runtime_ref: dict[str, object] = {}
+    trading_loop_ref: dict[str, object] = {}
     history_range_ref: dict[str, tuple[int, int]] = {}
     history_refresh_pending = {"value": False}
 
@@ -492,6 +498,76 @@ def main() -> None:
             observed_at_epoch=now,
         )
 
+    trading_timezone = os.getenv("ELITE_TRADING_TIMEZONE", "UTC")
+    max_daily_loss_usd = os.getenv("ELITE_MAX_DAILY_LOSS_USD", "").strip()
+    kill_switch = KillSwitch(
+        os.getenv("ELITE_KILL_SWITCH_FILE", "state/KILL_SWITCH")
+    )
+    daily_guard = None
+    daily_risk_provider = None
+    if max_daily_loss_usd:
+        try:
+            daily_guard = DailySessionGuard(
+                os.getenv(
+                    "ELITE_SESSION_DATABASE", "state/daily_session_runtime.sqlite3"
+                ),
+                timezone=trading_timezone,
+                profit_target=None,
+                max_daily_loss=max_daily_loss_usd,
+                max_open_positions=int(os.getenv("ELITE_MAX_OPEN_POSITIONS", "1")),
+                max_giveback=os.getenv("ELITE_MAX_GIVEBACK_USD", "20"),
+            )
+            daily_risk_provider = CTraderDailyRiskStateProvider(
+                account_id=settings.ctrader_account_id,
+                deposit_asset_provider=lambda: (
+                    transport.broker_asset_names.get(
+                        account_risk_ref["snapshot"].deposit_asset_id
+                    ) if account_risk_ref.get("snapshot") is not None else None
+                ),
+                snapshot_provider=lambda: account_risk_ref.get("snapshot"),
+                snapshot_observed_at_provider=lambda: account_risk_ref.get(
+                    "observed_at_epoch"
+                ),
+                deal_store=deal_store,
+                position_ledger=position_ledger,
+                timezone_name=trading_timezone,
+                now_epoch=time.time,
+            )
+            print(
+                "Daily broker risk guard configured with no profit target; "
+                "daily loss limit is operator-configured."
+            )
+        except Exception as exc:
+            daily_guard = None
+            daily_risk_provider = None
+            print(
+                "Daily risk configuration invalid; TradingLoop remains disabled: "
+                + " ".join(str(exc).split())[:200]
+            )
+    else:
+        print(
+            "ELITE_MAX_DAILY_LOSS_USD is not configured; TradingLoop remains disabled. "
+            "No daily loss limit will be guessed."
+        )
+
+    def risk_budget_available(_symbol: str) -> bool:
+        if daily_guard is None or daily_risk_provider is None or kill_switch.is_active():
+            return False
+        runtime = execution_runtime_ref.get("runtime")
+        if runtime is None or not runtime.protection_monitor.allow_new_entries:
+            return False
+        try:
+            state = daily_risk_provider()
+            decision = daily_guard.evaluate(
+                daily_net_pnl=state.daily_net_pnl,
+                equity=state.equity,
+                open_positions=state.open_positions,
+                now=datetime.now(daily_guard.zone),
+            )
+            return decision.allow_new_entries is True
+        except Exception:
+            return False
+
     def depth_thresholds(symbol: str) -> dict[str, str] | None:
         prefix = "CTRADER_" + symbol.upper().replace("/", "_")
         top = os.getenv(prefix + "_MIN_TOP_LEVEL_SIZE_UNITS")
@@ -513,9 +589,9 @@ def main() -> None:
             if _depth_runtime is not None else (lambda _symbol: None)
         ),
         depth_threshold_provider=depth_thresholds,
-        # The daily realized-PnL/session guard is not yet connected to the
-        # broker snapshot stream, so this remains false rather than guessing.
-        risk_budget_provider=lambda _symbol: False,
+        # Daily risk is true only when a fresh account snapshot, a recent
+        # terminal deal-history range, and the persistent session guard agree.
+        risk_budget_provider=risk_budget_available,
         now_epoch=time.time,
     )
     calibrated_evidence_provider = BrokerCalibratedEvidenceProvider(
@@ -627,6 +703,7 @@ def main() -> None:
                 offset_file=os.getenv(
                     "ELITE_TELEGRAM_OFFSET_FILE", "state/telegram_offset.json"
                 ),
+                daily_guard=daily_guard,
                 status_provider=telegram_status,
                 close_all_request_path=close_all_request_path,
             )
