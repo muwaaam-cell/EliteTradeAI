@@ -34,11 +34,17 @@ class ShadowCost:
     commission_slippage_price: Decimal
 
     def __post_init__(self) -> None:
-        _positive(self.spread_price, "spread_price", allow_zero=True)
-        _positive(
-            self.commission_slippage_price,
-            "commission_slippage_price",
-            allow_zero=True,
+        object.__setattr__(
+            self, "spread_price",
+            _positive(self.spread_price, "spread_price", allow_zero=True),
+        )
+        object.__setattr__(
+            self, "commission_slippage_price",
+            _positive(
+                self.commission_slippage_price,
+                "commission_slippage_price",
+                allow_zero=True,
+            ),
         )
 
 
