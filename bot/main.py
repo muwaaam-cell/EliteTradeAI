@@ -512,49 +512,54 @@ def main() -> None:
     )
     daily_guard = None
     daily_risk_provider = None
-    if max_daily_loss_usd:
-        try:
-            daily_guard = DailySessionGuard(
-                os.getenv(
-                    "ELITE_SESSION_DATABASE", "state/daily_session_runtime.sqlite3"
-                ),
-                timezone=trading_timezone,
-                profit_target=None,
-                max_daily_loss=max_daily_loss_usd,
-                max_open_positions=int(os.getenv("ELITE_MAX_OPEN_POSITIONS", "1")),
-                max_giveback=os.getenv("ELITE_MAX_GIVEBACK_USD", "20"),
-            )
-            daily_risk_provider = CTraderDailyRiskStateProvider(
-                account_id=settings.ctrader_account_id,
-                deposit_asset_provider=lambda: (
-                    transport.broker_asset_names.get(
-                        account_risk_ref["snapshot"].deposit_asset_id
-                    ) if account_risk_ref.get("snapshot") is not None else None
-                ),
-                snapshot_provider=lambda: account_risk_ref.get("snapshot"),
-                snapshot_observed_at_provider=lambda: account_risk_ref.get(
-                    "observed_at_epoch"
-                ),
-                deal_store=deal_store,
-                position_ledger=position_ledger,
-                timezone_name=trading_timezone,
-                now_epoch=time.time,
-            )
-            print(
-                "Daily broker risk guard configured with no profit target; "
-                "daily loss limit is operator-configured."
-            )
-        except Exception as exc:
-            daily_guard = None
-            daily_risk_provider = None
-            print(
-                "Daily risk configuration invalid; TradingLoop remains disabled: "
-                + " ".join(str(exc).split())[:200]
-            )
-    else:
+    try:
+        daily_loss_config = (
+            {"max_daily_loss": max_daily_loss_usd}
+            if max_daily_loss_usd
+            else {"max_daily_loss_pct": str(settings.max_daily_loss_pct)}
+        )
+        daily_guard = DailySessionGuard(
+            os.getenv(
+                "ELITE_SESSION_DATABASE", "state/daily_session_runtime.sqlite3"
+            ),
+            timezone=trading_timezone,
+            profit_target=None,
+            **daily_loss_config,
+            max_open_positions=int(os.getenv(
+                "ELITE_MAX_OPEN_POSITIONS", str(settings.max_open_positions)
+            )),
+            max_giveback=os.getenv("ELITE_MAX_GIVEBACK_USD", "20"),
+        )
+        daily_risk_provider = CTraderDailyRiskStateProvider(
+            account_id=settings.ctrader_account_id,
+            deposit_asset_provider=lambda: (
+                transport.broker_asset_names.get(
+                    account_risk_ref["snapshot"].deposit_asset_id
+                ) if account_risk_ref.get("snapshot") is not None else None
+            ),
+            snapshot_provider=lambda: account_risk_ref.get("snapshot"),
+            snapshot_observed_at_provider=lambda: account_risk_ref.get(
+                "observed_at_epoch"
+            ),
+            deal_store=deal_store,
+            position_ledger=position_ledger,
+            timezone_name=trading_timezone,
+            now_epoch=time.time,
+        )
+        configured_loss = (
+            f"USD {max_daily_loss_usd}" if max_daily_loss_usd
+            else f"{settings.max_daily_loss_pct}% of persisted session-start equity"
+        )
         print(
-            "ELITE_MAX_DAILY_LOSS_USD is not configured; TradingLoop remains disabled. "
-            "No daily loss limit will be guessed."
+            "Daily broker risk guard configured with no profit target; "
+            f"daily loss limit={configured_loss}."
+        )
+    except Exception as exc:
+        daily_guard = None
+        daily_risk_provider = None
+        print(
+            "Daily risk configuration invalid; TradingLoop remains disabled: "
+            + " ".join(str(exc).split())[:200]
         )
 
     def risk_budget_available(_symbol: str) -> bool:
