@@ -276,9 +276,9 @@ def main() -> None:
 
     # Compose the account-bound demo order/event lifecycle before transport startup.
     # The one-shot bridge can only authorize requests invoked by TradingLoop's
-    # post-sizing submit_order callback. No TradingLoop is scheduled in this
-    # market-analysis process while calibrated evidence and daily broker P&L
-    # accounting are unavailable.
+    # post-sizing submit_order callback. The loop is scheduled only after broker
+    # reconciliation and protection checks pass; candidate-level calibration,
+    # sizing and market-evidence gates can still independently return WAIT.
     order_ledger = OrderLedger(
         os.getenv("CTRADER_ORDER_LEDGER_DB", "state/ctrader_orders.sqlite3"),
         account_id=settings.ctrader_account_id,
@@ -430,10 +430,10 @@ def main() -> None:
             "liquidity-dependent strategy selection remains unavailable."
         )
 
-    # Connect broker-fed candidate construction to the live runtime. Calibration
-    # and deposit-currency conversion providers intentionally return no data
-    # until independently measured, versioned sources are implemented. Thus
-    # this integration reports WAIT and cannot authorize or submit orders.
+    # Connect broker-fed candidate construction to the live runtime. Broker
+    # conversion quotes and account risk inputs are wired below. Strategy edge
+    # calibration remains strictly limited to broker-confirmed closed positions;
+    # missing calibration, instrument thresholds or risk inputs return WAIT.
     def candidate_config(symbol: str) -> CandidateBuildConfig:
         prefix = "CTRADER_" + symbol.upper().replace("/", "_")
         required = {
