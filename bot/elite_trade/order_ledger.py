@@ -290,7 +290,7 @@ class OrderLedger:
         *,
         now: int,
     ) -> bool:
-        """Resolve an uncertain send from an authenticated cumulative partial fill."""
+        """Resolve an uncertain send from an authenticated cumulative fill event."""
         order_id = self._text(client_order_id, "client_order_id")
         broker_id = self._text(broker_order_id, "broker_order_id")
         if isinstance(filled_volume_units, bool) or not isinstance(filled_volume_units, int) or filled_volume_units <= 0:
@@ -309,14 +309,15 @@ class OrderLedger:
             if row["broker_order_id"] and row["broker_order_id"] != broker_id:
                 db.execute("ROLLBACK")
                 raise ValueError("Broker order ID cannot be changed once recorded.")
-            if filled_volume_units >= row["volume_units"]:
+            if filled_volume_units > row["volume_units"]:
                 db.execute("ROLLBACK")
-                raise ValueError("A partial-fill recovery must be below the requested volume.")
+                raise ValueError("Recovered fill exceeds the requested volume.")
+            status = FILLED if filled_volume_units == row["volume_units"] else PARTIALLY_FILLED
             db.execute(
                 """UPDATE orders SET status=?,filled_volume_units=?,updated_at=?,
                    broker_order_id=COALESCE(broker_order_id,?),last_error=NULL
                    WHERE client_order_id=?""",
-                (PARTIALLY_FILLED, filled_volume_units, now, broker_id, order_id),
+                (status, filled_volume_units, now, broker_id, order_id),
             )
             db.execute("COMMIT")
             return True
