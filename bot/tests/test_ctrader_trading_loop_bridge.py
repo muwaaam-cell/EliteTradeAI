@@ -6,6 +6,7 @@ from elite_trade.ctrader_order_requests import MarketOrderSpec
 from elite_trade.ctrader_trading_loop_bridge import CTraderTradingLoopSubmitter
 from elite_trade.execution_policy import OrderIntent, Quote, Side
 from elite_trade.instrument import InstrumentMetadata
+from elite_trade.strategy_selector import StrategyMode
 
 
 class FakeAdapter:
@@ -64,6 +65,8 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
         self.assertEqual(spec.volume_units, 500)
         self.assertEqual(spec.entry_reference_price, 1.1001)
         self.assertEqual(spec.client_order_id, "bridge-order-1")
+        self.assertEqual(spec.strategy_mode, "SCALPING")
+        self.assertEqual(spec.initial_cash_risk, Decimal("0.50"))
         self.assertFalse(self.bridge.authorize_order(spec, symbol))
 
     def test_sell_uses_bid_and_requires_broker_short_permission(self):
@@ -92,6 +95,7 @@ class CTraderTradingLoopBridgeTests(unittest.TestCase):
         blocked = SimpleNamespace(
             intent=sell_intent, quote=candidate.quote,
             broker_risk_inputs=SimpleNamespace(instrument=no_short),
+            strategy_selection=SimpleNamespace(mode=StrategyMode.SCALPING),
         )
         with self.assertRaisesRegex(ValueError, "SELL"):
             self.bridge(blocked, sized, self.plan)
