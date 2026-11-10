@@ -226,7 +226,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         observed = []
         transport = self.transport
         # Recompose with an independent authenticated position-status sink.
-        runtime = compose_demo_execution_runtime(
+        compose_demo_execution_runtime(
             transport=transport,
             ledger=self.ledger,
             expected_account_id=77,
