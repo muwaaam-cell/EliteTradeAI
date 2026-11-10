@@ -87,7 +87,8 @@ def aggregate_verified_closed_position(
         volume = _decimal(order.get("filled_volume_units", order.get("volume_units")), "opening volume")
         if volume <= 0:
             raise DealHistoryError("Opening volume must be positive.")
-        opening_volume += volume
+        # cTrader order-ledger volumes use protocol cents (1.00 unit = 100).
+        opening_volume += volume / Decimal("100")
 
     if len(modes) != 1:
         raise DealHistoryError("Mixed strategy modes cannot form one calibration sample.")
