@@ -72,6 +72,33 @@ class CTraderExecutionEventTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_execution_update(self.ledger, unmatched, now=2)
 
+    def test_authenticated_events_resolve_unknown_after_restart(self):
+        self.assertTrue(self.ledger.mark_unknown("client-1", now=2, error="connection lost"))
+        restarted = OrderLedger(self.ledger.database)
+        partial = self.decode(self.event(11, executed=35))
+        self.assertTrue(apply_execution_update(restarted, partial, now=3))
+        record = restarted.get("client-1")
+        self.assertEqual(record.status, PARTIALLY_FILLED)
+        self.assertEqual(record.filled_volume_units, 35)
+        self.assertEqual(record.broker_order_id, "9001")
+        filled = self.decode(self.event(3, executed=100))
+        self.assertTrue(apply_execution_update(restarted, filled, now=4))
+        self.assertEqual(restarted.get("client-1").status, FILLED)
+        self.assertEqual(restarted.get("client-1").filled_volume_units, 100)
+
+    def test_unknown_can_be_resolved_by_authenticated_accept_or_reject(self):
+        for execution_type, expected in ((2, SUBMITTED), (7, REJECTED)):
+            with self.subTest(expected=expected):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                ledger = OrderLedger(Path(temp.name) / "orders.sqlite3")
+                ledger.reserve("client-1", self.intent, now=1)
+                ledger.mark_unknown("client-1", now=2)
+                update = self.decode(self.event(execution_type))
+                self.assertTrue(apply_execution_update(ledger, update, now=3))
+                self.assertEqual(ledger.get("client-1").status, expected)
+                self.assertEqual(ledger.get("client-1").broker_order_id, "9001")
+
     def test_terminal_event_persists_broker_order_id(self):
         accepted = self.decode(self.event(2))
         self.assertTrue(apply_execution_update(self.ledger, accepted, now=2))
