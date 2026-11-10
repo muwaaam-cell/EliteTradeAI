@@ -171,6 +171,7 @@ def apply_execution_update(
             update.executed_volume_units,
             update.broker_order_id,
             now=now,
+            broker_position_id=update.broker_position_id,
         )
     if update.status in {REJECTED, CANCELLED}:
         return ledger.mark_terminal(
