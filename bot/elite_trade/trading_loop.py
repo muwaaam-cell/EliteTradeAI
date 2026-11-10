@@ -105,6 +105,7 @@ class TradingLoop:
         now: Callable[[], datetime],
         risk_state_max_age_seconds: float = 5.0,
         adaptive_risk_config: AdaptiveRiskConfig | None = None,
+        allow_legacy_sizing: bool = False,
     ) -> None:
         self.guard = guard
         self.kill_switch = kill_switch
@@ -115,6 +116,9 @@ class TradingLoop:
         self.demo_execution_authorized = demo_execution_authorized
         self.now_epoch = now_epoch
         self.now = now
+        if not isinstance(allow_legacy_sizing, bool):
+            raise ValueError("allow_legacy_sizing must be boolean.")
+        self.allow_legacy_sizing = allow_legacy_sizing
         if (isinstance(risk_state_max_age_seconds, bool)
                 or not isinstance(risk_state_max_age_seconds, (int, float))
                 or not isfinite(risk_state_max_age_seconds)
@@ -232,6 +236,10 @@ class TradingLoop:
                         max_volume_cents=candidate.limits.max_volume_units,
                     )
                 else:
+                    if not self.allow_legacy_sizing:
+                        raise ValueError(
+                            "Broker commission, conversion and SL/TP metadata are mandatory for sizing."
+                        )
                     if any(value is None for value in (
                         candidate.loss_per_volume_unit, candidate.min_volume_units,
                         candidate.max_volume_units, candidate.volume_step_units,
