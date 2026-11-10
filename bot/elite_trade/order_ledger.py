@@ -10,6 +10,7 @@ from contextlib import closing
 import sqlite3
 import threading
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final
 
@@ -37,6 +38,8 @@ class OrderRecord:
     updated_at: int
     broker_order_id: str | None = None
     last_error: str | None = None
+    strategy_mode: str | None = None
+    initial_cash_risk: Decimal | None = None
 
 
 class OrderLedger:
@@ -65,7 +68,9 @@ class OrderLedger:
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     broker_order_id TEXT UNIQUE,
-                    last_error TEXT
+                    last_error TEXT,
+                    strategy_mode TEXT,
+                    initial_cash_risk TEXT
                 )"""
             )
             schema = db.execute(
@@ -86,7 +91,9 @@ class OrderLedger:
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL,
                         broker_order_id TEXT UNIQUE,
-                        last_error TEXT
+                        last_error TEXT,
+                        strategy_mode TEXT,
+                        initial_cash_risk TEXT
                     )"""
                 )
                 db.execute(
@@ -99,6 +106,13 @@ class OrderLedger:
                 db.execute("DROP TABLE orders")
                 db.execute("ALTER TABLE orders_v2 RENAME TO orders")
                 db.execute("COMMIT")
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()
+            }
+            if "strategy_mode" not in columns:
+                db.execute("ALTER TABLE orders ADD COLUMN strategy_mode TEXT")
+            if "initial_cash_risk" not in columns:
+                db.execute("ALTER TABLE orders ADD COLUMN initial_cash_risk TEXT")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)"
             )
@@ -162,6 +176,11 @@ class OrderLedger:
             updated_at=row["updated_at"],
             broker_order_id=row["broker_order_id"],
             last_error=row["last_error"],
+            strategy_mode=row["strategy_mode"],
+            initial_cash_risk=(
+                Decimal(row["initial_cash_risk"])
+                if row["initial_cash_risk"] is not None else None
+            ),
         )
 
     def reserve(self, client_order_id: str, intent: object, *, now: int) -> bool:
@@ -179,15 +198,31 @@ class OrderLedger:
         volume = getattr(intent, "volume_units", None)
         if isinstance(volume, bool) or not isinstance(volume, int) or volume <= 0:
             raise ValueError("volume_units must be a positive integer.")
+        strategy_mode = getattr(intent, "strategy_mode", None)
+        initial_cash_risk = getattr(intent, "initial_cash_risk", None)
+        if strategy_mode is None and initial_cash_risk is None:
+            risk_text = None
+        else:
+            if strategy_mode not in {"SCALPING", "INTRADAY"} or initial_cash_risk is None:
+                raise ValueError("strategy_mode and initial_cash_risk must be supplied together.")
+            try:
+                risk_value = Decimal(str(initial_cash_risk))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("initial_cash_risk must be a finite positive decimal.") from exc
+            if not risk_value.is_finite() or risk_value <= 0:
+                raise ValueError("initial_cash_risk must be a finite positive decimal.")
+            risk_text = str(risk_value)
         if isinstance(now, bool) or not isinstance(now, int) or now < 0:
             raise ValueError("now must be a non-negative integer timestamp.")
         with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             cursor = db.execute(
                 """INSERT OR IGNORE INTO orders
-                   (client_order_id,symbol,side,volume_units,status,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (order_id, symbol, side, volume, PENDING, now, now),
+                   (client_order_id,symbol,side,volume_units,status,created_at,updated_at,
+                    strategy_mode,initial_cash_risk)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (order_id, symbol, side, volume, PENDING, now, now,
+                 strategy_mode, risk_text),
             )
             inserted = cursor.rowcount == 1
             db.execute("COMMIT")
