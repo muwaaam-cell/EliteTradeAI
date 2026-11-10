@@ -350,6 +350,74 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(transport.state, ConnectionState.ERROR)
         self.assertTrue(errors)
 
+    def test_catalogue_trader_response_seeds_initial_snapshot_without_duplicate_request(self):
+        snapshots = []
+        holder = {}
+
+        def on_instruments(_instruments):
+            holder["transport"].request_account_snapshot()
+
+        transport, client, _ = self.make_transport(
+            on_instruments=on_instruments,
+            on_account_snapshot=snapshots.append,
+        )
+        holder["transport"] = transport
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        transport.request_instrument_catalog()
+
+        light = ProtoOALightSymbol(
+            symbolId=7, symbolName="EURUSD", enabled=True,
+            baseAssetId=1, quoteAssetId=2,
+        )
+        assets = SimpleNamespace(
+            ctidTraderAccountId=77,
+            asset=[
+                ProtoOAAsset(assetId=1, name="EUR"),
+                ProtoOAAsset(assetId=2, name="USD"),
+            ],
+        )
+        trader = ProtoOATrader(
+            ctidTraderAccountId=77, balance=10000, depositAssetId=2,
+            moneyDigits=2, accessRights=ProtoOAAccessRights.FULL_ACCESS,
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=18,
+            body=SimpleNamespace(ctidTraderAccountId=77, symbol=[light]),
+        ))
+        client.received(client, SimpleNamespace(payloadType=20, body=assets))
+        client.received(client, SimpleNamespace(
+            payloadType=12,
+            body=SimpleNamespace(ctidTraderAccountId=77, trader=trader),
+        ))
+        full = ProtoOASymbol(
+            symbolId=7, digits=5, pipPosition=4, minVolume=1000,
+            maxVolume=100000, stepVolume=1000,
+            tradingMode=ProtoOATradingMode.ENABLED,
+            enableShortSelling=True,
+        )
+        client.received(client, SimpleNamespace(
+            payloadType=22,
+            body=SimpleNamespace(ctidTraderAccountId=77, symbol=[full]),
+        ))
+
+        # The startup snapshot reuses the catalogue trader record and requests
+        # only PnL, avoiding a duplicate TraderReq during startup.
+        self.assertEqual([r.payloadType for r in client.sent], [17, 19, 11, 21, 13])
+        self.assertTrue(transport._snapshot_in_flight)
+        self.assertIs(transport._pending_trader, trader)
+
+        pnl = ProtoOAGetPositionUnrealizedPnLRes(
+            ctidTraderAccountId=77, moneyDigits=2,
+        )
+        client.received(client, SimpleNamespace(payloadType=14, body=pnl))
+        self.assertEqual(len(snapshots), 1)
+        self.assertFalse(transport._snapshot_in_flight)
+
+        # Later periodic refreshes must fetch fresh trader and PnL data.
+        transport.request_account_snapshot()
+        self.assertEqual([r.payloadType for r in client.sent[-2:]], [11, 13])
+
     def test_account_snapshot_requests_broker_balance_and_position_pnl(self):
         received = []
         transport, client, _ = self.make_transport(on_account_snapshot=received.append)
