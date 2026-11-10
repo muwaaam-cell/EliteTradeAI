@@ -208,3 +208,46 @@ class CTraderDepthBook:
         for levels in self._levels.values():
             levels.clear()
         self._received_at.clear()
+
+def depth_liquidity_score(
+    snapshot: DepthSnapshot,
+    *,
+    min_top_level_size_units: Decimal | str | int,
+    min_total_depth_units: Decimal | str | int,
+    now_epoch: float,
+    max_age_seconds: float = 3.0,
+) -> Decimal | None:
+    """Return a conservative two-sided depth score in [0, 1].
+
+    Thresholds are mandatory and must be calibrated per instrument/account.
+    The score is the weaker of top-level and total two-sided depth, capped at
+    one. Missing sides or stale data return None rather than a guessed score.
+    """
+    if not isinstance(snapshot, DepthSnapshot):
+        raise TypeError("A validated depth snapshot is required.")
+
+    def positive(value: object, name: str) -> Decimal:
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be finite and positive.")
+        try:
+            number = Decimal(str(value))
+        except Exception as exc:
+            raise ValueError(f"{name} must be finite and positive.") from exc
+        if not number.is_finite() or number <= 0:
+            raise ValueError(f"{name} must be finite and positive.")
+        return number
+
+    top_required = positive(min_top_level_size_units, "min_top_level_size_units")
+    total_required = positive(min_total_depth_units, "min_total_depth_units")
+    now = positive(now_epoch, "now_epoch")
+    max_age = positive(max_age_seconds, "max_age_seconds")
+    age = now - Decimal(str(snapshot.received_at_epoch))
+    if age < 0 or age > max_age:
+        return None
+    if snapshot.top_bid_size is None or snapshot.top_ask_size is None:
+        return None
+    if snapshot.total_bid_size <= 0 or snapshot.total_ask_size <= 0:
+        return None
+    top_score = min(snapshot.top_bid_size, snapshot.top_ask_size) / top_required
+    total_score = min(snapshot.total_bid_size, snapshot.total_ask_size) / total_required
+    return min(Decimal("1"), top_score, total_score)
