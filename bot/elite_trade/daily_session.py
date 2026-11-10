@@ -54,7 +54,7 @@ class DailySessionGuard:
         database: str | Path,
         *,
         timezone: str,
-        profit_target: Decimal | str | int,
+        profit_target: Decimal | str | int | None = None,
         max_daily_loss: Decimal | str | int,
         max_open_positions: int,
         max_giveback: Decimal | str | int = "20",
@@ -63,10 +63,12 @@ class DailySessionGuard:
             self.zone = ZoneInfo(timezone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError("A valid IANA timezone is required.") from exc
-        self.profit_target = _money(profit_target, "profit_target")
+        self.profit_target = (
+            None if profit_target is None else _money(profit_target, "profit_target")
+        )
         self.max_daily_loss = _money(max_daily_loss, "max_daily_loss")
         self.max_giveback = _money(max_giveback, "max_giveback")
-        if self.max_giveback >= self.profit_target:
+        if self.profit_target is not None and self.max_giveback >= self.profit_target:
             raise ValueError("max_giveback must be smaller than profit_target.")
         if isinstance(max_open_positions, bool) or not isinstance(max_open_positions, int) or max_open_positions < 1:
             raise ValueError("max_open_positions must be a positive integer.")
@@ -160,7 +162,7 @@ class DailySessionGuard:
         elif previous == TARGET_LOCK:
             state = TARGET_LOCK
             mode, floor = TradingMode.GIVEBACK_LOCK, max(
-                self.profit_target - self.max_giveback, Decimal("0")
+                (self.profit_target or Decimal("0")) - self.max_giveback, Decimal("0")
             )
         else:
             loss_reached = pnl <= -self.max_daily_loss
