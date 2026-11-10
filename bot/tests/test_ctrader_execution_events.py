@@ -34,7 +34,8 @@ class CTraderExecutionEventTests(unittest.TestCase):
             tradeData=SimpleNamespace(volume=100),
         )
         return SimpleNamespace(
-            ctidTraderAccountId=account, executionType=execution_type, order=order
+            ctidTraderAccountId=account, executionType=execution_type, order=order,
+            position=SimpleNamespace(positionId=7007),
         )
 
     def decode(self, event):
@@ -50,6 +51,7 @@ class CTraderExecutionEventTests(unittest.TestCase):
         self.assertEqual(partial.status, PARTIALLY_FILLED)
         self.assertTrue(apply_execution_update(self.ledger, partial, now=3))
         self.assertEqual(self.ledger.get("client-1").filled_volume_units, 35)
+        self.assertEqual(self.ledger.get("client-1").broker_position_id, "7007")
         filled = self.decode(self.event(3, executed=100))
         self.assertEqual(filled.status, FILLED)
         self.assertTrue(apply_execution_update(self.ledger, filled, now=4))
@@ -81,6 +83,7 @@ class CTraderExecutionEventTests(unittest.TestCase):
         self.assertEqual(record.status, PARTIALLY_FILLED)
         self.assertEqual(record.filled_volume_units, 35)
         self.assertEqual(record.broker_order_id, "9001")
+        self.assertEqual(record.broker_position_id, "7007")
         filled = self.decode(self.event(3, executed=100))
         self.assertTrue(apply_execution_update(restarted, filled, now=4))
         self.assertEqual(restarted.get("client-1").status, FILLED)
