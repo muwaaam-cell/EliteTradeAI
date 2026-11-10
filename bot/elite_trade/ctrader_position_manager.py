@@ -277,8 +277,11 @@ class CTraderPositionManager:
                 if callable(reconcile):
                     try:
                         reconcile()
-                    except Exception:
-                        pass
+                    except Exception as reconcile_exc:
+                        self.on_issue(
+                            "Follow-up position reconciliation failed: "
+                            + " ".join(str(reconcile_exc).split())[:160]
+                        )
         return amended
 
     def close(self) -> None:
