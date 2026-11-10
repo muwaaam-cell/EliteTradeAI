@@ -159,18 +159,25 @@ def build_verified_outcome_from_stores(
     account_id: int,
     position_id: str,
     symbol: str,
-    broker_position_status: int,
+    broker_position_status: int | None = None,
     history_from_ms: int,
+
     history_to_ms: int,
     deal_store: object,
     order_ledger: object,
 ) -> VerifiedPositionOutcome:
     """Build an outcome from the durable account-scoped broker and order stores.
 
-    The caller must supply the broker's explicit positionStatus value from an
-    authoritative position record. The deal store must have recorded the
+    Closure status is read from an authenticated execution-event observation
+    persisted by the demo runtime. The deal store must also have recorded the
     terminal hasMore=False page for the exact requested history interval.
     """
+    if getattr(order_ledger, "bound_account_id", None) != account_id:
+        raise DealHistoryError("Order ledger is not bound to the requested broker account.")
+    if broker_position_status is None:
+        broker_position_status = deal_store.get_position_status(
+            account_id=account_id, position_id=position_id
+        )
     complete = deal_store.has_complete_history_range(
         account_id=account_id,
         from_ms=history_from_ms,
