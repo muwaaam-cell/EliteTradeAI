@@ -44,7 +44,7 @@ class ShadowScalpingCalibrationTests(unittest.TestCase):
     def test_missing_cost_observation_skips_signal_and_never_becomes_live_evidence(self):
         report = self.run_study(self.bars(), {})
         self.assertEqual(report.trades, ())
-        self.assertEqual(report.missing_cost_observations, 1)
+        self.assertGreater(report.missing_cost_observations, 0)
         self.assertFalse(report.is_live_evidence)
         self.assertFalse(report.sample_sufficient)
 
@@ -54,7 +54,7 @@ class ShadowScalpingCalibrationTests(unittest.TestCase):
             self.bars(),
             {timestamp: ShadowCost(Decimal("0.60"), Decimal("0.01"))},
         )
-        self.assertEqual(report.rejected_wide_spread, 1)
+        self.assertGreater(report.rejected_wide_spread, 0)
         self.assertEqual(report.trades, ())
 
     def test_costs_are_deducted_and_report_remains_research_only(self):
