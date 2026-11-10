@@ -20,6 +20,8 @@ from elite_trade.ctrader_candidate_pipeline import (
 )
 from elite_trade.ctrader_fx_conversion import conversion_rate
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
+from elite_trade.ctrader_closed_positions import build_verified_outcome_from_stores
+from elite_trade.ctrader_calibration_store import VerifiedOutcomeStore
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
 from elite_trade.order_ledger import OrderLedger
@@ -70,6 +72,9 @@ def main() -> None:
     deal_store = CTraderDealHistoryStore(
         os.getenv("CTRADER_DEAL_HISTORY_DB", "state/ctrader_deal_history.sqlite3")
     )
+    outcome_store = VerifiedOutcomeStore(
+        os.getenv("CTRADER_VERIFIED_OUTCOMES_DB", "state/ctrader_verified_outcomes.sqlite3")
+    )
     position_ledger = PositionLedger(
         os.getenv("CTRADER_POSITION_LEDGER_DB", "state/ctrader_positions.sqlite3"),
         account_id=settings.ctrader_account_id,
@@ -85,6 +90,7 @@ def main() -> None:
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
     account_risk_ref: dict[str, object] = {}
     execution_runtime_ref: dict[str, object] = {}
+    history_range_ref: dict[str, tuple[int, int]] = {}
 
     def on_reconcile(response: object) -> object:
         """Persist and report the complete broker snapshot without managing positions."""
@@ -134,6 +140,7 @@ def main() -> None:
             market_ref["market"].request_catalogue()
             end_ms = int(time.time() * 1000)
             start_ms = end_ms - deal_history_days * 24 * 60 * 60 * 1000
+            history_range_ref["range"] = (start_ms, end_ms)
             try:
                 transport_ref["transport"].request_deal_history(
                     start_ms, end_ms, max_rows=1000
@@ -170,6 +177,7 @@ def main() -> None:
                 )
             else:
                 print("Requested deal-history window returned its final page.")
+                persist_verified_closed_outcomes()
         except Exception as exc:
             print(f"Deal-history persistence failed: {exc}")
 
@@ -238,6 +246,71 @@ def main() -> None:
         os.getenv("CTRADER_ORDER_LEDGER_DB", "state/ctrader_orders.sqlite3"),
         account_id=settings.ctrader_account_id,
     )
+
+    def persist_verified_closed_outcomes() -> None:
+        requested_range = history_range_ref.get("range")
+        account_id = transport.authenticated_account_id
+        if requested_range is None or account_id != settings.ctrader_account_id:
+            return
+        start_ms, end_ms = requested_range
+        for position_id in deal_store.closed_position_ids(account_id=account_id):
+            try:
+                outcome = build_verified_outcome_from_stores(
+                    account_id=account_id,
+                    position_id=position_id,
+                    symbol=next(
+                        (
+                            record.symbol for record in order_ledger.list_by_broker_position_id(position_id)
+                            if getattr(record, "symbol", "").upper() in {"XAUUSD", "EURUSD"}
+                        ),
+                        "",
+                    ),
+                    history_from_ms=start_ms,
+                    history_to_ms=end_ms,
+                    deal_store=deal_store,
+                    order_ledger=order_ledger,
+                )
+                inserted = outcome_store.record(
+                    account_id=account_id,
+                    outcome=outcome,
+                    stored_epoch=int(time.time()),
+                )
+                if inserted:
+                    print(
+                        "Verified broker close stored for calibration: "
+                        f"position={position_id}, symbol={outcome.symbol}, "
+                        f"mode={outcome.strategy_mode}, "
+                        f"net_after_costs={outcome.net_pnl_after_costs}"
+                    )
+            except Exception as exc:
+                print(
+                    f"Closed position {position_id} not eligible for calibration: "
+                    + " ".join(str(exc).split())[:200]
+                )
+
+    def on_position_status(account_id: int, position_id: str, status: int) -> None:
+        if account_id != settings.ctrader_account_id:
+            raise RuntimeError("Position status belongs to an unexpected broker account.")
+        deal_store.record_position_status(
+            account_id=account_id,
+            position_id=position_id,
+            position_status=status,
+            observed_epoch=int(time.time()),
+        )
+        if status == 2:
+            # Refresh the bounded history after a broker-confirmed close so
+            # newly emitted close deals can be included in the next final page.
+            start_ms = int(time.time() * 1000) - deal_history_days * 24 * 60 * 60 * 1000
+            end_ms = int(time.time() * 1000)
+            history_range_ref["range"] = (start_ms, end_ms)
+            try:
+                transport.request_deal_history(start_ms, end_ms, max_rows=1000)
+            except Exception as exc:
+                print(
+                    "Closed position recorded; deal-history refresh deferred: "
+                    + " ".join(str(exc).split())[:160]
+                )
+            persist_verified_closed_outcomes()
     try:
         transport._load_sdk()
         execution_enum = transport._sdk.get("ProtoOAExecutionType")
@@ -258,6 +331,7 @@ def main() -> None:
             position_ledger=position_ledger,
             symbol_names=symbol_names,
             instruments=lambda: market_ref["market"].instruments,
+            on_position_status=on_position_status,
         )
         execution_runtime_ref["runtime"] = execution_runtime
         execution_runtime_ref["submitter"] = trading_loop_submitter
@@ -435,6 +509,7 @@ def main() -> None:
     finally:
         transport.stop()
         deal_store.close()
+        outcome_store.close()
         memory.close()
 
 
