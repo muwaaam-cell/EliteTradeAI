@@ -78,6 +78,8 @@ def compose_demo_execution_runtime(
             raise RuntimeError("Compose demo execution handlers before transport startup.")
     if not callable(now_epoch) or not callable(on_unmatched):
         raise TypeError("Runtime requires clock and unmatched-event callbacks.")
+    if not callable(authorize_order):
+        raise TypeError("Demo execution requires an explicit trading-loop pre-trade authorizer.")
     if not callable(getattr(transport, "request_positions_reconcile", None)):
         raise TypeError("Transport must support post-fill position reconciliation.")
 
@@ -102,7 +104,7 @@ def compose_demo_execution_runtime(
             return False
         if ledger.list_in_flight():
             return False
-        return authorize_order(spec, symbol) if callable(authorize_order) else True
+        return authorize_order(spec, symbol)
 
     adapter = create_demo_execution_adapter(
         transport=transport,
