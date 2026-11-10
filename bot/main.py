@@ -45,7 +45,7 @@ def main() -> None:
     load_dotenv()
     settings = Settings.from_env()
 
-    print("EliteTrade AI — Pepperstone cTrader demo market-data runtime")
+    print("EliteTrade AI — Pepperstone cTrader guarded demo runtime")
     print("Order execution: demo-only; the TradingLoop starts only after fresh broker reconciliation and all evidence, risk and protection gates pass. Live execution is disabled.")
     if settings.ctrader_env != "demo":
         raise SystemExit("Refusing to start: this runtime supports demo accounts only.")
@@ -232,7 +232,7 @@ def main() -> None:
             f"deposit_asset_id={snapshot.deposit_asset_id}, "
             f"money_digits={snapshot.money_digits}"
         )
-        print("Snapshot is informational only; risk-based order sizing is not enabled.")
+        print("Broker snapshot stored for daily-risk evaluation and deposit-currency position sizing; every new entry remains subject to fresh risk and protection gates.")
 
     def on_error(message: str) -> None:
         print(f"cTrader stopped safely: {message}")
@@ -824,7 +824,7 @@ def main() -> None:
         startup_message = (
             "EliteTrade AI connected to the Pepperstone cTrader demo monitor. "
             "Status is broker-derived. New entries require fresh reconciliation, broker-attached protection, calibrated market evidence and current daily-risk approval; missing evidence means WAIT. Live execution is disabled. "
-            "and end-to-end demo validation are complete. /closeall affects only "
+            "/closeall affects only "
             "bot-owned XAUUSD/EURUSD positions."
         )
 
