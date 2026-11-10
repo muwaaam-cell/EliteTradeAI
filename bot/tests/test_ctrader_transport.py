@@ -636,7 +636,7 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(client.sent, [amend, close])
         wrong = close_type()
         wrong.ctidTraderAccountId = 88
-        with self.assertRaisesRegex(ValueError, "different from the authenticated account"):
+        with self.assertRaisesRegex(ValueError, "does not match the authenticated account"):
             transport.send_demo_close_position_request(wrong)
 
     def test_live_transport_refuses_position_management_requests(self):
