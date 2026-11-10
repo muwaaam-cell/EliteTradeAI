@@ -147,11 +147,11 @@ def _simulate(
         slip = costs.slippage_per_side
 
         if signal.direction == "BUY":
-            entry = _d(entry_bar.open) + spread
+            entry = _d(entry_bar.open) + spread + slip
             stop = entry - stop_distance
             target = entry + target_distance
         else:
-            entry = _d(entry_bar.open)
+            entry = _d(entry_bar.open) - slip
             stop = entry + stop_distance
             target = entry - target_distance
 
