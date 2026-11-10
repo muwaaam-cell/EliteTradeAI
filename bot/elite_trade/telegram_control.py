@@ -1,4 +1,4 @@
-"""Minimal private-chat Telegram control; no trade execution is exposed."""
+"""Private-chat Telegram controls for the guarded cTrader demo runtime."""
 from __future__ import annotations
 
 import json
@@ -111,7 +111,7 @@ class TelegramControl:
                 "Resume emergency pause: /resume emergency confirm. "
                 "The daily profit target activates reduced-risk profit protection; "
                 "no manual target resume is needed. Giveback and daily-loss locks "
-                "cannot be overridden. Trading execution is not enabled."
+                "cannot be overridden. New orders, if any, are demo-only and require every broker, calibration, risk and protection gate; live execution is disabled."
             )
         if command == "/status":
             if self.status_provider is not None:
