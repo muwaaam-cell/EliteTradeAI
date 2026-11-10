@@ -43,7 +43,7 @@ def _decimal(value: object, name: str, *, positive: bool = False) -> Decimal:
 
 @dataclass(frozen=True)
 class AdaptiveRiskConfig:
-    daily_target: Decimal = Decimal("50")
+    daily_target: Decimal | None = None
     max_giveback: Decimal = Decimal("20")
     normal_risk_pct: Decimal = Decimal("0.50")
     post_target_risk_fraction: Decimal = Decimal("0.25")
@@ -52,7 +52,8 @@ class AdaptiveRiskConfig:
     max_risk_cash: Decimal | None = None
 
     def __post_init__(self) -> None:
-        target = _decimal(self.daily_target, "daily_target", positive=True)
+        target = (None if self.daily_target is None else
+                  _decimal(self.daily_target, "daily_target", positive=True))
         giveback = _decimal(self.max_giveback, "max_giveback", positive=True)
         normal = _decimal(self.normal_risk_pct, "normal_risk_pct", positive=True)
         post = _decimal(self.post_target_risk_fraction, "post_target_risk_fraction", positive=True)
@@ -64,7 +65,7 @@ class AdaptiveRiskConfig:
         object.__setattr__(self, "post_target_risk_fraction", post)
         object.__setattr__(self, "neutral_market_fraction", neutral)
         object.__setattr__(self, "poor_market_fraction", poor)
-        if giveback >= target:
+        if target is not None and giveback >= target:
             raise ValueError("max_giveback must be smaller than daily_target.")
         if normal > Decimal("1"):
             raise ValueError("normal_risk_pct cannot exceed 1 percent.")
@@ -206,6 +207,13 @@ class ProfitProtectionTracker:
         pnl = _decimal(daily_net_pnl, "daily_net_pnl")
         if not isinstance(daily_loss_limit_reached, bool):
             raise ValueError("daily_loss_limit_reached must be boolean.")
+        if self.config.daily_target is None:
+            # No user-selected target means no target-triggered protection.
+            # Daily-loss protection remains active independently.
+            return (
+                TradingMode.DAILY_LOSS_LOCK if daily_loss_limit_reached else TradingMode.NORMAL,
+                Decimal("0"),
+            )
         day = trading_day.isoformat()
         with self._lock, closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
