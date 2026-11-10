@@ -106,6 +106,58 @@ def deal_to_record(deal: object) -> dict:
     }
 
 
+def normalize_close_position_cash(close_detail: Mapping[str, object]):
+    """Normalize cTrader close cash components using the close-detail moneyDigits.
+
+    Values are signed broker minor-unit integers in the account deposit
+    currency. The outer deal commission is intentionally not added again:
+    the close detail's commission and pnlConversionFee are the components
+    used here. Missing required monetary fields or scale metadata are rejected.
+    """
+    from dataclasses import dataclass
+    from decimal import Decimal
+
+    @dataclass(frozen=True)
+    class ClosePositionCashOutcome:
+        money_digits: int
+        gross_profit: Decimal
+        swap: Decimal
+        commission: Decimal
+        pnl_conversion_fee: Decimal
+        net_pnl: Decimal
+
+    if not isinstance(close_detail, Mapping):
+        raise DealHistoryError("A broker closePositionDetail mapping is required.")
+    digits = close_detail.get("moneyDigits")
+    if isinstance(digits, bool) or not isinstance(digits, int) or not 0 <= digits <= 18:
+        raise DealHistoryError("Close-detail moneyDigits is missing or invalid.")
+    scale = Decimal(10) ** digits
+
+    def amount(field: str, *, optional: bool = False) -> Decimal:
+        raw = close_detail.get(field)
+        if raw is None and optional:
+            raw = 0
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise DealHistoryError(f"Close-detail {field} must be a signed integer.")
+        return Decimal(raw) / scale
+
+    # balance is a broker-required close-detail field; validate its presence,
+    # but do not mistake an account balance for a trade P&L component.
+    amount("balance")
+    gross = amount("grossProfit")
+    swap = amount("swap")
+    commission = amount("commission")
+    conversion_fee = amount("pnlConversionFee", optional=True)
+    return ClosePositionCashOutcome(
+        money_digits=digits,
+        gross_profit=gross,
+        swap=swap,
+        commission=commission,
+        pnl_conversion_fee=conversion_fee,
+        net_pnl=gross + swap + commission + conversion_fee,
+    )
+
+
 class CTraderDealHistoryStore:
     """SQLite deal store with account/deal uniqueness and safe page tracking."""
 
