@@ -701,8 +701,13 @@ def main() -> None:
             # protected/closed in the broker UI. The initial reconciliation may
             # correctly block entries; repeat it until the monitor sees a fresh
             # broker snapshot. Never send amendments or closes from this path.
+            # The initial catalogue callback populates this shared map before
+            # requesting reconciliation. Do not let the periodic refresh race
+            # that callback: an early snapshot cannot safely resolve broker
+            # position symbol IDs (including positions outside our trade list).
             if (
-                now - last_reconcile_refresh["epoch"] >= 10.0
+                symbol_names
+                and now - last_reconcile_refresh["epoch"] >= 10.0
                 and not getattr(
                     transport, "position_reconciliation_in_flight", False
                 )
