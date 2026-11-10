@@ -38,7 +38,7 @@ class CTraderSdkTransport:
 
     HEARTBEAT_SECONDS = 10
     RECONCILE_TIMEOUT_SECONDS = 15
-    REQUEST_TIMEOUT_SECONDS = 20
+    REQUEST_TIMEOUT_SECONDS = 45
 
     def __init__(
         self,
