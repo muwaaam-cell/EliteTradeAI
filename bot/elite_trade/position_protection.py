@@ -27,6 +27,7 @@ class PositionProtectionMonitor:
         *,
         expected_account_id: int,
         now_epoch: Callable[[], float],
+        max_age_seconds: float = 5.0,
     ) -> None:
         if (isinstance(expected_account_id, bool)
                 or not isinstance(expected_account_id, int)
@@ -34,13 +35,36 @@ class PositionProtectionMonitor:
             raise ValueError("expected_account_id must be a positive integer.")
         if not callable(now_epoch):
             raise TypeError("A local audit clock is required.")
+        if (isinstance(max_age_seconds, bool)
+                or not isinstance(max_age_seconds, (int, float))
+                or not isfinite(max_age_seconds) or max_age_seconds <= 0):
+            raise ValueError("max_age_seconds must be finite and positive.")
         self.expected_account_id = expected_account_id
         self.now_epoch = now_epoch
+        self.max_age_seconds = float(max_age_seconds)
         self.last_audit: PositionProtectionAudit | None = None
 
     @property
+    def is_stale(self) -> bool:
+        audit = self.last_audit
+        if audit is None:
+            return True
+        now = self.now_epoch()
+        return (
+            isinstance(now, bool)
+            or not isinstance(now, (int, float))
+            or not isfinite(now)
+            or now < audit.checked_at_epoch
+            or now - audit.checked_at_epoch > self.max_age_seconds
+        )
+
+    @property
     def allow_new_entries(self) -> bool:
-        return self.last_audit is not None and self.last_audit.allow_new_entries
+        return (
+            not self.is_stale
+            and self.last_audit is not None
+            and self.last_audit.allow_new_entries
+        )
 
     def invalidate(self) -> None:
         """Invalidate permission whenever broker state changes or disconnects."""
