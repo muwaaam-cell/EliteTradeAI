@@ -179,7 +179,7 @@ class TelegramControl:
             temporary = path.with_name(path.name + ".tmp")
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                temporary.write_text(str(int(time.time())), encoding="utf-8")
+                temporary.write_text(str(time.time_ns()), encoding="utf-8")
                 temporary.chmod(0o600)
                 temporary.replace(path)
                 path.chmod(0o600)
