@@ -24,6 +24,19 @@ class DailySessionGuardTests(unittest.TestCase):
         return self.guard.evaluate(daily_net_pnl=Decimal(str(pnl)), equity="1000",
                                    open_positions=positions, now=now or self.now)
 
+    def test_unset_target_keeps_profit_protection_disabled(self):
+        guard = DailySessionGuard(
+            Path(self.temp.name) / "unset.sqlite3", timezone="UTC",
+            max_daily_loss="15", max_open_positions=2,
+        )
+        result = guard.evaluate(
+            daily_net_pnl="50000", equity="1000", open_positions=0, now=self.now
+        )
+        self.assertIsNone(guard.profit_target)
+        self.assertEqual(result.state, ACTIVE)
+        self.assertTrue(result.allow_new_entries)
+        self.assertEqual(result.protection_floor, Decimal("0"))
+
     def test_active_session_allows_entries_below_target(self):
         result = self.evaluate("12")
         self.assertEqual(result.state, ACTIVE)
