@@ -24,7 +24,8 @@ class CTraderFxConversionTests(unittest.TestCase):
             bid=Decimal("1.0800"), ask=Decimal("1.0802"),
             received_at_epoch=100.0,
         ))
-        provider = lambda _symbol: quote
+        def provider(_symbol):
+            return quote
         self.assertEqual(conversion_rate(
             "EUR", "USD", [pair], provider, now_epoch=101.0,
         ), Decimal("1.0800"))
