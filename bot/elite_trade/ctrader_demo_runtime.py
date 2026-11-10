@@ -48,6 +48,7 @@ def compose_demo_execution_runtime(
     position_ledger: PositionLedger,
     symbol_names: Mapping[int, str],
     authorize_order: Callable[[object, str], bool] | None = None,
+    on_position_status: Callable[[int, str, int], None] | None = None,
 ) -> CTraderDemoExecutionRuntime:
     """Wire order sending and broker acknowledgements before transport startup.
 
@@ -78,6 +79,8 @@ def compose_demo_execution_runtime(
             raise RuntimeError("Compose demo execution handlers before transport startup.")
     if not callable(now_epoch) or not callable(on_unmatched):
         raise TypeError("Runtime requires clock and unmatched-event callbacks.")
+    if on_position_status is not None and not callable(on_position_status):
+        raise TypeError("on_position_status must be callable when supplied.")
     if not callable(authorize_order):
         raise TypeError("Demo execution requires an explicit trading-loop pre-trade authorizer.")
     if not callable(getattr(transport, "request_positions_reconcile", None)):
@@ -146,6 +149,30 @@ def compose_demo_execution_runtime(
     reconcile_handler = AuditedReconcileHandler()
 
     def handle_execution_event(event: object) -> bool:
+        # Position status is independent of client-order correlation: broker
+        # stop/target/manual closes may not carry one of our clientOrderIds.
+        event_account = getattr(event, "ctidTraderAccountId", None)
+        position = getattr(event, "position", None)
+        if (
+            on_position_status is not None
+            and event_account == expected_account_id
+            and position is not None
+        ):
+            raw_position_id = getattr(position, "positionId", None)
+            raw_status = getattr(position, "positionStatus", None)
+            if (
+                isinstance(raw_position_id, int) and not isinstance(raw_position_id, bool)
+                and raw_position_id > 0
+                and isinstance(raw_status, int) and not isinstance(raw_status, bool)
+                and raw_status in {1, 2, 3, 4}
+            ):
+                try:
+                    on_position_status(expected_account_id, str(raw_position_id), raw_status)
+                except Exception as exc:
+                    on_unmatched(
+                        "Broker position status could not be persisted: " + str(exc)[:240],
+                        event,
+                    )
         updated = execution_handler(event)
         if not updated:
             return False
