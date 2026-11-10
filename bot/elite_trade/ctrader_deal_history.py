@@ -232,6 +232,15 @@ class CTraderDealHistoryStore:
                 ON ctrader_deals(account_id, execution_timestamp)
             """)
             self._db.execute("""
+                CREATE TABLE IF NOT EXISTS ctrader_position_status (
+                    account_id TEXT NOT NULL,
+                    position_id TEXT NOT NULL,
+                    position_status INTEGER NOT NULL,
+                    observed_epoch REAL NOT NULL,
+                    PRIMARY KEY (account_id, position_id)
+                )
+            """)
+            self._db.execute("""
                 CREATE TABLE IF NOT EXISTS ctrader_deal_history_runs (
                     run_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id TEXT NOT NULL,
@@ -349,6 +358,44 @@ class CTraderDealHistoryStore:
 
         return tuple(dict(row) for row in rows)
 
+
+    def record_position_status(
+        self, *, account_id: int, position_id: str, position_status: int,
+        observed_epoch: int,
+    ) -> None:
+        """Persist an authenticated broker position-status observation."""
+        account = int(account_id)
+        pid = str(position_id).strip()
+        if account <= 0 or not pid:
+            raise DealHistoryError("A positive account ID and position ID are required.")
+        if isinstance(position_status, bool) or position_status not in {1, 2, 3, 4}:
+            raise DealHistoryError("Broker position status is invalid.")
+        if isinstance(observed_epoch, bool) or not isinstance(observed_epoch, int) or observed_epoch < 0:
+            raise DealHistoryError("Position-status timestamp is invalid.")
+        with self._lock, self._db:
+            self._db.execute(
+                """INSERT INTO ctrader_position_status
+                   (account_id, position_id, position_status, observed_epoch)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(account_id, position_id) DO UPDATE SET
+                     position_status=excluded.position_status,
+                     observed_epoch=excluded.observed_epoch
+                   WHERE excluded.observed_epoch >= ctrader_position_status.observed_epoch""",
+                (str(account), pid, int(position_status), observed_epoch),
+            )
+
+    def get_position_status(self, *, account_id: int, position_id: str) -> int | None:
+        account = int(account_id)
+        pid = str(position_id).strip()
+        if account <= 0 or not pid:
+            raise DealHistoryError("A positive account ID and position ID are required.")
+        with self._lock:
+            row = self._db.execute(
+                """SELECT position_status FROM ctrader_position_status
+                   WHERE account_id=? AND position_id=?""",
+                (str(account), pid),
+            ).fetchone()
+        return int(row["position_status"]) if row is not None else None
 
     def deals_for_position(
         self, *, account_id: int, position_id: str
