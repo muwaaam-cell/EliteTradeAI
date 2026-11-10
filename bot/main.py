@@ -130,6 +130,12 @@ def main() -> None:
                 f"SL={position.stop_loss if position.stop_loss is not None else 'MISSING'}, "
                 f"TP={position.take_profit if position.take_profit is not None else 'MISSING'}"
             )
+        if (
+            runtime is not None
+            and runtime.protection_monitor.allow_new_entries
+            and not trading_loop_ref.get("enabled")
+        ):
+            start_trading_loop()
         return snapshot
 
     def on_accounts(accounts: tuple[TradingAccount, ...]) -> None:
@@ -702,10 +708,10 @@ def main() -> None:
             try:
                 position_manager.manage_positions()
             except Exception as exc:
-            print(
-                "Bot-owned position management blocked safely: "
-                + " ".join(str(exc).split())[:200]
-            )
+                print(
+                    "Bot-owned position management blocked safely: "
+                    + " ".join(str(exc).split())[:200]
+                )
         symbol_id = getattr(event, "symbolId", None)
         instrument = next(
             (item for item in market_runtime.instruments
@@ -721,9 +727,8 @@ def main() -> None:
             candidate_reported.add(symbol)
         elif result.candidate is not None:
             print(
-                f"Candidate ready for {symbol}; demo execution bridge is composed, "
-                "but no TradingLoop is scheduled until calibrated evidence and "
-                "broker daily P&L accounting are available."
+                f"Candidate ready for {symbol}; the scheduled demo TradingLoop "
+                "still applies fresh account risk, protection and pre-trade gates."
             )
 
     transport.on_spot = on_candidate_spot
@@ -847,7 +852,6 @@ def main() -> None:
 
     reactor.callWhenRunning(transport.start)
     reactor.callWhenRunning(start_broker_refresh)
-    reactor.callWhenRunning(start_trading_loop)
     reactor.callWhenRunning(start_telegram_runtime)
     try:
         reactor.run()
