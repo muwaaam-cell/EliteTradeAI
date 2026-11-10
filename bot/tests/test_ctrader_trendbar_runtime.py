@@ -65,7 +65,7 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
         return int(self.now() // 60) - minutes_ago
 
     def test_catalogue_requests_historical_and_live_candles_for_exact_verified_symbols(self):
-        runtime = self.make_runtime()
+        self.make_runtime()
         runtime.request_catalogue()
         self.assertEqual(self.transport.catalogue_requests, 1)
         self.transport.on_instruments(self.instruments)
@@ -213,7 +213,7 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
 
     def test_both_symbols_reuse_one_captured_history_end_timestamp(self):
         clock_values = iter((2_000_000_000.0, 2_100_000_000.0))
-        runtime = self.make_runtime(now_epoch=lambda: next(clock_values))
+        self.make_runtime(now_epoch=lambda: next(clock_values))
 
         self.transport.on_instruments(self.instruments)
         first = self.transport.history_requests[0]
@@ -231,7 +231,7 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
         )
 
     def test_explicit_history_range_is_shared_by_both_symbols(self):
-        runtime = self.make_runtime(
+        self.make_runtime(
             history_start_utc="2025-11-13T00:00:00Z",
             history_end_utc="2026-05-13T07:30:00Z",
         )
