@@ -56,6 +56,10 @@ class VerifiedClosedPositionTests(unittest.TestCase):
         self.assertEqual(result.initial_cash_risk, Decimal("2.50"))
         self.assertEqual(result.strategy_mode, "SCALPING")
         self.assertEqual(result.trade_id, "ctrader:49351677:7007")
+        sample = result.to_calibration_trade()
+        self.assertTrue(sample.closed)
+        self.assertTrue(sample.broker_confirmed)
+        self.assertEqual(sample.net_pnl_after_costs, Decimal("3.5"))
 
     def test_requires_explicit_closed_status_and_complete_history(self):
         for change in (
