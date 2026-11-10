@@ -59,7 +59,9 @@ def fake_sdk():
         ("ProtoOAGetAccountListByAccessTokenReq", 3),
         ("ProtoOAGetAccountListByAccessTokenRes", 4),
         ("ProtoOAAccountAuthReq", 5), ("ProtoOAAccountAuthRes", 6),
-        ("ProtoOANewOrderReq", 24), ("ProtoHeartbeatEvent", 7), ("ProtoOASubscribeSpotsReq", 8),
+        ("ProtoOANewOrderReq", 24), ("ProtoOAAmendPositionSLTPReq", 29),
+        ("ProtoOAClosePositionReq", 30), ("ProtoHeartbeatEvent", 7),
+        ("ProtoOASubscribeSpotsReq", 8),
         ("ProtoOASpotEvent", 9), ("ProtoOAErrorRes", 10),
         ("ProtoOATraderReq", 11), ("ProtoOATraderRes", 12),
         ("ProtoOAGetPositionUnrealizedPnLReq", 13),
@@ -617,6 +619,36 @@ class CTraderTransportTests(unittest.TestCase):
         self.assertEqual(len(client.sent), 2)
         self.assertFalse(transport._deal_history_in_flight)
         self.assertFalse(errors)
+
+
+    def test_demo_position_amend_and_close_senders_are_account_scoped(self):
+        transport, client, _ = self.make_transport()
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        amend_type = transport._sdk["ProtoOAAmendPositionSLTPReq"]
+        close_type = transport._sdk["ProtoOAClosePositionReq"]
+        amend = amend_type()
+        amend.ctidTraderAccountId = 77
+        close = close_type()
+        close.ctidTraderAccountId = 77
+        transport.send_demo_position_protection_request(amend)
+        transport.send_demo_close_position_request(close)
+        self.assertEqual(client.sent, [amend, close])
+        wrong = close_type()
+        wrong.ctidTraderAccountId = 88
+        with self.assertRaisesRegex(ValueError, "different from the authenticated account"):
+            transport.send_demo_close_position_request(wrong)
+
+    def test_live_transport_refuses_position_management_requests(self):
+        transport, client, _ = self.make_transport()
+        transport.environment = "live"
+        transport.state = ConnectionState.AUTHENTICATED
+        transport.authenticated_account_id = 77
+        request = transport._sdk["ProtoOAAmendPositionSLTPReq"]()
+        request.ctidTraderAccountId = 77
+        with self.assertRaisesRegex(RuntimeError, "restricted to demo"):
+            transport.send_demo_position_protection_request(request)
+        self.assertEqual(client.sent, [])
 
 
 if __name__ == "__main__":
