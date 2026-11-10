@@ -30,6 +30,7 @@ from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
 from elite_trade.order_ledger import OrderLedger
 from elite_trade.ctrader_trading_loop_bridge import compose_demo_trading_loop_runtime
+from elite_trade.ctrader_position_manager import CTraderPositionManager
 from elite_trade.market_memory import MarketMemory
 from elite_trade.worker_token_vault import WorkerTokenVault
 
@@ -373,6 +374,18 @@ def main() -> None:
         now_epoch=time.time,
     )
     market_ref["market"] = market_runtime
+    position_manager = CTraderPositionManager(
+        transport=transport,
+        position_ledger=position_ledger,
+        order_ledger=order_ledger,
+        instruments=lambda: market_runtime.instruments,
+        quote_provider=market_runtime.get_quote,
+        state_path=os.getenv(
+            "CTRADER_POSITION_MANAGER_DB", "state/ctrader_position_manager.sqlite3"
+        ),
+        now_epoch=time.time,
+        on_issue=lambda message: print("Position manager: " + " ".join(str(message).split())[:240]),
+    )
     _trendbar_runtime = CTraderTrendbarRuntime(
         transport=transport,
         memory=memory,
@@ -530,6 +543,13 @@ def main() -> None:
     def on_candidate_spot(event: object) -> None:
         if callable(previous_spot_handler):
             previous_spot_handler(event)
+        try:
+            position_manager.manage_positions()
+        except Exception as exc:
+            print(
+                "Bot-owned position management blocked safely: "
+                + " ".join(str(exc).split())[:200]
+            )
         symbol_id = getattr(event, "symbolId", None)
         instrument = next(
             (item for item in market_runtime.instruments
@@ -565,6 +585,7 @@ def main() -> None:
         transport.stop()
         deal_store.close()
         outcome_store.close()
+        position_manager.close()
         memory.close()
 
 
