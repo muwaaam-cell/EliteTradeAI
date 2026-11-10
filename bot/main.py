@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,6 +13,10 @@ from elite_trade.ctrader_market_data_runtime import CTraderMarketDataRuntime
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState, TradingAccount
 from elite_trade.ctrader_trendbar_runtime import CTraderTrendbarRuntime
 from elite_trade.ctrader_depth_runtime import CTraderDepthRuntime
+from elite_trade.ctrader_candidate_pipeline import (
+    CandidateBuildConfig,
+    CTraderCandidatePipeline,
+)
 from elite_trade.ctrader_deal_history import CTraderDealHistoryStore
 from elite_trade.position_ledger import PositionLedger
 from elite_trade.ctrader_reconcile import PositionLedgerReconcileHandler
@@ -24,7 +29,7 @@ def main() -> None:
     settings = Settings.from_env()
 
     print("EliteTrade AI — Pepperstone cTrader demo market-data runtime")
-    print("Order execution: HARD DISABLED (no trading loop or order adapter is created)")
+    print("Order execution: HARD DISABLED (candidate analysis is connected; no order adapter is created)")
     if settings.ctrader_env != "demo":
         raise SystemExit("Refusing to start: this runtime supports demo accounts only.")
     if settings.ctrader_account_id is None:
@@ -251,6 +256,68 @@ def main() -> None:
             "Level II depth is disabled by CTRADER_ENABLE_DEPTH=0; "
             "liquidity-dependent strategy selection remains unavailable."
         )
+
+    # Connect broker-fed candidate construction to the live runtime. Calibration
+    # and deposit-currency conversion providers intentionally return no data
+    # until independently measured, versioned sources are implemented. Thus
+    # this integration reports WAIT and cannot authorize or submit orders.
+    def candidate_config(symbol: str) -> CandidateBuildConfig:
+        prefix = "CTRADER_" + symbol.upper().replace("/", "_")
+        required = {
+            "stop_atr_multiple": os.getenv(prefix + "_STOP_ATR_MULTIPLE"),
+            "target_atr_multiple": os.getenv(prefix + "_TARGET_ATR_MULTIPLE"),
+            "max_spread_price": os.getenv(prefix + "_MAX_SPREAD_PRICE"),
+        }
+        if any(value is None or not value.strip() for value in required.values()):
+            raise RuntimeError(
+                f"Instrument-specific stop/target/spread calibration is missing for {symbol}."
+            )
+        try:
+            return CandidateBuildConfig(
+                stop_atr_multiple=Decimal(required["stop_atr_multiple"]),
+                target_atr_multiple=Decimal(required["target_atr_multiple"]),
+                max_spread_price=Decimal(required["max_spread_price"]),
+            )
+        except (InvalidOperation, ValueError) as exc:
+            raise RuntimeError(f"Invalid candidate configuration for {symbol}.") from exc
+
+    candidate_pipeline = CTraderCandidatePipeline(
+        instruments=lambda: market_runtime.instruments,
+        quote_provider=market_runtime.get_quote,
+        bars_provider=lambda symbol, period, limit: memory.load_bars(
+            symbol, period.lower(), limit=limit
+        ),
+        evidence_provider=lambda _symbol: None,
+        risk_inputs_provider=lambda _symbol: None,
+        config_provider=candidate_config,
+        now_epoch=time.time,
+    )
+    candidate_reported: set[str] = set()
+    previous_spot_handler = transport.on_spot
+
+    def on_candidate_spot(event: object) -> None:
+        if callable(previous_spot_handler):
+            previous_spot_handler(event)
+        symbol_id = getattr(event, "symbolId", None)
+        instrument = next(
+            (item for item in market_runtime.instruments
+             if getattr(item, "symbol_id", None) == symbol_id),
+            None,
+        )
+        if instrument is None:
+            return
+        symbol = instrument.symbol.upper()
+        result = candidate_pipeline.build_one(symbol)
+        if result.candidate is None and symbol not in candidate_reported:
+            print(f"Candidate pipeline connected: {symbol} — WAIT: {result.reason}")
+            candidate_reported.add(symbol)
+        elif result.candidate is not None:
+            print(
+                f"Candidate ready for {symbol}; execution remains disabled "
+                "until the separate demo risk/execution lifecycle is integrated."
+            )
+
+    transport.on_spot = on_candidate_spot
 
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
     print("Starting cTrader demo connection. This process observes market data only.")
