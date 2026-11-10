@@ -33,7 +33,7 @@ class AdaptiveStrategySelectorTests(unittest.TestCase):
         self.assertEqual(result.direction, "BUY")
         self.assertEqual(result.expected_net_edge_r, Decimal("0.25"))
 
-    def test_switches_automatically_to_intraday_for_strong_trend(self):
+    def test_does_not_switch_to_intraday_when_scalping_is_ineligible(self):
         result = AdaptiveStrategySelector().select(self.make_opportunity(
             regime=MarketRegime.TRENDING,
             trend_strength=Decimal("0.90"),
@@ -41,17 +41,17 @@ class AdaptiveStrategySelectorTests(unittest.TestCase):
             scalping_net_edge_r=Decimal("0.05"),
             intraday_net_edge_r=Decimal("0.40"),
         ))
-        self.assertEqual(result.mode, StrategyMode.INTRADAY)
-        self.assertEqual(result.expected_net_edge_r, Decimal("0.40"))
+        self.assertEqual(result.mode, StrategyMode.WAIT)
+        self.assertIsNone(result.expected_net_edge_r)
 
-    def test_chooses_higher_post_cost_edge_when_both_modes_qualify(self):
+    def test_remains_scalping_when_intraday_edge_is_higher(self):
         result = AdaptiveStrategySelector().select(self.make_opportunity(
             regime=MarketRegime.TRENDING,
             trend_strength=Decimal("0.90"),
             scalping_net_edge_r=Decimal("0.20"),
             intraday_net_edge_r=Decimal("0.30"),
         ))
-        self.assertEqual(result.mode, StrategyMode.INTRADAY)
+        self.assertEqual(result.mode, StrategyMode.SCALPING)
 
     def test_waits_when_any_safety_or_evidence_gate_fails(self):
         cases = (
