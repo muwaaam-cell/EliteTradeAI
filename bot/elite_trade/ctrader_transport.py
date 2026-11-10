@@ -106,6 +106,7 @@ class CTraderSdkTransport:
         self._catalog_in_flight = False
         self._catalog_symbols = None
         self._broker_symbol_names: dict[int, str] = {}
+        self._broker_asset_names: dict[int, str] = {}
         self._catalog_assets = None
         self._catalog_trader = None
         self._catalog_full_request_sent = False
@@ -127,6 +128,11 @@ class CTraderSdkTransport:
     def broker_symbol_names(self) -> dict[int, str]:
         """Return the complete authenticated account symbol-name catalogue."""
         return dict(self._broker_symbol_names)
+
+    @property
+    def broker_asset_names(self) -> dict[int, str]:
+        """Return asset IDs/names from the authenticated broker catalogue."""
+        return dict(self._broker_asset_names)
 
     @property
     def position_reconciliation_in_flight(self) -> bool:
@@ -370,6 +376,15 @@ class CTraderSdkTransport:
                     self._fail("Unexpected cTrader asset-list response; catalogue rejected.")
                     return
                 self._catalog_assets = tuple(response.asset)
+                asset_names = {
+                    int(item.assetId): str(getattr(item, "name", "")).strip()
+                    for item in self._catalog_assets
+                }
+                if (len(asset_names) != len(self._catalog_assets)
+                        or any(asset_id <= 0 or not name for asset_id, name in asset_names.items())):
+                    self._fail("cTrader asset catalogue contains invalid IDs or names.")
+                    return
+                self._broker_asset_names = asset_names
                 self._maybe_request_full_symbol_metadata()
             elif payload_type == self._sdk["ProtoOASymbolByIdRes"]().payloadType:
                 response = extract(message)
@@ -594,6 +609,7 @@ class CTraderSdkTransport:
 
     def _reset_catalog(self) -> None:
         self._broker_symbol_names = {}
+        self._broker_asset_names = {}
         self._catalog_in_flight = False
         self._catalog_symbols = None
         self._catalog_assets = None
