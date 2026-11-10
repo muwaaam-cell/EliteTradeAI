@@ -13,6 +13,7 @@ import threading
 from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
+from math import isfinite
 from typing import Callable, Mapping
 
 from elite_trade.ctrader_closed_positions import VerifiedPositionOutcome
@@ -73,8 +74,19 @@ class VerifiedOutcomeStore:
             raise CalibrationStoreError("stored_epoch must be a non-negative integer.")
         if outcome.strategy_mode not in {"SCALPING", "INTRADAY"}:
             raise CalibrationStoreError("Outcome strategy mode is invalid.")
-        if outcome.net_pnl_after_costs.is_finite() is not True or outcome.initial_cash_risk <= 0:
-            raise CalibrationStoreError("Outcome cash values are invalid.")
+        try:
+            net_pnl = Decimal(str(outcome.net_pnl_after_costs))
+            initial_risk = Decimal(str(outcome.initial_cash_risk))
+            closed_volume = Decimal(str(outcome.closed_volume_units))
+        except Exception as exc:
+            raise CalibrationStoreError("Outcome cash values are invalid.") from exc
+        if (
+            not net_pnl.is_finite() or not initial_risk.is_finite()
+            or not closed_volume.is_finite() or initial_risk <= 0
+            or closed_volume <= 0 or not outcome.trade_id
+            or not outcome.position_id or not outcome.symbol
+        ):
+            raise CalibrationStoreError("Outcome cash values or identity are invalid.")
         values = (
             str(account_id), outcome.trade_id, outcome.position_id,
             outcome.symbol.upper(), outcome.strategy_mode,
@@ -163,7 +175,7 @@ class BrokerCalibratedEvidenceProvider:
             if any(not value.is_finite() or value < 0 or value > 1
                    for value in (quality, liquidity, volatility)):
                 return None
-            if not isinstance(risk_available, bool) or not observed >= 0:
+            if not isinstance(risk_available, bool) or not isfinite(observed) or observed < 0:
                 return None
         except (KeyError, TypeError, ValueError, ArithmeticError):
             return None
