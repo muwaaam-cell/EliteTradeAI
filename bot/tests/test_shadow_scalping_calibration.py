@@ -59,7 +59,7 @@ class ShadowScalpingCalibrationTests(unittest.TestCase):
 
     def test_costs_are_deducted_and_report_remains_research_only(self):
         bars = self.bars(target_on_entry=True)
-        timestamp = bars[61].timestamp
+        timestamp = bars[60].timestamp
         report = self.run_study(
             bars,
             {timestamp: ShadowCost(Decimal("0.10"), Decimal("0.05"))},
