@@ -467,7 +467,14 @@ class CTraderSdkTransport:
                 page_size = self._deal_history_max_rows
                 self._deal_history_in_flight = False
                 self._deal_history_range = None
-                self.on_deal_history(response, start_ms, end_ms)
+                # A callback may explicitly reject persistence. Do not fetch the
+                # next page or allow a terminal watermark after a failed write.
+                page_saved = self.on_deal_history(response, start_ms, end_ms)
+                if page_saved is False:
+                    self._fail(
+                        "Deal-history page was not durably accepted; pagination stopped."
+                    )
+                    return
                 if bool(getattr(response, "hasMore", False)):
                     # The API paginates the same bounded interval. Continue
                     # only after the current page has been handed to durable
