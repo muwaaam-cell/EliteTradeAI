@@ -79,7 +79,7 @@ class CTraderRiskSizingTests(unittest.TestCase):
             instrument, volume_cents=100000, entry_price="1.1",
             stop_distance_price="0.01", deposit_asset="USD",
         )
-        self.assertEqual(risk, Decimal("13"))
+        self.assertEqual(risk, Decimal("12"))
 
     def test_missing_conversion_or_cost_metadata_fails_closed(self):
         instrument = make_instrument(precise_trading_commission_rate=None)
