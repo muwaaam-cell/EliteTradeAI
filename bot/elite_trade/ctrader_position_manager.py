@@ -165,6 +165,17 @@ class CTraderPositionManager:
                 or now < position.last_snapshot_epoch
                 or now - position.last_snapshot_epoch > self.max_snapshot_age_seconds
             ):
+                reconcile = getattr(self.transport, "request_positions_reconcile", None)
+                if callable(reconcile) and not getattr(
+                    self.transport, "position_reconciliation_in_flight", False
+                ):
+                    try:
+                        reconcile()
+                    except Exception as exc:
+                        self.on_issue(
+                            "Stale position snapshot; reconciliation request failed: "
+                            + " ".join(str(exc).split())[:160]
+                        )
                 raise PositionManagementError(
                     f"Position {position.broker_position_id} has no fresh broker reconciliation."
                 )
