@@ -108,6 +108,12 @@ class CTraderTradingLoopSubmitter:
             entry_reference_price=reference_f,
             stop_loss=stop_f,
             take_profit=target_f,
+            strategy_mode=getattr(
+                getattr(candidate, "strategy_selection", None), "mode", None
+            ).value if getattr(
+                getattr(candidate, "strategy_selection", None), "mode", None
+            ) is not None else None,
+            initial_cash_risk=getattr(risk_plan, "risk_cash", None),
         )
         if getattr(self._local, "armed", None) is not None:
             raise RuntimeError("Nested order submission is not permitted.")
