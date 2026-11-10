@@ -15,12 +15,13 @@ from typing import Callable, Iterable
 
 from elite_trade.adaptive_risk import (
     AdaptiveRiskConfig, AdaptiveRiskEngine, MarketCondition, RiskPlan, TradingMode,
-    calculate_volume_units,
+    calculate_volume_for_risk, calculate_volume_units,
 )
 from elite_trade.daily_session import TARGET_RESUMED, DailySessionGuard
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Quote
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.pretrade import PreTradeDecision, authorise_new_entry
+from elite_trade.instrument import InstrumentMetadata
 
 
 @dataclass(frozen=True)
@@ -34,16 +35,32 @@ class BrokerRiskState:
 
 
 @dataclass(frozen=True)
+class BrokerRiskSizingInputs:
+    """Explicit broker and conversion inputs required for cash-risk sizing."""
+    instrument: InstrumentMetadata
+    entry_price: Decimal | str | int
+    stop_distance_price: Decimal | str | int
+    take_profit_distance_price: Decimal | str | int
+    deposit_asset: str
+    adverse_price_allowance: Decimal | str | int
+    quote_to_deposit_rate: Decimal | str | int | None = None
+    usd_to_deposit_rate: Decimal | str | int | None = None
+    base_to_usd_rate: Decimal | str | int | None = None
+    min_commission_to_deposit_rate: Decimal | str | int | None = None
+
+
+@dataclass(frozen=True)
 class EntryCandidate:
     intent: OrderIntent
     quote: Quote | None
     limits: PolicyLimits
     symbol_verified: bool
     market_condition: MarketCondition
-    loss_per_volume_unit: Decimal
-    min_volume_units: int
-    max_volume_units: int
-    volume_step_units: int
+    loss_per_volume_unit: Decimal | None = None
+    min_volume_units: int | None = None
+    max_volume_units: int | None = None
+    volume_step_units: int | None = None
+    broker_risk_inputs: BrokerRiskSizingInputs | None = None
 
 
 @dataclass(frozen=True)
@@ -182,13 +199,50 @@ class TradingLoop:
                     decision = PreTradeDecision(False, plan.reason, session=session)
                     outcomes.append(CandidateOutcome(symbol, decision, submitted=False, risk_plan=plan))
                     continue
-                volume = calculate_volume_units(
-                    risk_cash=plan.risk_cash,
-                    loss_per_volume_unit=candidate.loss_per_volume_unit,
-                    min_volume_units=candidate.min_volume_units,
-                    max_volume_units=min(candidate.max_volume_units, candidate.limits.max_volume_units),
-                    volume_step_units=candidate.volume_step_units,
-                )
+                if candidate.broker_risk_inputs is not None:
+                    sizing = candidate.broker_risk_inputs
+                    if not isinstance(sizing.instrument, InstrumentMetadata):
+                        raise ValueError("Candidate instrument metadata is not broker-verified.")
+                    if sizing.instrument.symbol.upper() != str(symbol).upper():
+                        raise ValueError("Candidate instrument does not match the order symbol.")
+                    if candidate.quote is None:
+                        raise ValueError("A fresh executable quote is required for broker risk sizing.")
+                    side = getattr(candidate.intent.side, "value", candidate.intent.side)
+                    expected_entry = candidate.quote.ask if side == "BUY" else candidate.quote.bid
+                    entry_price = Decimal(str(sizing.entry_price))
+                    if entry_price != expected_entry:
+                        raise ValueError("Risk sizing entry price does not match the executable quote side.")
+                    if abs(entry_price - Decimal(str(candidate.intent.stop_loss))) != Decimal(str(sizing.stop_distance_price)):
+                        raise ValueError("Risk sizing stop distance does not match the protected order intent.")
+                    if abs(Decimal(str(candidate.intent.take_profit)) - entry_price) != Decimal(str(sizing.take_profit_distance_price)):
+                        raise ValueError("Risk sizing target distance does not match the protected order intent.")
+                    volume = calculate_volume_for_risk(
+                        sizing.instrument,
+                        risk_cash=plan.risk_cash,
+                        entry_price=sizing.entry_price,
+                        stop_distance_price=sizing.stop_distance_price,
+                        take_profit_distance_price=sizing.take_profit_distance_price,
+                        deposit_asset=sizing.deposit_asset,
+                        quote_to_deposit_rate=sizing.quote_to_deposit_rate,
+                        usd_to_deposit_rate=sizing.usd_to_deposit_rate,
+                        base_to_usd_rate=sizing.base_to_usd_rate,
+                        min_commission_to_deposit_rate=sizing.min_commission_to_deposit_rate,
+                        adverse_price_allowance=sizing.adverse_price_allowance,
+                        max_volume_cents=candidate.limits.max_volume_units,
+                    )
+                else:
+                    if any(value is None for value in (
+                        candidate.loss_per_volume_unit, candidate.min_volume_units,
+                        candidate.max_volume_units, candidate.volume_step_units,
+                    )):
+                        raise ValueError("Broker risk-sizing inputs are incomplete.")
+                    volume = calculate_volume_units(
+                        risk_cash=plan.risk_cash,
+                        loss_per_volume_unit=candidate.loss_per_volume_unit,
+                        min_volume_units=candidate.min_volume_units,
+                        max_volume_units=min(candidate.max_volume_units, candidate.limits.max_volume_units),
+                        volume_step_units=candidate.volume_step_units,
+                    )
                 if volume is None:
                     decision = PreTradeDecision(
                         False, "Verified broker minimum volume exceeds the permitted cash-risk budget.",
