@@ -72,7 +72,7 @@ class VerifiedClosedPositionTests(unittest.TestCase):
 
     def test_requires_all_closing_volume_and_unique_deals(self):
         with self.assertRaises(DealHistoryError):
-            self.build(deals=[close_deal(filled_volume="500")])
+            self.build(deals=[close_deal(close_detail={**close_deal()["close_detail"], "closedVolume": "500"})])
         with self.assertRaises(DealHistoryError):
             self.build(deals=[close_deal(), close_deal()])
 
