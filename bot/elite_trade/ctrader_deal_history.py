@@ -321,6 +321,55 @@ class CTraderDealHistoryStore:
 
         return tuple(dict(row) for row in rows)
 
+
+    def deals_for_position(
+        self, *, account_id: int, position_id: str
+    ) -> tuple[dict, ...]:
+        """Return all persisted deals for one account-scoped broker position."""
+        account = int(account_id)
+        pid = str(position_id).strip()
+        if account <= 0 or not pid:
+            raise DealHistoryError("A positive account ID and position ID are required.")
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT * FROM ctrader_deals
+                   WHERE account_id=? AND position_id=?
+                   ORDER BY execution_timestamp,deal_id""",
+                (str(account), pid),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            raw = item.pop("close_detail_json")
+            item["close_detail"] = json.loads(raw) if raw else None
+            result.append(item)
+        return tuple(result)
+
+    def has_complete_history_range(
+        self, *, account_id: int, from_ms: int, to_ms: int
+    ) -> bool:
+        """True only after the broker returned the terminal page for this range.
+
+        cTrader paginates one requested interval by returning hasMore. Every
+        page is recorded against that same interval; a terminal page is the
+        authoritative completion marker. No deals or missing pages are
+        interpreted as completion.
+        """
+        account = int(account_id)
+        start = int(from_ms)
+        end = int(to_ms)
+        if account <= 0 or start < 0 or end <= start:
+            raise DealHistoryError("Invalid account or deal-history range.")
+        with self._lock:
+            row = self._db.execute(
+                """SELECT run_id FROM ctrader_deal_history_runs
+                   WHERE account_id=? AND requested_from_ms=?
+                     AND requested_to_ms=? AND has_more=0 AND complete=1
+                   ORDER BY run_id DESC LIMIT 1""",
+                (str(account), start, end),
+            ).fetchone()
+        return row is not None
+
     def close(self):
         with self._lock:
             self._db.close()
