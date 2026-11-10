@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from elite_trade.cpi_calendar import CalendarFeedError, parse_calendar_payload
