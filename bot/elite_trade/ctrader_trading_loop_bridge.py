@@ -116,3 +116,44 @@ class CTraderTradingLoopSubmitter:
             return self._adapter.submit_market_order(spec, symbol=instrument.symbol)
         finally:
             self._local.armed = None
+
+
+def compose_demo_trading_loop_runtime(
+    *,
+    transport: object,
+    ledger: object,
+    expected_account_id: int,
+    execution_type_names: dict[int, str],
+    now_epoch: Callable[[], int],
+    on_unmatched: Callable[[str, object], None],
+    position_ledger: object,
+    symbol_names: dict[int, str],
+    instruments: Callable[[], Iterable[InstrumentMetadata]],
+    client_order_id_factory: Callable[[], str] | None = None,
+):
+    """Compose the account-bound demo lifecycle and its TradingLoop callback.
+
+    The returned pair is (execution_runtime, submit_order_callback). Pass the
+    callback only as TradingLoop.submit_order. The adapter's authorizer is
+    bound to the callback's one-shot request context.
+    """
+    from elite_trade.ctrader_demo_runtime import compose_demo_execution_runtime
+
+    bridge = CTraderTradingLoopSubmitter(
+        account_id=expected_account_id,
+        instruments=instruments,
+        client_order_id_factory=client_order_id_factory,
+    )
+    runtime = compose_demo_execution_runtime(
+        transport=transport,
+        ledger=ledger,
+        expected_account_id=expected_account_id,
+        execution_type_names=execution_type_names,
+        now_epoch=now_epoch,
+        on_unmatched=on_unmatched,
+        position_ledger=position_ledger,
+        symbol_names=symbol_names,
+        authorize_order=bridge.authorize_order,
+    )
+    bridge.bind_adapter(runtime.adapter)
+    return runtime, bridge
