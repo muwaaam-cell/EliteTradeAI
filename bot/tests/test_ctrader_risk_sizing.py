@@ -4,6 +4,7 @@ from decimal import Decimal
 from elite_trade.ctrader_risk_sizing import (
     calculate_volume_for_risk,
     estimate_total_stop_risk,
+    validate_protection_distances,
 )
 from elite_trade.instrument import InstrumentMetadata
 
@@ -25,6 +26,34 @@ def make_instrument(**overrides):
 
 
 class CTraderRiskSizingTests(unittest.TestCase):
+    def test_broker_minimum_stop_and_target_distances_are_enforced(self):
+        instrument = make_instrument()
+        validate_protection_distances(
+            instrument, entry_price="1.1", stop_distance_price="0.00010",
+            take_profit_distance_price="0.00010",
+        )
+        with self.assertRaisesRegex(ValueError, "Stop-loss distance"):
+            validate_protection_distances(
+                instrument, entry_price="1.1", stop_distance_price="0.00001",
+                take_profit_distance_price="0.00010",
+            )
+        with self.assertRaisesRegex(ValueError, "Take-profit distance"):
+            validate_protection_distances(
+                instrument, entry_price="1.1", stop_distance_price="0.00010",
+                take_profit_distance_price="0.00001",
+            )
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            validate_protection_distances(
+                make_instrument(sl_distance=None), entry_price="1.1",
+                stop_distance_price="0.01", take_profit_distance_price="0.02",
+            )
+        with self.assertRaisesRegex(ValueError, "Percentage-based"):
+            validate_protection_distances(
+                make_instrument(distance_set_in="SYMBOL_DISTANCE_IN_PERCENTAGE"),
+                entry_price="1.1", stop_distance_price="0.01",
+                take_profit_distance_price="0.02",
+            )
+
     def test_round_trip_risk_includes_stop_allowance_and_two_sided_commission(self):
         instrument = make_instrument()
         risk = estimate_total_stop_risk(
