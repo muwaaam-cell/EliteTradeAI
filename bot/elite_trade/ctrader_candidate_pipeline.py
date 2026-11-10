@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from math import isfinite
 from typing import Callable, Iterable
 
 from elite_trade.adaptive_risk import MarketCondition
@@ -58,8 +59,11 @@ class CandidateBuildConfig:
     evidence_max_age_seconds: float = 30.0
 
     def __post_init__(self) -> None:
-        if self.stop_atr_multiple <= 0 or self.target_atr_multiple <= 0:
-            raise ValueError("ATR protection multiples must be explicitly positive.")
+        for name, value in (("stop_atr_multiple", self.stop_atr_multiple),
+                            ("target_atr_multiple", self.target_atr_multiple),
+                            ("max_spread_price", self.max_spread_price)):
+            if not isinstance(value, Decimal) or not value.is_finite() or value <= 0:
+                raise ValueError(f"{name} must be a finite positive Decimal.")
         if self.max_spread_price <= 0:
             raise ValueError("A positive instrument-specific spread cap is required.")
         if self.max_quote_age_seconds <= 0 or self.evidence_max_age_seconds <= 0:
@@ -127,6 +131,8 @@ class CTraderCandidatePipeline:
             if quote is None:
                 return CandidateBuildResult(None, "A complete fresh broker bid/ask quote is unavailable.")
             now = float(self.now_epoch())
+            if not isfinite(now):
+                return CandidateBuildResult(None, "Local clock is invalid.")
             cfg = self.config_provider(instrument.symbol)
             quote_age = now - float(quote.received_at_epoch)
             if quote_age < 0 or quote_age > cfg.max_quote_age_seconds:
@@ -153,7 +159,8 @@ class CTraderCandidatePipeline:
             if not isinstance(evidence, CalibratedEvidence):
                 return CandidateBuildResult(None, "Versioned calibration evidence is unavailable.")
             evidence_age = now - float(evidence.observed_at_epoch)
-            if (not evidence.calibration_id.strip() or evidence_age < 0
+            if (not isfinite(evidence_age) or not isinstance(evidence.calibration_id, str)
+                    or not evidence.calibration_id.strip() or evidence_age < 0
                     or evidence_age > cfg.evidence_max_age_seconds):
                 return CandidateBuildResult(None, "Calibration evidence is stale or unidentified.")
 
@@ -200,7 +207,7 @@ class CTraderCandidatePipeline:
             if not isinstance(risk_inputs, CandidateRiskInputs):
                 return CandidateBuildResult(None, "Broker deposit-currency conversion inputs are unavailable.")
             risk_age = now - float(risk_inputs.observed_at_epoch)
-            if risk_age < 0 or risk_age > cfg.evidence_max_age_seconds:
+            if not isfinite(risk_age) or risk_age < 0 or risk_age > cfg.evidence_max_age_seconds:
                 return CandidateBuildResult(None, "Deposit-currency conversion inputs are stale or have an invalid timestamp.")
             broker_sizing = BrokerRiskSizingInputs(
                 instrument=instrument,
