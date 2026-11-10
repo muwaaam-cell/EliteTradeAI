@@ -682,7 +682,7 @@ def main() -> None:
         def refresh() -> None:
             if transport.state is not ConnectionState.AUTHENTICATED:
                 return
-            if not getattr(transport, "_snapshot_in_flight", False):
+            if not transport.account_metadata_request_in_flight:
                 try:
                     transport.request_account_snapshot()
                     refresh_errors["snapshot"] = False
