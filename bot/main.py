@@ -267,7 +267,6 @@ def main() -> None:
             "execution events and protection monitor composed."
         )
     except Exception as exc:
-        order_ledger.close()
         raise SystemExit(
             "Demo execution lifecycle composition failed closed; no trading loop will start: "
             + " ".join(str(exc).split())[:240]
