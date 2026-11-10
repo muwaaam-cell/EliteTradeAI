@@ -10,6 +10,8 @@ import json
 import sqlite3
 import threading
 import time
+from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
@@ -106,7 +108,19 @@ def deal_to_record(deal: object) -> dict:
     }
 
 
-def normalize_close_position_cash(close_detail: Mapping[str, object]):
+@dataclass(frozen=True)
+class ClosePositionCashOutcome:
+    money_digits: int
+    gross_profit: Decimal
+    swap: Decimal
+    commission: Decimal
+    pnl_conversion_fee: Decimal
+    net_pnl: Decimal
+
+
+def normalize_close_position_cash(
+    close_detail: Mapping[str, object],
+) -> ClosePositionCashOutcome:
     """Normalize cTrader close cash components using the close-detail moneyDigits.
 
     Values are signed broker minor-unit integers in the account deposit
@@ -114,18 +128,6 @@ def normalize_close_position_cash(close_detail: Mapping[str, object]):
     the close detail's commission and pnlConversionFee are the components
     used here. Missing required monetary fields or scale metadata are rejected.
     """
-    from dataclasses import dataclass
-    from decimal import Decimal
-
-    @dataclass(frozen=True)
-    class ClosePositionCashOutcome:
-        money_digits: int
-        gross_profit: Decimal
-        swap: Decimal
-        commission: Decimal
-        pnl_conversion_fee: Decimal
-        net_pnl: Decimal
-
     if not isinstance(close_detail, Mapping):
         raise DealHistoryError("A broker closePositionDetail mapping is required.")
     digits = close_detail.get("moneyDigits")
