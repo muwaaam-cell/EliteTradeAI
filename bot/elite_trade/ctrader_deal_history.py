@@ -70,6 +70,28 @@ def message_to_dict(message: object) -> dict:
     return result
 
 
+def _canonical_close_detail(close_detail: object) -> dict | None:
+    """Normalize protobuf snake_case and SDK camelCase into one stored schema."""
+    if close_detail is None:
+        return None
+    raw = message_to_dict(close_detail)
+    aliases = {
+        "moneyDigits": ("moneyDigits", "money_digits"),
+        "grossProfit": ("grossProfit", "gross_profit"),
+        "pnlConversionFee": ("pnlConversionFee", "pnl_conversion_fee"),
+        "closedVolume": ("closedVolume", "closed_volume"),
+        "quoteToDepositConversionRate": (
+            "quoteToDepositConversionRate", "quote_to_deposit_conversion_rate"
+        ),
+    }
+    for canonical, candidates in aliases.items():
+        for candidate in candidates:
+            if candidate in raw:
+                raw[canonical] = raw[candidate]
+                break
+    return raw
+
+
 def deal_to_record(deal: object) -> dict:
     """Extract identifiers and raw fields without inventing P&L semantics."""
     deal_id = _value(deal, "dealId")
@@ -100,10 +122,7 @@ def deal_to_record(deal: object) -> dict:
         ),
         "money_digits": int(_value(deal, "moneyDigits", 0) or 0),
         "commission_raw": str(_value(deal, "commission", "") or ""),
-        "close_detail": (
-            message_to_dict(close_detail)
-            if close_detail is not None else None
-        ),
+        "close_detail": _canonical_close_detail(close_detail),
         "raw_json": json.dumps(record, sort_keys=True, separators=(",", ":")),
     }
 
