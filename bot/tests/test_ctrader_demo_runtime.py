@@ -18,17 +18,23 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.position_ledger = PositionLedger(Path(self.temp.name) / "positions.sqlite3", account_id=77)
         self.sent = []
         self.reconcile_requests = 0
+        self.now = 100
         self.unmatched = []
         self.transport = SimpleNamespace(
             environment="demo",
             requested_account_id=77,
             authenticated_account_id=None,
             reconcile_requests=0,
+            position_reconciliation_in_flight=False,
             state=ConnectionState.DISCONNECTED,
             send_demo_order_request=self.sent.append,
             set_reconcile_handler=lambda handler: setattr(self.transport, 'on_reconcile', handler),
-            request_positions_reconcile=lambda: setattr(
-                self.transport, "reconcile_requests", self.transport.reconcile_requests + 1
+            request_positions_reconcile=lambda: (
+                setattr(
+                    self.transport, "reconcile_requests",
+                    self.transport.reconcile_requests + 1,
+                ),
+                setattr(self.transport, "position_reconciliation_in_flight", True),
             ),
         )
         self.runtime = compose_demo_execution_runtime(
@@ -36,7 +42,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
             ledger=self.ledger,
             expected_account_id=77,
             execution_type_names={2: "ORDER_ACCEPTED", 3: "ORDER_FILLED"},
-            now_epoch=lambda: 100,
+            now_epoch=lambda: self.now,
             on_unmatched=lambda reason, event: self.unmatched.append((reason, event)),
             position_ledger=self.position_ledger,
             symbol_names={10: "EURUSD"},
@@ -47,6 +53,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.transport.state = ConnectionState.AUTHENTICATED
         self.transport.authenticated_account_id = 77
         # A fresh complete snapshot is required before the execution adapter authorizes entries.
+        self.transport.position_reconciliation_in_flight = False
         self.transport.on_reconcile(SimpleNamespace(
             ctidTraderAccountId=77, position=[], order=[]
         ))
@@ -74,6 +81,30 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.assertTrue(self.transport.on_execution_event(event))
         self.assertEqual(self.ledger.get("runtime-order-1").status, SUBMITTED)
         self.assertEqual(self.ledger.get("runtime-order-1").broker_order_id, "9001")
+
+    def test_stale_protection_audit_requests_refresh_and_blocks_first_attempt(self):
+        self.transport.state = ConnectionState.AUTHENTICATED
+        self.transport.authenticated_account_id = 77
+        self.transport.on_reconcile(SimpleNamespace(
+            ctidTraderAccountId=77, position=[], order=[]
+        ))
+        self.now = 106
+        spec = MarketOrderSpec(
+            account_id=77, symbol_id=10, side="BUY", volume_units=100,
+            client_order_id="runtime-stale-1", entry_reference_price=1.1,
+            stop_loss=1.09, take_profit=1.12,
+        )
+        with self.assertRaisesRegex(RuntimeError, "did not explicitly authorize"):
+            self.runtime.adapter.submit_market_order(spec, symbol="EURUSD")
+        self.assertEqual(self.transport.reconcile_requests, 1)
+        self.assertEqual(self.sent, [])
+        self.transport.position_reconciliation_in_flight = False
+        self.transport.on_reconcile(SimpleNamespace(
+            ctidTraderAccountId=77, position=[], order=[]
+        ))
+        result = self.runtime.adapter.submit_market_order(spec, symbol="EURUSD")
+        self.assertEqual(result.state, PENDING)
+        self.assertEqual(len(self.sent), 1)
 
     def test_fill_invalidates_protection_permission_until_post_fill_reconcile(self):
         self.transport.state = ConnectionState.AUTHENTICATED
@@ -106,6 +137,7 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         self.assertEqual(self.transport.reconcile_requests, 1)
         self.assertFalse(self.unmatched)
         self.assertFalse(self.runtime.protection_monitor.allow_new_entries)
+        self.transport.position_reconciliation_in_flight = False
         self.transport.on_reconcile(SimpleNamespace(
             ctidTraderAccountId=77, position=[], order=[]
         ))
