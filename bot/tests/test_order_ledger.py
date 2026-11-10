@@ -3,6 +3,8 @@ import threading
 import unittest
 from pathlib import Path
 import sqlite3
+from decimal import Decimal
+from types import SimpleNamespace
 
 from elite_trade.execution_policy import OrderIntent, Side
 from elite_trade.order_ledger import (
@@ -188,6 +190,31 @@ class OrderLedgerTests(unittest.TestCase):
             self.ledger.mark_terminal("missing", UNKNOWN, now=100)
         with self.assertRaises(ValueError):
             self.ledger.resolve_unknown("missing", PENDING, now=100)
+
+    def test_strategy_and_initial_cash_risk_metadata_persist_across_restart(self):
+        intent = SimpleNamespace(
+            symbol="EURUSD", side=Side.SELL, volume_units=500,
+            strategy_mode="INTRADAY", initial_cash_risk=Decimal("0.375"),
+        )
+        self.assertTrue(self.ledger.reserve("calibrated-order", intent, now=100))
+        record = OrderLedger(self.path).get("calibrated-order")
+        self.assertEqual(record.strategy_mode, "INTRADAY")
+        self.assertEqual(record.initial_cash_risk, Decimal("0.375"))
+
+    def test_strategy_risk_metadata_must_be_complete_and_valid(self):
+        base = {"symbol": "EURUSD", "side": "BUY", "volume_units": 100}
+        invalid = (
+            {**base, "strategy_mode": "WAIT", "initial_cash_risk": "1"},
+            {**base, "strategy_mode": "SCALPING"},
+            {**base, "initial_cash_risk": "1"},
+            {**base, "strategy_mode": "INTRADAY", "initial_cash_risk": "NaN"},
+            {**base, "strategy_mode": "SCALPING", "initial_cash_risk": "0"},
+        )
+        for index, values in enumerate(invalid):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                self.ledger.reserve(
+                    f"bad-metadata-{index}", SimpleNamespace(**values), now=100
+                )
 
     def test_order_ledger_account_binding_persists_and_rejects_mismatch(self):
         bound = OrderLedger(self.path, account_id=77)
