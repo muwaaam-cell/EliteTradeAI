@@ -50,8 +50,8 @@ class DemoExecutionRuntimeCompositionTests(unittest.TestCase):
         )
 
     def test_composition_requires_explicit_trading_loop_authorizer(self):
-        self.transport.state = ConnectionState.AUTHENTICATED
-        self.transport.authenticated_account_id = 77
+        self.transport.state = ConnectionState.DISCONNECTED
+        self.transport.authenticated_account_id = None
         with self.assertRaisesRegex(TypeError, "explicit trading-loop pre-trade authorizer"):
             compose_demo_execution_runtime(
                 transport=self.transport,
