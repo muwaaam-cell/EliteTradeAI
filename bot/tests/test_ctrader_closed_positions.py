@@ -2,7 +2,10 @@ import unittest
 from decimal import Decimal
 
 from elite_trade.ctrader_deal_history import DealHistoryError
-from elite_trade.ctrader_closed_positions import aggregate_verified_closed_position
+from elite_trade.ctrader_closed_positions import (
+    aggregate_verified_closed_position,
+    build_verified_outcome_from_stores,
+)
 
 
 def order(**overrides):
@@ -87,6 +90,50 @@ class VerifiedClosedPositionTests(unittest.TestCase):
             self.build(deals=[close_deal(deal_status="3")])
         with self.assertRaises(DealHistoryError):
             self.build(opening_orders=[order(symbol="STNE.US")])
+
+
+    def test_builds_outcome_from_account_bound_durable_stores(self):
+        from types import SimpleNamespace
+
+        class DealStore:
+            def has_complete_history_range(self, **_kwargs):
+                return True
+            def deals_for_position(self, **_kwargs):
+                return [close_deal()]
+            def get_position_status(self, **_kwargs):
+                return 2
+
+        class Ledger:
+            bound_account_id = 49351677
+            def list_by_broker_position_id(self, position_id):
+                self.asserted_position_id = position_id
+                return [SimpleNamespace(
+                    filled_volume_units=1000,
+                    symbol="XAUUSD",
+                    strategy_mode="SCALPING",
+                    initial_cash_risk=Decimal("2.50"),
+                )]
+
+        result = build_verified_outcome_from_stores(
+            account_id=49351677, position_id="7007", symbol="XAUUSD",
+            history_from_ms=1, history_to_ms=999,
+            deal_store=DealStore(), order_ledger=Ledger(),
+        )
+        self.assertEqual(result.net_pnl_after_costs, Decimal("3.5"))
+        self.assertEqual(result.trade_id, "ctrader:49351677:7007")
+
+    def test_builder_rejects_wrong_account_bound_order_ledger(self):
+        from types import SimpleNamespace
+        class DealStore:
+            pass
+        class Ledger:
+            bound_account_id = 88
+        with self.assertRaises(DealHistoryError):
+            build_verified_outcome_from_stores(
+                account_id=49351677, position_id="7007", symbol="XAUUSD",
+                history_from_ms=1, history_to_ms=999,
+                deal_store=DealStore(), order_ledger=Ledger(),
+            )
 
 
 if __name__ == "__main__":
