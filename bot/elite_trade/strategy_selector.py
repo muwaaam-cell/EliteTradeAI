@@ -95,7 +95,11 @@ class AdaptiveStrategySelector:
     def _wait(reason: str) -> StrategySelection:
         return StrategySelection(StrategyMode.WAIT, None, None, reason)
 
-    def select(self, opportunity: StrategyOpportunity) -> StrategySelection:
+    def select(
+        self, opportunity: StrategyOpportunity, *, requested_mode: str = "SCALPING"
+    ) -> StrategySelection:
+        if requested_mode not in {"SCALPING", "INTRADAY"}:
+            return self._wait("No valid manually selected strategy mode is available.")
         if not isinstance(opportunity, StrategyOpportunity):
             return self._wait("Strategy opportunity data is missing or malformed.")
         if opportunity.direction not in {"BUY", "SELL"}:
@@ -106,6 +110,10 @@ class AdaptiveStrategySelector:
             return self._wait("Risk limits do not permit a new position.")
         if opportunity.market_data_fresh is not True:
             return self._wait("Market data is stale or incomplete.")
+        if requested_mode == "INTRADAY":
+            return self._wait(
+                "INTRADAY is selected, but its independent strategy calibration and execution approval are not validated. No candidate was created."
+            )
 
         names = (
             "signal_quality", "liquidity_score", "spread_to_atr",
