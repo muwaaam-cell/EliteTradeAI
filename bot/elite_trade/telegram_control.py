@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 from elite_trade.daily_session import LOSS_LOCK, TARGET_LOCK, TARGET_RESUMED, DailySessionGuard
 from elite_trade.kill_switch import KillSwitch
+from elite_trade.strategy_mode import save_selected_mode
 
 
 class TelegramControl:
@@ -21,7 +22,8 @@ class TelegramControl:
                  daily_guard: DailySessionGuard | None = None,
                  offset_file: str | Path | None = None,
                  status_provider: Callable[[], str] | None = None,
-                 close_all_request_path: str | Path | None = None):
+                 close_all_request_path: str | Path | None = None,
+                 strategy_mode_file: str | Path | None = None):
         self.token = (token if token is not None else os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
         self.chat_id = (chat_id if chat_id is not None else os.getenv("TELEGRAM_CHAT_ID", "")).strip()
         if not self.token or not self.chat_id:
@@ -35,6 +37,9 @@ class TelegramControl:
         self.status_provider = status_provider
         self.close_all_request_path = (
             Path(close_all_request_path) if close_all_request_path is not None else None
+        )
+        self.strategy_mode_file = (
+            Path(strategy_mode_file) if strategy_mode_file is not None else None
         )
         self.offset_file = Path(offset_file) if offset_file is not None else None
         self.offset = self._load_offset() if self.offset_file is not None else 0
@@ -88,9 +93,66 @@ class TelegramControl:
         return payload
 
     def send(self, message: str) -> None:
-        self._api("sendMessage", {"chat_id": self.chat_id, "text": message[:4000]})
+        params = {"chat_id": self.chat_id, "text": message[:4000]}
+        if self.strategy_mode_file is not None:
+            params["reply_markup"] = json.dumps({
+                "inline_keyboard": [[
+                    {"text": "SCALPING", "callback_data": "mode:SCALPING"},
+                    {"text": "INTRADAY", "callback_data": "mode:INTRADAY"},
+                ]]
+            })
+        self._api("sendMessage", params)
+
+    def _handle_strategy_callback(self, callback: dict) -> str | None:
+        sender = callback.get("from") or {}
+        message = callback.get("message") or {}
+        chat = message.get("chat") or {}
+        callback_id = callback.get("id")
+        if (
+            self.strategy_mode_file is None
+            or chat.get("type") != "private"
+            or str(chat.get("id", "")) != self.chat_id
+            or str(sender.get("id", "")) != self.chat_id
+            or not isinstance(callback_id, str)
+            or not callback_id
+        ):
+            return None
+        data = callback.get("data")
+        if data not in {"mode:SCALPING", "mode:INTRADAY"}:
+            self._api("answerCallbackQuery", {
+                "callback_query_id": callback_id,
+                "text": "Invalid strategy selection.",
+                "show_alert": "true",
+            })
+            return None
+        mode = data.split(":", 1)[1]
+        try:
+            save_selected_mode(self.strategy_mode_file, mode)
+        except Exception:
+            self._api("answerCallbackQuery", {
+                "callback_query_id": callback_id,
+                "text": "Selection was not saved. Trading remains blocked.",
+                "show_alert": "true",
+            })
+            return None
+        self._api("answerCallbackQuery", {
+            "callback_query_id": callback_id,
+            "text": mode + " selected.",
+        })
+        return (
+            f"Strategy mode saved: {mode}. "
+            + (
+                "Only the existing SCALPING evidence and safety gates may evaluate candidates."
+                if mode == "SCALPING"
+                else "INTRADAY remains WAIT until its independent calibration and approval are complete."
+            )
+            + " This selection does not place, amend, or close orders and does not change the kill switch."
+        )
 
     def handle_update(self, update: dict) -> str | None:
+        callback = update.get("callback_query")
+        if isinstance(callback, dict):
+            return self._handle_strategy_callback(callback)
         message = update.get("message") or update.get("edited_message") or {}
         chat = message.get("chat") or {}
         sender = message.get("from") or {}
@@ -107,6 +169,9 @@ class TelegramControl:
             return "Unknown command. Send /help."
         if command in {"/start", "/help"}:
             return (
+                "Choose a strategy with the SCALPING or INTRADAY buttons below. "
+                "Selection is manual and only changes the strategy mode saved for candidate evaluation. "
+                "It never places, amends, or closes orders and never changes the kill switch. "
                 "EliteTrade AI controls: /status, /target [USD amount], /pause, /kill, /closeall. "
                 "Resume emergency pause: /resume emergency confirm. "
                 "The daily profit target activates reduced-risk profit protection; "
@@ -204,7 +269,7 @@ class TelegramControl:
             while True:
                 payload = self._api("getUpdates", {
                     "offset": self.offset, "timeout": 0, "limit": 100,
-                    "allowed_updates": json.dumps(["message"]),
+                    "allowed_updates": json.dumps(["message", "callback_query"]),
                 })
                 updates = payload.get("result", [])
                 next_offset = self.offset
