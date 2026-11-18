@@ -34,6 +34,7 @@ from elite_trade.ctrader_trading_loop_bridge import compose_demo_trading_loop_ru
 from elite_trade.ctrader_position_manager import CTraderPositionManager
 from elite_trade.kill_switch import KillSwitch
 from elite_trade.telegram_control import TelegramControl
+from elite_trade.strategy_mode import load_selected_mode
 from elite_trade.daily_session import DailySessionGuard
 from elite_trade.ctrader_daily_risk import CTraderDailyRiskStateProvider
 from elite_trade.trading_loop import TradingLoop
@@ -70,12 +71,13 @@ def main() -> None:
     except (ValueError, RuntimeError):
         raise SystemExit("Encrypted token envelope could not be verified. No broker login attempted.") from None
 
-    symbols_text = os.getenv("CTRADER_MARKET_SYMBOLS", "XAUUSD,EURUSD")
+    symbols_text = os.getenv("CTRADER_MARKET_SYMBOLS", "XAUUSD")
     symbols = tuple(part.strip().upper() for part in symbols_text.split(",") if part.strip())
     if not symbols or len(set(symbols)) != len(symbols):
         raise SystemExit("CTRADER_MARKET_SYMBOLS must contain unique, comma-separated broker symbols.")
     timeframe = os.getenv("CTRADER_TIMEFRAME", "M15").strip().upper()
     memory_path = Path(os.getenv("CTRADER_MARKET_MEMORY", "state/market_memory.sqlite3"))
+    strategy_mode_path = Path(os.getenv("ELITE_STRATEGY_MODE_FILE", "state/strategy_mode.json"))
 
     memory = MarketMemory(memory_path)
     deal_history_days = int(os.getenv("CTRADER_DEAL_HISTORY_DAYS", "7"))
@@ -626,6 +628,8 @@ def main() -> None:
         evidence_provider=calibrated_evidence_provider,
         risk_inputs_provider=candidate_risk_inputs,
         config_provider=candidate_config,
+        selected_mode_provider=lambda: load_selected_mode(strategy_mode_path),
+        allowed_symbols=("XAUUSD",),
         now_epoch=time.time,
     )
     def start_trading_loop() -> None:
@@ -843,6 +847,7 @@ def main() -> None:
                 daily_guard=daily_guard,
                 status_provider=telegram_status,
                 close_all_request_path=close_all_request_path,
+                strategy_mode_file=strategy_mode_path,
             )
         except Exception as exc:
             print("Telegram runtime configuration failed: " + " ".join(str(exc).split())[:200])
