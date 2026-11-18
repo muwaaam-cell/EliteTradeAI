@@ -17,7 +17,7 @@ from elite_trade.ctrader_risk_sizing import validate_protection_distances
 from elite_trade.execution_policy import OrderIntent, PolicyLimits, Side
 from elite_trade.instrument import InstrumentMetadata
 from elite_trade.market_memory import MarketBar, classify_regime
-from elite_trade.strategy import Candle, analyse, atr
+from elite_trade.strategy import Candle, analyse, analyse_scalping, atr
 from elite_trade.strategy_selector import (
     AdaptiveStrategySelector,
     MarketRegime,
@@ -95,6 +95,8 @@ class CTraderCandidatePipeline:
         config_provider: Callable[[str], CandidateBuildConfig],
         selector: AdaptiveStrategySelector | None = None,
         now_epoch: Callable[[], float],
+        selected_mode_provider: Callable[[], str | None] | None = None,
+        allowed_symbols: tuple[str, ...] = ("XAUUSD",),
     ) -> None:
         for name, callback in (
             ("instruments", instruments), ("quote_provider", quote_provider),
@@ -112,8 +114,26 @@ class CTraderCandidatePipeline:
         self.config_provider = config_provider
         self.selector = selector or AdaptiveStrategySelector()
         self.now_epoch = now_epoch
+        if selected_mode_provider is not None and not callable(selected_mode_provider):
+            raise TypeError("selected_mode_provider must be callable.")
+        self.selected_mode_provider = selected_mode_provider or (lambda: None)
+        self.allowed_symbols = frozenset(str(item).upper() for item in allowed_symbols)
+        if not self.allowed_symbols or not self.allowed_symbols.issubset({"XAUUSD"}):
+            raise ValueError("New candidate generation is restricted to XAUUSD.")
 
-    def build_one(self, symbol: str) -> CandidateBuildResult:
+    def build_one(
+        self, symbol: str, *, requested_mode: str | None = None
+    ) -> CandidateBuildResult:
+        selected_mode = requested_mode
+        if selected_mode is None:
+            try:
+                selected_mode = self.selected_mode_provider()
+            except Exception:
+                selected_mode = None
+        if selected_mode not in {"SCALPING", "INTRADAY"}:
+            return CandidateBuildResult(None, "No valid Telegram strategy selection is stored; WAIT.")
+        if symbol.upper() not in self.allowed_symbols:
+            return CandidateBuildResult(None, "New candidate generation is restricted to XAUUSD.")
         try:
             matches = [
                 item for item in self.instruments()
@@ -142,7 +162,7 @@ class CTraderCandidatePipeline:
             if len(bars) < 60:
                 return CandidateBuildResult(None, "At least 60 closed M15 candles are required.")
             candles = tuple(Candle(high=b.high, low=b.low, close=b.close) for b in bars)
-            signal = analyse(candles)
+            signal = analyse_scalping(candles) if selected_mode == "SCALPING" else analyse(candles)
             if signal.direction not in {"BUY", "SELL"}:
                 return CandidateBuildResult(None, signal.reason)
             volatility = atr(candles, 14)
@@ -182,7 +202,7 @@ class CTraderCandidatePipeline:
                 intraday_net_edge_r=evidence.intraday_net_edge_r,
                 risk_budget_available=evidence.risk_budget_available,
                 market_data_fresh=True,
-            ))
+            ), requested_mode=selected_mode)
             if selection.mode.value == "WAIT":
                 return CandidateBuildResult(None, selection.reason)
 
@@ -248,12 +268,20 @@ class CTraderCandidatePipeline:
 
     def __call__(self) -> tuple[EntryCandidate, ...]:
         """TradingLoop-compatible provider; only fully constructed candidates escape."""
+        try:
+            selected_mode = self.selected_mode_provider()
+        except Exception:
+            selected_mode = None
+        if selected_mode not in {"SCALPING", "INTRADAY"}:
+            return ()
         names = sorted({
             item.symbol.upper() for item in self.instruments()
-            if isinstance(item, InstrumentMetadata)
+            if isinstance(item, InstrumentMetadata) and item.symbol.upper() in self.allowed_symbols
         })
         return tuple(
             result.candidate
-            for result in (self.build_one(name) for name in names)
+            for result in (
+                self.build_one(name, requested_mode=selected_mode) for name in names
+            )
             if result.candidate is not None
         )
