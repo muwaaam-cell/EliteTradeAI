@@ -147,7 +147,7 @@ def start_nexus_bridge(
         return None
     token = os.getenv("ELITETRADE_NEXUS_BRIDGE_TOKEN", "")
     host = os.getenv("ELITETRADE_NEXUS_BRIDGE_HOST", "127.0.0.1").strip()
-    port_text = os.getenv("ELITETRADE_NEXUS_BRIDGE_PORT", "8765").strip()
+    port_text = os.getenv("ELITETRADE_NEXUS_BRIDGE_PORT", "8766").strip()
     if not port_text.isdecimal() or not 1 <= int(port_text) <= 65535:
         raise ValueError("ELITETRADE_NEXUS_BRIDGE_PORT must be between 1 and 65535.")
     server = NexusBridgeServer(
