@@ -32,7 +32,7 @@ class NexusBridgeServer(ThreadingHTTPServer):
     ) -> None:
         if not isinstance(token, str) or len(token) < 40 or any(ord(ch) < 33 for ch in token):
             raise ValueError("Bridge token must contain at least 40 non-whitespace characters.")
-        if host not in {"127.0.0.1", "::1", "localhost"}:
+        if host not in {"127.0.0.1", "localhost"}:
             raise ValueError("NEXUS bridge may bind only to loopback; use a TLS tunnel for remote access.")
         normalized = tuple(item.strip().upper() for item in symbols if item.strip())
         if not normalized or len(set(normalized)) != len(normalized):
