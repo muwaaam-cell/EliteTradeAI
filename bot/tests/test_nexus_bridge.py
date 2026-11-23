@@ -1,8 +1,10 @@
 import json
+import tempfile
 import threading
 import urllib.error
 import urllib.request
 import unittest
+from pathlib import Path
 
 from elite_trade.market_memory import MarketBar, MarketMemory
 from elite_trade.nexus_bridge import NexusBridgeServer
@@ -10,7 +12,8 @@ from elite_trade.nexus_bridge import NexusBridgeServer
 
 class NexusBridgeTests(unittest.TestCase):
     def setUp(self):
-        self.memory = MarketMemory(":memory:")
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.memory = MarketMemory(Path(self.tempdir.name) / "market.sqlite3")
         self.memory.store_bars("XAUUSD", "M15", [
             MarketBar(i, 2000 + i, 2001 + i, 1999 + i, 2000 + i)
             for i in range(1, 22)
@@ -28,6 +31,7 @@ class NexusBridgeTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
         self.memory.close()
+        self.tempdir.cleanup()
 
     def get(self, path, token=None):
         headers = {}
