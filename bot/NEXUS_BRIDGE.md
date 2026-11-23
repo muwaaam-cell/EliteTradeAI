@@ -12,12 +12,12 @@ Set these values in the protected local environment (never commit the token):
 ELITETRADE_NEXUS_BRIDGE_ENABLED=1
 ELITETRADE_NEXUS_BRIDGE_TOKEN=<random secret of at least 40 characters>
 ELITETRADE_NEXUS_BRIDGE_HOST=127.0.0.1
-ELITETRADE_NEXUS_BRIDGE_PORT=8765
+ELITETRADE_NEXUS_BRIDGE_PORT=8766
 ```
 
 The listener refuses non-loopback bind addresses. For a remote NEXUS node, put
 an authenticated TLS reverse proxy or SSH tunnel in front of this loopback
-listener. Do not expose port 8765 directly to the internet.
+listener. Do not expose port 8766 directly to the internet.
 
 Endpoints:
 
