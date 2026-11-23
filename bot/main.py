@@ -13,6 +13,7 @@ from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState, 
 from elite_trade.ctrader_trendbar_runtime import CTraderTrendbarRuntime
 from elite_trade.market_memory import MarketMemory
 from elite_trade.worker_token_vault import WorkerTokenVault
+from elite_trade.nexus_bridge import start_nexus_bridge, stop_nexus_bridge
 
 
 def main() -> None:
@@ -51,13 +52,12 @@ def main() -> None:
     memory = MarketMemory(memory_path)
     transport_ref: dict[str, CTraderSdkTransport] = {}
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
+    connection_ref = {"state": "starting"}
 
     def on_accounts(accounts: tuple[TradingAccount, ...]) -> None:
         demo_accounts = tuple(item for item in accounts if not item.is_live)
         selected_id = settings.ctrader_account_id
         if selected_id is not None:
-            # The transport performs configured-account selection immediately
-            # after this callback returns; selecting here would send twice.
             print(f"Using configured Pepperstone demo account ID {selected_id}.")
             return
         if len(demo_accounts) != 1:
@@ -69,12 +69,14 @@ def main() -> None:
         print("Exactly one demo account was discovered; selected it.")
 
     def on_state(state: ConnectionState) -> None:
+        connection_ref["state"] = state.value
         print(f"cTrader connection state: {state.value}")
         if state == ConnectionState.AUTHENTICATED:
             print("Pepperstone demo account authenticated. Requesting broker instrument catalogue.")
             market_ref["market"].request_catalogue()
 
     def on_error(message: str) -> None:
+        connection_ref["state"] = "error"
         print(f"cTrader stopped safely: {message}")
 
     def on_instruments(instruments: tuple[object, ...]) -> None:
@@ -96,11 +98,7 @@ def main() -> None:
     )
     transport_ref["transport"] = transport
 
-    # Compose quote cache first, then candle recorder; both preserve callbacks.
-    market_runtime = CTraderMarketDataRuntime(
-        transport=transport,
-        now_epoch=time.time,
-    )
+    market_runtime = CTraderMarketDataRuntime(transport=transport, now_epoch=time.time)
     market_ref["market"] = market_runtime
     _trendbar_runtime = CTraderTrendbarRuntime(
         transport=transport,
@@ -112,6 +110,12 @@ def main() -> None:
         history_count=int(os.getenv("CTRADER_HISTORY_COUNT", "500")),
     )
 
+    bridge = start_nexus_bridge(
+        memory,
+        status_provider=lambda: dict(connection_ref),
+        symbols=symbols,
+        timeframe=timeframe,
+    )
     print(f"Requested broker instruments: {', '.join(symbols)} ({timeframe})")
     print("Starting cTrader demo connection. This process observes market data only.")
     from twisted.internet import reactor
@@ -122,6 +126,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("Shutdown requested.")
     finally:
+        stop_nexus_bridge(bridge)
         transport.stop()
         memory.close()
 

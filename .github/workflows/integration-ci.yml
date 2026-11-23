@@ -1,0 +1,41 @@
+name: NEXUS bridge integration checks
+
+on:
+  push:
+    branches:
+      - integration/nexus-readonly-bridge-2026-11-23
+  pull_request:
+    branches:
+      - pepperstone-ctrader-bot
+    paths:
+      - "bot/elite_trade/nexus_bridge.py"
+      - "bot/main.py"
+      - "bot/tests/test_nexus_bridge.py"
+      - "bot/pyproject.toml"
+      - ".github/workflows/integration-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: bot/pyproject.toml
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e bot pytest ruff
+      - name: Run focused bridge tests
+        working-directory: bot
+        run: python -m pytest -q tests/test_nexus_bridge.py
+      - name: Lint changed Python files
+        run: ruff check bot/elite_trade/nexus_bridge.py bot/main.py bot/tests/test_nexus_bridge.py
+      - name: Run complete existing test suite
+        working-directory: bot
+        run: python -m unittest discover -s tests -v
