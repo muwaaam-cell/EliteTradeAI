@@ -33,6 +33,24 @@ def test_signal_feed_is_loopback_authenticated_and_read_only():
             with urlopen(base + "/health", timeout=2) as response:
                 assert json.loads(response.read())["ok"] is True
 
+            status_request = Request(
+                base + "/v1/status",
+                headers={"Authorization": "Bearer " + TOKEN},
+            )
+            with urlopen(status_request, timeout=2) as response:
+                status = json.loads(response.read())
+            assert status["execution_mode"] == "disabled"
+            assert status["live_execution_permitted"] is False
+
+            summary_request = Request(
+                base + "/v1/market-summary?symbol=XAUUSD&timeframe=M15",
+                headers={"Authorization": "Bearer " + TOKEN},
+            )
+            with urlopen(summary_request, timeout=2) as response:
+                summary = json.loads(response.read())
+            assert summary["execution_enabled"] is False
+            assert summary["bars"] == 60
+
             with pytest.raises(HTTPError) as error:
                 urlopen(base + "/v1/signals?symbol=XAUUSD", timeout=2)
             assert error.value.code == 401
