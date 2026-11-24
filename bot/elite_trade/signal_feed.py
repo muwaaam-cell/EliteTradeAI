@@ -67,6 +67,43 @@ def start_signal_feed(
             if symbol not in allowed or requested_tf != normalized_timeframe:
                 self._send(400, {"error": "symbol or timeframe is not enabled"})
                 return
+            if parsed.path == "/v1/status":
+                self._send(200, {
+                    "service": "EliteTrade read-only signal feed",
+                    "bridge_status": "running",
+                    "market_data_process": "running",
+                    "execution_mode": "disabled",
+                    "order_submission": "disabled",
+                    "broker_connectivity": "not_asserted_by_bridge",
+                    "live_execution_permitted": False,
+                    "symbols": sorted(allowed),
+                    "timeframe": normalized_timeframe,
+                })
+                return
+            if parsed.path == "/v1/market-summary":
+                bars = memory.load_bars(symbol, requested_tf, limit=250)
+                regime = memory.regime_snapshot(symbol, requested_tf)
+                outcomes = memory.outcome_summary(symbol)
+                self._send(200, {
+                    "source": "EliteTrade local closed-candle memory",
+                    "symbol": symbol, "timeframe": requested_tf,
+                    "bars": len(bars),
+                    "latest_candle_timestamp": bars[-1].timestamp if bars else None,
+                    "latest_close": bars[-1].close if bars else None,
+                    "regime": {
+                        "label": regime.label,
+                        "volatility_pct": regime.volatility_pct,
+                        "efficiency_ratio": regime.efficiency_ratio,
+                    },
+                    "historical_signal_outcomes": {
+                        "evaluated": outcomes.evaluated,
+                        "wins": outcomes.wins,
+                        "losses": outcomes.losses,
+                        "win_rate_pct": outcomes.win_rate_pct,
+                    },
+                    "execution_enabled": False,
+                })
+                return
             if parsed.path == "/v1/signals":
                 try:
                     limit = int(query.get("limit", ["50"])[0])
