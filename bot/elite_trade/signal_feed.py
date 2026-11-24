@@ -19,7 +19,7 @@ class _Server(ThreadingHTTPServer):
 
 def start_signal_feed(
     *, memory: MarketMemory, token: str, symbols: tuple[str, ...],
-    timeframe: str = "M15", port: int = 8765,
+    timeframe: str = "M15", port: int = 8766,
 ) -> _Server:
     """Start a bearer-authenticated API bound exclusively to IPv4 loopback."""
     if not isinstance(token, str) or len(token) < 40 or any(ord(ch) < 33 for ch in token):
