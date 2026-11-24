@@ -71,7 +71,8 @@ def start_signal_feed(
                 self._send(200, {
                     "service": "EliteTrade read-only signal feed",
                     "bridge_status": "running",
-                    "market_data_process": "running",
+                    "signal_feed_process": "running",
+                    "market_data_status": "not_verified_by_signal_feed",
                     "execution_mode": "disabled",
                     "order_submission": "disabled",
                     "broker_connectivity": "not_asserted_by_bridge",
