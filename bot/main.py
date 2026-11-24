@@ -55,7 +55,7 @@ def main() -> None:
     if signal_token:
         signal_server = start_signal_feed(
             memory=memory, token=signal_token, symbols=symbols, timeframe=timeframe,
-            port=int(os.getenv("ELITE_SIGNAL_API_PORT", "8765")),
+            port=int(os.getenv("ELITETRADE_NEXUS_BRIDGE_PORT", "8766")),
         )
         print("Authenticated NEXUS signal feed listening on 127.0.0.1.")
     transport_ref: dict[str, CTraderSdkTransport] = {}
