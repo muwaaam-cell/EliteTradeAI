@@ -109,5 +109,8 @@ def start_signal_feed(
 
 
 def token_from_env() -> str | None:
-    value = os.getenv("ELITE_SIGNAL_API_TOKEN", "").strip()
+    value = os.getenv(
+        "ELITETRADE_NEXUS_BRIDGE_TOKEN",
+        os.getenv("ELITE_SIGNAL_API_TOKEN", ""),
+    ).strip()
     return value or None
