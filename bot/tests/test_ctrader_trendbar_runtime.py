@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from elite_trade.ctrader_transport import ConnectionState
 from elite_trade.ctrader_trendbar_runtime import CTraderTrendbarRuntime
-from elite_trade.market_memory import MarketMemory
+from elite_trade.market_memory import MarketBar, MarketMemory
 
 
 class FakeTransport:
@@ -97,6 +97,27 @@ class CTraderTrendbarRuntimeTests(unittest.TestCase):
             self.transport.on_instruments((self.instruments[0],))
         self.assertIsNone(runtime.recorder)
         self.assertEqual(self.transport.history_requests, [])
+
+    def test_strategy_signals_are_persisted_idempotently_from_closed_bars(self):
+        import math
+
+        bars = []
+        for index in range(100):
+            close = 100 + index * 0.2 + 1.5 * math.sin(index * 0.7)
+            bars.append(MarketBar(
+                timestamp=1_000_000_000 + index * 900,
+                open=close, high=close + 0.5, low=close - 0.5, close=close,
+            ))
+        self.memory.store_bars("XAUUSD", "M15", bars)
+        runtime = object.__new__(CTraderTrendbarRuntime)
+        runtime.memory = self.memory
+        runtime.timeframe = "M15"
+        runtime._analyse_symbol("XAUUSD")
+        runtime._analyse_symbol("XAUUSD")
+        records = self.memory.list_signals("XAUUSD", "M15")
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["direction"], "BUY")
+        self.assertIn("EMA20", records[0]["reason"])
 
     def test_session_loss_clears_recorder(self):
         runtime = self.make_runtime()

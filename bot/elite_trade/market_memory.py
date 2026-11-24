@@ -90,9 +90,12 @@ class MarketMemory:
                     timeframe TEXT NOT NULL, direction TEXT NOT NULL,
                     entry_price REAL NOT NULL, created_at INTEGER NOT NULL,
                     horizon_bars INTEGER NOT NULL, outcome_return_pct REAL,
-                    evaluated_at INTEGER
+                    evaluated_at INTEGER, reason TEXT NOT NULL DEFAULT ''
                 );
             """)
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(signals)")}
+            if "reason" not in columns:
+                connection.execute("ALTER TABLE signals ADD COLUMN reason TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -150,6 +153,7 @@ class MarketMemory:
     def record_signal(
         self, signal_id: str, symbol: str, timeframe: str, direction: str,
         entry_price: float, created_at: int, *, horizon_bars: int = 12,
+        reason: str = "",
     ) -> None:
         if (not signal_id.strip() or not symbol.strip() or not timeframe.strip()
                 or direction.upper() not in {"BUY", "SELL"}
@@ -157,11 +161,40 @@ class MarketMemory:
             raise ValueError("Invalid signal snapshot.")
         with self._connect() as connection:
             connection.execute("""
-                INSERT INTO signals(signal_id, symbol, timeframe, direction,
-                    entry_price, created_at, horizon_bars)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO signals(signal_id, symbol, timeframe, direction,
+                    entry_price, created_at, horizon_bars, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (signal_id, symbol.upper(), timeframe.lower(), direction.upper(),
-                  entry_price, created_at, horizon_bars))
+                  entry_price, created_at, horizon_bars, reason[:500]))
+
+
+    def list_signals(
+        self, symbol: str | None = None, timeframe: str | None = None, *, limit: int = 50,
+    ) -> list[dict[str, object]]:
+        """Return newest persisted signal snapshots; this is a read-only view."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("Signal limit must be between 1 and 200.")
+        clauses = []
+        params: list[object] = []
+        if symbol is not None:
+            if not symbol.strip():
+                raise ValueError("Symbol cannot be blank.")
+            clauses.append("symbol=?")
+            params.append(symbol.strip().upper())
+        if timeframe is not None:
+            if not timeframe.strip():
+                raise ValueError("Timeframe cannot be blank.")
+            clauses.append("timeframe=?")
+            params.append(timeframe.strip().lower())
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT signal_id, symbol, timeframe, direction, entry_price, "
+                "created_at, horizon_bars, reason, outcome_return_pct, evaluated_at "
+                "FROM signals" + where + " ORDER BY created_at DESC LIMIT ?", params
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def evaluate_matured_signals(self, symbol: str, timeframe: str) -> int:
         """Evaluate only signals with their full future-bar horizon available."""

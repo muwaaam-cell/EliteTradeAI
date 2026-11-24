@@ -12,6 +12,7 @@ from elite_trade.ctrader_market_data_runtime import CTraderMarketDataRuntime
 from elite_trade.ctrader_transport import CTraderSdkTransport, ConnectionState, TradingAccount
 from elite_trade.ctrader_trendbar_runtime import CTraderTrendbarRuntime
 from elite_trade.market_memory import MarketMemory
+from elite_trade.signal_feed import start_signal_feed, token_from_env
 from elite_trade.worker_token_vault import WorkerTokenVault
 
 
@@ -49,6 +50,14 @@ def main() -> None:
     memory_path = Path(os.getenv("CTRADER_MARKET_MEMORY", "state/market_memory.sqlite3"))
 
     memory = MarketMemory(memory_path)
+    signal_server = None
+    signal_token = token_from_env()
+    if signal_token:
+        signal_server = start_signal_feed(
+            memory=memory, token=signal_token, symbols=symbols, timeframe=timeframe,
+            port=int(os.getenv("ELITETRADE_NEXUS_BRIDGE_PORT", "8766")),
+        )
+        print("Authenticated NEXUS signal feed listening on 127.0.0.1.")
     transport_ref: dict[str, CTraderSdkTransport] = {}
     market_ref: dict[str, CTraderMarketDataRuntime] = {}
 
@@ -123,6 +132,9 @@ def main() -> None:
         print("Shutdown requested.")
     finally:
         transport.stop()
+        if signal_server is not None:
+            signal_server.shutdown()
+            signal_server.server_close()
         memory.close()
 
 

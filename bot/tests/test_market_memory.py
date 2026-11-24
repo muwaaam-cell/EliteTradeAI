@@ -51,6 +51,22 @@ class MarketMemoryTests(unittest.TestCase):
         self.assertIsNone(summary.win_rate_pct)
         self.assertEqual(summary.evaluated, 0)
 
+    def test_signal_records_are_queryable_and_duplicate_ids_are_idempotent(self):
+        memory = MarketMemory(":memory:")
+        memory.record_signal(
+            "signal-1", "XAUUSD", "M15", "BUY", 2000.5, 12345,
+            reason="EMA trend confirmation",
+        )
+        memory.record_signal(
+            "signal-1", "XAUUSD", "M15", "BUY", 2000.5, 12345,
+            reason="EMA trend confirmation",
+        )
+        records = memory.list_signals("xauusd", "m15")
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["direction"], "BUY")
+        self.assertEqual(records[0]["reason"], "EMA trend confirmation")
+        self.assertEqual(memory.list_signals("EURUSD"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

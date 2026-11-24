@@ -175,3 +175,34 @@ process and does not run inside the Cloudflare cron Worker.
 Run the market-data process from `bot/` with `PYTHONPATH=. python main.py`. This is code integration only. The actual token envelope has not yet been
 imported/decrypted on the user's Termux device, and the real Pepperstone demo
 connection, account authentication, quote feed and candles are not yet verified.
+
+
+## NEXUS read-only signal feed
+
+The demo market-data runner now evaluates the existing EMA20/EMA50 + RSI
+strategy against broker-verified, closed candles. BUY/SELL results are stored
+idempotently in the local SQLite market memory with the candle timestamp,
+entry reference price, strategy reason and evaluation horizon. WAIT remains
+available through the live analysis endpoint; it is not stored as a trade
+signal. This baseline strategy is transparent but is not a profitability claim.
+
+To enable the optional NEXUS feed, configure a high-entropy shared token in
+the protected local environment:
+
+```dotenv
+ELITETRADE_NEXUS_BRIDGE_TOKEN=<at-least-40-random-characters>
+ELITETRADE_NEXUS_BRIDGE_PORT=8766
+```
+
+The feed binds only to `127.0.0.1` and exposes authenticated GET routes:
+`/v1/signals` and `/v1/analysis`. `/health` is an unauthenticated liveness
+check and reveals no account or signal data. NEXUS should use
+`NEXUS_ELITETRADE_URL=http://127.0.0.1:8766` and the same token when both
+processes run on the same Android device. A remote NEXUS node requires a
+separately configured authenticated TLS proxy or tunnel; never expose this
+loopback listener directly to the internet.
+
+The feed starts only when the token is configured. It has no POST route,
+broker account controls, order interface, or execution capability. It is
+available only while `python main.py` is running and only for the explicitly
+configured broker-verified symbols and timeframe.

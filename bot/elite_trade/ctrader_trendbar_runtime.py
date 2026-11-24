@@ -5,11 +5,13 @@ broker-discovered demo instruments and never creates or submits orders.
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Callable
 
 from elite_trade.ctrader_transport import ConnectionState
 from elite_trade.ctrader_trendbar_recorder import CTraderTrendbarRecorder
 from elite_trade.market_memory import MarketMemory
+from elite_trade.strategy import Candle, analyse
 
 
 class CTraderTrendbarRuntime:
@@ -123,14 +125,42 @@ class CTraderTrendbarRuntime:
         if self.recorder is None:
             raise RuntimeError("Historical candles arrived before verified instruments were loaded.")
         self.recorder.ingest_historical_response(response)
+        symbol_id = getattr(response, "symbolId", None)
+        instrument = next((item for item in self._selected_instruments
+                           if getattr(item, "symbol_id", None) == symbol_id), None)
+        if instrument is not None:
+            self._analyse_symbol(str(instrument.symbol))
         if callable(self._previous_trendbar_response):
             self._previous_trendbar_response(response)
 
     def _handle_spot(self, event: object) -> None:
         if self.recorder is not None:
             self.recorder.ingest_live_spot_event(event)
+            symbol_id = getattr(event, "symbolId", None)
+            instrument = next((item for item in self._selected_instruments
+                               if getattr(item, "symbol_id", None) == symbol_id), None)
+            if instrument is not None:
+                self._analyse_symbol(str(instrument.symbol))
         if callable(self._previous_spot):
             self._previous_spot(event)
+
+    def _analyse_symbol(self, symbol: str) -> None:
+        """Persist a strategy signal only from broker-verified closed candles."""
+        bars = self.memory.load_bars(symbol, self.timeframe, limit=250)
+        if not bars:
+            return
+        result = analyse([
+            Candle(high=bar.high, low=bar.low, close=bar.close) for bar in bars
+        ])
+        if result.direction not in {"BUY", "SELL"}:
+            return
+        latest = bars[-1]
+        identity = f"{symbol.upper()}|{self.timeframe}|{latest.timestamp}|{result.direction}"
+        signal_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        self.memory.record_signal(
+            signal_id, symbol, self.timeframe, result.direction, latest.close,
+            latest.timestamp, reason=result.reason,
+        )
 
     def _handle_state(self, state: object) -> None:
         if state != ConnectionState.AUTHENTICATED:
